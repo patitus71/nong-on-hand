@@ -1,0 +1,5 @@
+title,description,squad,estimateMinutes
+ทำหน้า login,ออกแบบ UI พร้อม validation,SQ1,180
+เขียน test ครอบ auth flow,ครอบ case login/logout/expire token,SQ2,240
+เช็ค performance API ตอน peak,วัด response time ช่วง 9-11 โมง,SQ3,300
+แก้ layout responsive มือถือ,หน้า dashboard แตกบนจอเล็ก,SQ1,120

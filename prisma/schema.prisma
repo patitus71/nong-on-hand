@@ -1,0 +1,203 @@
+// Prisma schema สำหรับ Task Board App
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  QA_LEAD
+  QA_MANAGER
+  QA_ENGINEER
+}
+
+enum TaskSource {
+  MANUAL
+  IMPORTED
+}
+
+enum BoardType {
+  PERSONAL
+  SQUAD
+  ROLE
+}
+
+enum RetroCategory {
+  WENT_WELL
+  TO_IMPROVE
+  ACTION_ITEM
+}
+
+enum RetroStatus {
+  OPEN
+  CLOSED
+}
+
+model Squad {
+  id        String   @id @default(cuid())
+  name      String   @unique // เช่น SQ1, SQ2
+  users     User[]
+  tasks     Task[]
+  retros    Retro[]
+  importBatches ImportBatch[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  name         String
+  role         Role      @default(QA_ENGINEER)
+  active       Boolean   @default(true) // admin ปิดการใช้งาน user ได้โดยไม่ต้องลบ
+  squadId      String?
+  squad        Squad?    @relation(fields: [squadId], references: [id])
+  boards       Board[]
+  assignedTasks Task[]   @relation("AssigneeTasks")
+  timeLogs     TimeLog[]
+  retroItemsAuthored RetroItem[]
+  retroItemsOwned    RetroItem[] @relation("RetroItemOwner")
+  retroVotes   RetroVote[]
+  importBatches ImportBatch[]
+  flaggedIssueLogs  TaskIssueLog[] @relation("IssueFlaggedBy")
+  resolvedIssueLogs TaskIssueLog[] @relation("IssueResolvedBy")
+  createdAt    DateTime  @default(now())
+}
+
+model Board {
+  id        String    @id @default(cuid())
+  name      String
+  type      BoardType @default(PERSONAL)
+  ownerId   String
+  owner     User      @relation(fields: [ownerId], references: [id])
+  lanes     Lane[]
+  createdAt DateTime  @default(now())
+}
+
+// เลนแบบ Jira ที่ user สร้าง/จัดเรียงเองได้
+model Lane {
+  id      String @id @default(cuid())
+  boardId String
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  name    String // เช่น To Do, Doing, Review, Done
+  order   Int    @default(0)
+  tasks   Task[]
+}
+
+model Task {
+  id            String    @id @default(cuid())
+  title         String
+  description   String?
+  squadId       String?
+  squad         Squad?    @relation(fields: [squadId], references: [id])
+  assigneeId    String?
+  assignee      User?     @relation("AssigneeTasks", fields: [assigneeId], references: [id])
+  laneId        String?
+  lane          Lane?     @relation(fields: [laneId], references: [id])
+  order         Int       @default(0)
+  isMultiWeek   Boolean   @default(false) // งานใหญ่ข้ามสัปดาห์
+  hasIssue      Boolean   @default(false) // สถานะปัจจุบัน ไม่ใช่ประวัติ
+  issueNote     String?   // โน้ตปัญหาปัจจุบัน
+  source        TaskSource @default(MANUAL) // MANUAL = สร้างเอง, IMPORTED = มาจาก import CSV/Excel
+  importBatchId String?
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id])
+  estimatedHours    Float?    // เวลาประมาณการ (ชั่วโมง รองรับทศนิยม เช่น 1.5) — กำหนดตอนดึงงานเข้าบอร์ด
+  dueDate           DateTime? // วันที่คาดว่าจะเสร็จ — กรอกตอนดึงงานเข้าบอร์ด
+  pulledIntoBoardAt DateTime? // เวลาที่ถูกดึงจาก "งานทั้งหมด" เข้าบอร์ดจริง (null = ยังอยู่ในกองรวม)
+  timeLogs      TimeLog[]
+  retroItems    RetroItem[]
+  issueLogs     TaskIssueLog[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model TaskIssueLog {
+  id             String    @id @default(cuid())
+  taskId         String
+  task           Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  issueNote      String
+  flaggedById    String
+  flaggedBy      User      @relation("IssueFlaggedBy", fields: [flaggedById], references: [id])
+  flaggedAt      DateTime  @default(now())
+  resolutionNote String?   // บังคับกรอกตอน unflag ผ่าน modal — null จนกว่าจะ resolve
+  resolvedById   String?
+  resolvedBy     User?     @relation("IssueResolvedBy", fields: [resolvedById], references: [id])
+  resolvedAt     DateTime?
+  sprintId       String?   // เผื่อไว้อนาคต ปล่อย null ก่อน
+  createdAt      DateTime  @default(now())
+}
+
+// กระดาน Retrospective ต่อ Squad (ทำได้หลายรอบ เช่น ทุกจบ Sprint)
+// บันทึกทุกครั้งที่มีการ import งานจาก Excel/CSV เพื่อ track ว่าใคร upload ไฟล์ไหนเมื่อไหร่
+model ImportBatch {
+  id         String   @id @default(cuid())
+  fileName   String
+  uploadedById String
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+  squadId    String?  // ถ้า import ระบุ squad ปลายทางไว้ล่วงหน้า
+  squad      Squad?   @relation(fields: [squadId], references: [id])
+  rowCount   Int      // จำนวนแถวที่ import สำเร็จ
+  tasks      Task[]
+  createdAt  DateTime @default(now())
+}
+
+model Retro {
+  id        String        @id @default(cuid())
+  squadId   String
+  squad     Squad         @relation(fields: [squadId], references: [id])
+  title     String        // เช่น "Retro Sprint 12"
+  status    RetroStatus   @default(OPEN)
+  items     RetroItem[]
+  createdAt DateTime      @default(now())
+  closedAt  DateTime?
+}
+
+// การ์ดใน retro แต่ละใบ (Went well / To improve / Action item)
+model RetroItem {
+  id           String        @id @default(cuid())
+  retroId      String
+  retro        Retro         @relation(fields: [retroId], references: [id], onDelete: Cascade)
+  category     RetroCategory
+  content      String
+  authorId     String
+  author       User          @relation(fields: [authorId], references: [id])
+  votes        RetroVote[]
+  // สำหรับ category = ACTION_ITEM สามารถผูกกับ Task จริงเพื่อติดตามต่อได้
+  linkedTaskId String?
+  linkedTask   Task?         @relation(fields: [linkedTaskId], references: [id])
+  ownerId      String?       // ผู้รับผิดชอบ action item
+  owner        User?         @relation("RetroItemOwner", fields: [ownerId], references: [id])
+  createdAt    DateTime      @default(now())
+}
+
+// โหวต (1 คนโหวตซ้ำการ์ดเดิมไม่ได้ กันด้วย unique)
+model RetroVote {
+  id          String    @id @default(cuid())
+  retroItemId String
+  retroItem   RetroItem @relation(fields: [retroItemId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@unique([retroItemId, userId])
+}
+
+// บันทึกเวลาทำงานแต่ละช่วง (หยิบมาทำ -> จบ)
+model TimeLog {
+  id            String   @id @default(cuid())
+  taskId        String
+  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  startAt       DateTime
+  endAt         DateTime
+  normalMinutes Int      // เวลาทำงานปกติ (นาที) คำนวณจาก working hours
+  otMinutes     Int      // เวลา OT (นาที)
+  createdAt     DateTime @default(now())
+}

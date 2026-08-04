@@ -1,0 +1,165 @@
+// lib/rbac.ts
+// รวม guard functions สำหรับ 4-role system: ADMIN | QA_LEAD | QA_MANAGER | QA_ENGINEER
+// หลักการ: middleware กันหน้าบ้าน แต่ทุก API route ต้องเช็คซ้ำฝั่ง server เสมอ
+
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export type SessionUser = {
+  id: string;
+  role: "ADMIN" | "QA_LEAD" | "QA_MANAGER" | "QA_ENGINEER";
+  squadId: string | null;
+};
+
+// ─── Basic Guards ──────────────────────────────────────────────────────────────
+
+/** ใช้กับ API route ที่ ADMIN เท่านั้นเข้าได้ */
+export function requireAdmin(user: SessionUser | null | undefined) {
+  if (!user || user.role !== "ADMIN") {
+    throw new Response("Forbidden", { status: 403 });
+  }
+}
+
+/** @deprecated ใช้ requireAdmin แทน — เก็บไว้กันกรณียังมี route อื่นใช้อยู่ */
+export function requireAdminOrQaLead(user: SessionUser | null | undefined) {
+  requireAdmin(user);
+}
+
+export function requireRole(user: SessionUser | null | undefined, allowed: SessionUser["role"][]) {
+  if (!user || !allowed.includes(user.role)) {
+    throw new Response("Forbidden", { status: 403 });
+  }
+}
+
+/**
+ * Last-admin guard: ป้องกันไม่ให้ระบบเหลือ ADMIN 0 คน
+ * เรียกก่อน demote role หรือ set active=false ให้ user ที่เป็น ADMIN
+ */
+export async function assertNotLastAdmin(targetUserId: string) {
+  const target = await prisma.user.findUnique({ where: { id: targetUserId } });
+  if (!target || target.role !== "ADMIN") return;
+
+  const adminCount = await prisma.user.count({
+    where: { role: "ADMIN", active: true, id: { not: targetUserId } },
+  });
+
+  if (adminCount === 0) {
+    throw new Response(
+      "ไม่สามารถลบ/ปิดใช้งาน หรือลด role ของ Admin คนสุดท้ายในระบบได้",
+      { status: 400 }
+    );
+  }
+}
+
+// ─── Scope & Visibility ────────────────────────────────────────────────────────
+
+/**
+ * กรอง query ให้ QA_LEAD/QA_ENGINEER เห็นเฉพาะ squad ตัวเอง
+ * ADMIN และ QA_MANAGER ไม่ถูกกรอง (QA_MANAGER ดูได้ทุก squad โดยเลือกจาก dropdown)
+ */
+export function squadScopeFilter(user: SessionUser) {
+  if (user.role === "ADMIN" || user.role === "QA_MANAGER") return {};
+  if (!user.squadId) return { squadId: "___no_squad___" };
+  return { squadId: user.squadId };
+}
+
+// ─── Squad Board ───────────────────────────────────────────────────────────────
+
+/** ADMIN แก้ไขได้ทุก squad, QA_LEAD แก้ไขได้เฉพาะ squad ตัวเอง, role อื่น view-only เสมอ */
+export function canEditSquadBoard(user: SessionUser, targetSquadId: string): boolean {
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_LEAD") return user.squadId === targetSquadId;
+  return false;
+}
+
+/**
+ * กรองว่า task นี้ควรโชว์บน Squad Board ของ user หรือเปล่า
+ * QA_LEAD เห็นเฉพาะงานที่ assignee เป็น QA_LEAD ตัวเองหรือ QA_ENGINEER
+ * role อื่นใน squad เห็นได้ทุกงาน (ไม่ถูกกรอง)
+ */
+export function isTaskVisibleOnSquadBoard(
+  user: SessionUser,
+  task: { assigneeRole?: string | null }
+): boolean {
+  if (user.role !== "QA_LEAD") return true;
+  if (!task.assigneeRole) return true; // งานที่ยังไม่ assign ให้ QA_LEAD เห็นด้วย
+  return task.assigneeRole === "QA_LEAD" || task.assigneeRole === "QA_ENGINEER";
+}
+
+/** ADMIN/QA_LEAD assign งานได้, QA_MANAGER/QA_ENGINEER ทำไม่ได้ */
+export function canAssignTaskOnSquadBoard(user: SessionUser, targetSquadId: string): boolean {
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_LEAD") return user.squadId === targetSquadId;
+  return false;
+}
+
+// ─── My Board ─────────────────────────────────────────────────────────────────
+
+/** ปุ่ม "✎ แก้ไขเลน" โชว์เฉพาะ ADMIN และ QA_LEAD */
+export function canEditMyBoardLanes(user: SessionUser): boolean {
+  return user.role === "ADMIN" || user.role === "QA_LEAD";
+}
+
+/** เมนู "บอร์ดของฉัน" ซ่อนสำหรับ QA_MANAGER (role นี้ไม่มี my-board) */
+export function showMyBoardMenu(user: SessionUser): boolean {
+  return user.role !== "QA_MANAGER";
+}
+
+// ─── Task CRUD ─────────────────────────────────────────────────────────────────
+
+/** Import CSV/Excel: ADMIN และ QA_LEAD เท่านั้น (QA_MANAGER ห้าม) */
+export function canImportTasks(user: SessionUser): boolean {
+  return user.role === "ADMIN" || user.role === "QA_LEAD";
+}
+
+/** สร้างงานใหม่: ทุก role ยกเว้น QA_MANAGER */
+export function canCreateTask(user: SessionUser): boolean {
+  return user.role !== "QA_MANAGER";
+}
+
+/**
+ * ลบ task (soft-delete):
+ * ADMIN ลบได้ทุกงาน, QA_LEAD ลบได้เฉพาะงานใน squad ตัวเอง, role อื่นลบไม่ได้
+ */
+export function canDeleteTask(user: SessionUser, taskSquadId: string | null): boolean {
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_LEAD") return !!taskSquadId && user.squadId === taskSquadId;
+  return false;
+}
+
+// ─── Admin Panel ───────────────────────────────────────────────────────────────
+
+/**
+ * grayed-out-but-visible: QA_LEAD เห็นตัวเลือก ADMIN ใน dropdown แต่เลือกไม่ได้
+ * ต้องเป็น ADMIN เท่านั้นที่ promote คนเป็น ADMIN ได้
+ */
+export function canAssignRole(
+  actor: SessionUser,
+  newRole: SessionUser["role"]
+): boolean {
+  if (actor.role === "ADMIN") return true;
+  if (newRole === "ADMIN") return false;
+  return actor.role === "QA_LEAD";
+}
+
+/**
+ * ตั้งรหัสผ่านใหม่: กติกาเดียวกับ canAssignRole
+ * ตั้งให้ ADMIN ได้เฉพาะ ADMIN ด้วยกัน (หรือตัวเอง)
+ */
+export function canResetPassword(
+  actor: SessionUser,
+  target: { id: string; role: SessionUser["role"] }
+): boolean {
+  if (actor.id === target.id) return true;
+  if (actor.role === "ADMIN") return true;
+  if (actor.role === "QA_LEAD") return target.role !== "ADMIN";
+  return false;
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+/** QA_LEAD และ QA_ENGINEER บังคับผูก squad, ADMIN และ QA_MANAGER ไม่บังคับ */
+export function isSquadRequiredForRole(role: SessionUser["role"]): boolean {
+  return role === "QA_LEAD" || role === "QA_ENGINEER";
+}

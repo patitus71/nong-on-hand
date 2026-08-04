@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+dist/
+
+# Environment variables (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Prisma generated
+prisma/generated/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/settings.json
+
+# Claude Code session data
+.claude/
+
+# Design reference / internal docs (optional — remove if you want these tracked)
+design-reference/
+md/
