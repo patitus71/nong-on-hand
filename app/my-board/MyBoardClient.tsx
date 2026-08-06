@@ -16,6 +16,7 @@ import { fmt, initials, avatarColor } from '@/lib/ui';
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
   id: string; title: string; hasIssue: boolean; order: number;
+  reviewApprovedAt: string | null;
   squad: { name: string } | null;
   assignee: { name: string } | null;
   totalNormalMin: number; totalOtMin: number;
@@ -54,6 +55,7 @@ function SortableCard({ task, overlay = false }: { task: TaskData; overlay?: boo
         className="block text-[13px] text-txt-primary leading-snug mb-2 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
         {task.hasIssue && <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />}
+        {task.reviewApprovedAt && <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0 mt-[5px]" title="Review ผ่านแล้ว — ย้ายไป Done ได้" />}
         {task.title}
       </Link>
       <div className="flex items-center justify-between">
@@ -148,7 +150,6 @@ function DroppableIssueSection({
           ลากการ์ดมาที่นี่เพื่อ flag ปัญหา · ลากออกเพื่อ resolve
         </span>
       </div>
-      {/* flagged cards อยู่ใน SortableContext → draggable ออกได้ */}
       <SortableContext items={flaggedTasks.map(t => t.id)} strategy={horizontalListSortingStrategy}>
         <div
           ref={setNodeRef}
@@ -187,8 +188,11 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
     });
     if (res.ok) {
       const task = await res.json();
-      onCreated({ id: task.id, title: task.title, hasIssue: false, order: task.order,
-        squad: task.squad, assignee: task.assignee, totalNormalMin: 0, totalOtMin: 0 });
+      onCreated({
+        id: task.id, title: task.title, hasIssue: false, order: task.order,
+        reviewApprovedAt: null,
+        squad: task.squad, assignee: task.assignee, totalNormalMin: 0, totalOtMin: 0,
+      });
       setTitle(''); setOpen(false);
     }
     setSaving(false);
@@ -216,7 +220,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 }
 
 /* ─── Protected lane names ───────────────────────────── */
-const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Done']);
+const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Review', 'Done']);
 const PROTECTED_TOOLTIP = 'เลนนี้ผูกกับ Squad Board — แก้ไข/ลบไม่ได้';
 
 /* ─── Main board client ─────────────────────────────── */
@@ -227,11 +231,16 @@ type Props = {
   userSquadId: string | null;
   squadTasks: ProblemTask[];
   canEditLanes: boolean;
+  canCreateTask: boolean;
 };
 
-export default function MyBoardClient({ boardId, initialLanes, userSquadId, canEditLanes }: Props) {
+export default function MyBoardClient({
+  boardId, initialLanes, userSquadId, canEditLanes, canCreateTask,
+}: Props) {
   const [, setLanesState] = useState<LaneData[]>(initialLanes);
-  const lanesRef = useRef<LaneData[]>(initialLanes);
+  const lanesRef   = useRef<LaneData[]>(initialLanes);
+  const preDragRef = useRef<LaneData[]>([]);
+
   function setLanes(next: LaneData[]) {
     lanesRef.current = next;
     setLanesState(next);
@@ -241,18 +250,21 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
   const [activeTask, setActiveTask] = useState<TaskData | null>(null);
   const [editMode,   setEditMode]   = useState(false);
 
+  /* ── Review-block alert state ── */
+  const [reviewBlockMsg, setReviewBlockMsg] = useState<string | null>(null);
+
   /* ── Derived views ── */
   const flaggedTasks = lanes.flatMap(l => l.tasks.filter(t => t.hasIssue));
   const flaggedIds   = new Set(flaggedTasks.map(t => t.id));
   const normalLanes  = lanes.map(l => ({ ...l, tasks: l.tasks.filter(t => !t.hasIssue) }));
 
   /* ── Resolve modal state ── */
-  const [resolveTarget,   setResolveTarget]   = useState<TaskData | null>(null);
-  const [resolutionNote,  setResolutionNote]  = useState('');
-  const [resolveError,    setResolveError]    = useState('');
-  const [resolving,       setResolving]       = useState(false);
+  const [resolveTarget,  setResolveTarget]  = useState<TaskData | null>(null);
+  const [resolutionNote, setResolutionNote] = useState('');
+  const [resolveError,   setResolveError]   = useState('');
+  const [resolving,      setResolving]      = useState(false);
 
-  /* ── Flag modal state (จุดใหม่ 1) ── */
+  /* ── Flag modal state ── */
   const [flagTarget, setFlagTarget] = useState<TaskData | null>(null);
   const [flagNote,   setFlagNote]   = useState('');
   const [flagError,  setFlagError]  = useState('');
@@ -269,15 +281,14 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
   function onDragStart({ active }: DragStartEvent) {
     const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === active.id);
     setActiveTask(task ?? null);
+    preDragRef.current = JSON.parse(JSON.stringify(lanesRef.current));
   }
 
   function onDragOver({ active, over }: DragOverEvent) {
     if (!over) return;
     const activeId = String(active.id);
 
-    // การ์ดที่ flag อยู่ → ห้ามขยับ visual ข้ามเลน ให้ onDragEnd จัดการ
     if (flaggedIds.has(activeId)) return;
-    // ไม่รวม issue section drop target
     if (String(over.id) === ISSUE_DROP_ID) return;
 
     const current    = lanesRef.current;
@@ -314,19 +325,18 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
     setActiveTask(null);
     const activeId = String(active.id);
 
-    /* จุดใหม่ 2 — การ์ด flagged ถูกลากออกจาก issue section */
+    /* Card dragged out of issue section → resolve modal */
     if (flaggedIds.has(activeId)) {
       const dragged = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === activeId);
       const overId  = String(over?.id ?? '');
       const droppedBackInSection = overId === ISSUE_DROP_ID || flaggedIds.has(overId);
-      // ถ้าลากไปวางที่เลนปกติ → เปิด resolve modal (card snap กลับเองเพราะไม่ update state)
       if (dragged && over && !droppedBackInSection) {
         openResolve(dragged);
       }
       return;
     }
 
-    /* จุดใหม่ 1 — การ์ดปกติถูกลากเข้า issue section → เปิด flag modal */
+    /* Card dragged into issue section → flag modal */
     if (over?.id === ISSUE_DROP_ID) {
       const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === activeId);
       if (task && !task.hasIssue) {
@@ -340,7 +350,19 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
     if (!over) return;
     const overId  = String(over.id);
     const current = lanesRef.current;
-    const lane    = current.find(l => l.tasks.some(t => t.id === activeId));
+
+    /* Review approval guard: block QA_ENGINEER from dragging squad task to Done without approval */
+    const landedLane = current.find(l => l.tasks.some(t => t.id === activeId));
+    if (landedLane?.name === 'Done') {
+      const task = landedLane.tasks.find(t => t.id === activeId);
+      if (task?.squad && !task.reviewApprovedAt) {
+        setReviewBlockMsg('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้');
+        setLanes(preDragRef.current);
+        return;
+      }
+    }
+
+    const lane   = current.find(l => l.tasks.some(t => t.id === activeId));
     if (!lane) return;
 
     const oldIdx = lane.tasks.findIndex(t => t.id === activeId);
@@ -465,10 +487,12 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
               ✎ แก้ไขเลน
             </button>
           )}
-          <Link href="/tasks"
-            className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-[7px] rounded-md transition-colors">
-            + สร้างงานใหม่
-          </Link>
+          {canCreateTask && (
+            <Link href="/tasks"
+              className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-[7px] rounded-md transition-colors">
+              + สร้างงานใหม่
+            </Link>
+          )}
         </div>
       </div>
 
@@ -487,7 +511,9 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
             >
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-semibold text-txt-primary">{lane.name}</span>
+                  <span className={`text-[13px] font-semibold ${lane.name === 'Review' ? 'text-warning' : 'text-txt-primary'}`}>
+                    {lane.name}
+                  </span>
                   <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
                 </div>
                 {editMode && (() => {
@@ -546,7 +572,23 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
         </DragOverlay>
       </DndContext>
 
-      {/* ── Modal: Flag issue (จุดใหม่ 1) ─────────────── */}
+      {/* ── Review block alert ────────────────────────── */}
+      {reviewBlockMsg && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-warning/40 rounded-xl p-5 w-[380px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-warning mb-2">⚠ ยังไม่ผ่าน Review</h3>
+            <p className="text-[13px] text-txt-secondary mb-4">{reviewBlockMsg}</p>
+            <button
+              onClick={() => setReviewBlockMsg(null)}
+              className="w-full bg-accent hover:bg-accent-hover text-white text-[13px] font-medium py-2 rounded-lg transition-colors"
+            >
+              เข้าใจแล้ว
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Flag issue ─────────────────────────── */}
       {flagTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
           <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
@@ -577,9 +619,9 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
               <button
                 onClick={submitFlag}
                 disabled={flagging || !flagNote.trim()}
-                className="bg-danger hover:bg-danger/80 text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors"
+                className={`bg-danger hover:bg-danger/80 text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${flagging ? 'btn-loading' : ''}`}
               >
-                {flagging ? 'กำลัง flag...' : '⚠ Flag ปัญหานี้'}
+                ⚠ Flag ปัญหานี้
               </button>
             </div>
           </div>
@@ -610,8 +652,8 @@ export default function MyBoardClient({ boardId, initialLanes, userSquadId, canE
                 ยกเลิก
               </button>
               <button onClick={submitResolve} disabled={resolving || !resolutionNote.trim()}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
-                {resolving ? 'กำลังบันทึก...' : 'ยืนยันและกลับไป To Do'}
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${resolving ? 'btn-loading' : ''}`}>
+                ยืนยันและกลับไป To Do
               </button>
             </div>
           </div>

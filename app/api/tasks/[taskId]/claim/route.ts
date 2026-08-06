@@ -28,20 +28,20 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
     }
   }
 
-  // Find "In progress" lane in the squad's SQUAD board
-  const inProgressLane = await prisma.lane.findFirst({
+  // Find "To do" lane in the squad's SQUAD board — always land in To do, user drags to In progress themselves
+  const todoLane = await prisma.lane.findFirst({
     where: {
-      name: { in: ['In progress', 'In Progress'] },
+      name: { in: ['To do', 'To Do'] },
       board: { type: 'SQUAD', owner: { squadId: task.squadId } },
     },
   });
-  if (!inProgressLane) return new Response('Squad board not set up yet', { status: 400 });
+  if (!todoLane) return new Response('Squad board not set up yet', { status: 400 });
 
   const updated = await prisma.task.update({
     where: { id: params.taskId },
     data: {
       assigneeId,
-      laneId: inProgressLane.id,
+      laneId: todoLane.id,
       ...(!task.laneId ? { pulledIntoBoardAt: new Date() } : {}),
     },
   });

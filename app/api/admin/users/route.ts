@@ -15,6 +15,7 @@ export async function GET() {
   requireAdmin(session?.user as SessionUser | undefined);
 
   const users = await prisma.user.findMany({
+    where: { deletedAt: null },
     select: userSelect,
     orderBy: [{ role: 'asc' }, { name: 'asc' }],
   });
@@ -66,7 +67,7 @@ export async function PATCH(req: Request) {
   requireAdmin(actor);
 
   const body = await req.json() as {
-    userId: string; role?: string; active?: boolean; squadId?: string | null;
+    userId: string; name?: string; role?: string; active?: boolean; squadId?: string | null;
   };
   const { userId, role, active } = body;
   if (!userId) return new Response('userId required', { status: 400 });
@@ -96,9 +97,15 @@ export async function PATCH(req: Request) {
     ? (isSquadRequiredForRole(effectiveRole) ? (body.squadId ?? null) : null)
     : (!isSquadRequiredForRole(effectiveRole) && role !== undefined ? null : undefined);
 
+  const name = body.name?.trim();
+  if (name !== undefined && name === '') {
+    return new Response('ชื่อต้องไม่ว่าง', { status: 400 });
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
     data: {
+      ...(name      !== undefined ? { name }                     : {}),
       ...(role      !== undefined ? { role: role as any }        : {}),
       ...(active    !== undefined ? { active }                   : {}),
       ...(squadId   !== undefined ? { squadId }                  : {}),

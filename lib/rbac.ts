@@ -21,9 +21,11 @@ export function requireAdmin(user: SessionUser | null | undefined) {
   }
 }
 
-/** @deprecated ใช้ requireAdmin แทน — เก็บไว้กันกรณียังมี route อื่นใช้อยู่ */
+/** ADMIN หรือ QA_LEAD เข้าได้ */
 export function requireAdminOrQaLead(user: SessionUser | null | undefined) {
-  requireAdmin(user);
+  if (!user || (user.role !== "ADMIN" && user.role !== "QA_LEAD")) {
+    throw new Response("Forbidden", { status: 403 });
+  }
 }
 
 export function requireRole(user: SessionUser | null | undefined, allowed: SessionUser["role"][]) {
@@ -34,14 +36,14 @@ export function requireRole(user: SessionUser | null | undefined, allowed: Sessi
 
 /**
  * Last-admin guard: ป้องกันไม่ให้ระบบเหลือ ADMIN 0 คน
- * เรียกก่อน demote role หรือ set active=false ให้ user ที่เป็น ADMIN
+ * เรียกก่อน demote role, set active=false, หรือ soft-delete user ที่เป็น ADMIN
  */
 export async function assertNotLastAdmin(targetUserId: string) {
   const target = await prisma.user.findUnique({ where: { id: targetUserId } });
   if (!target || target.role !== "ADMIN") return;
 
   const adminCount = await prisma.user.count({
-    where: { role: "ADMIN", active: true, id: { not: targetUserId } },
+    where: { role: "ADMIN", active: true, deletedAt: null, id: { not: targetUserId } },
   });
 
   if (adminCount === 0) {
@@ -118,14 +120,50 @@ export function canCreateTask(user: SessionUser): boolean {
   return user.role !== "QA_MANAGER";
 }
 
+export type DeletableTask = {
+  squadId: string | null;
+  source: string;
+  pulledIntoBoardAt: Date | null;
+  flaggedForDeletion: boolean;
+};
+
 /**
- * ลบ task (soft-delete):
- * ADMIN ลบได้ทุกงาน, QA_LEAD ลบได้เฉพาะงานใน squad ตัวเอง, role อื่นลบไม่ได้
+ * ลบ task (soft-delete) — กติกาแยกตาม role:
+ * ADMIN: ลบได้ทุกงานเสมอ
+ * QA_LEAD: ลบได้เฉพาะงานใน squad ตัวเอง + ต้องเป็น pending-import หรือ flaggedForDeletion
+ * QA_MANAGER: ลบได้เฉพาะงานที่ flaggedForDeletion เท่านั้น
+ * QA_ENGINEER: ลบไม่ได้เลย
  */
-export function canDeleteTask(user: SessionUser, taskSquadId: string | null): boolean {
+export function canDeleteTask(user: SessionUser, task: DeletableTask): boolean {
   if (user.role === "ADMIN") return true;
-  if (user.role === "QA_LEAD") return !!taskSquadId && user.squadId === taskSquadId;
+  if (user.role === "QA_LEAD") {
+    if (!task.squadId || user.squadId !== task.squadId) return false;
+    const isPendingImport = task.source === "IMPORTED" && task.pulledIntoBoardAt === null;
+    return isPendingImport || task.flaggedForDeletion;
+  }
+  if (user.role === "QA_MANAGER") return task.flaggedForDeletion;
   return false;
+}
+
+/**
+ * Bulk select checkbox eligibility (ปลอดภัยกว่า canDeleteTask — ใช้สำหรับ checkbox ใน tasks list)
+ * แม้ ADMIN ก็ bulk-select ได้เฉพาะ pending-import หรือ flagged เท่านั้น
+ * กันเผลอลบงานที่กำลังใช้งานอยู่เป็นชุดใหญ่
+ */
+export function canBulkSelectForDelete(user: SessionUser, task: DeletableTask): boolean {
+  if (user.role === "QA_ENGINEER") return false;
+  const isPendingImport = task.source === "IMPORTED" && task.pulledIntoBoardAt === null;
+  const isFlagged = task.flaggedForDeletion;
+  if (!isPendingImport && !isFlagged) return false;
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_LEAD") return !!task.squadId && user.squadId === task.squadId;
+  if (user.role === "QA_MANAGER") return isFlagged;
+  return false;
+}
+
+/** ลบ user (soft-delete): ADMIN เท่านั้น */
+export function canDeleteUser(actor: SessionUser): boolean {
+  return actor.role === "ADMIN";
 }
 
 // ─── Admin Panel ───────────────────────────────────────────────────────────────
@@ -155,6 +193,49 @@ export function canResetPassword(
   if (actor.role === "ADMIN") return true;
   if (actor.role === "QA_LEAD") return target.role !== "ADMIN";
   return false;
+}
+
+// ─── Review Approval ──────────────────────────────────────────────────────────
+
+/**
+ * อนุมัติ review: ADMIN ทำได้ทุก squad, QA_LEAD ทำได้เฉพาะ squad ตัวเอง
+ * QA_MANAGER / QA_ENGINEER ทำไม่ได้
+ */
+export function canApproveReview(user: SessionUser, targetSquadId: string): boolean {
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_LEAD") return user.squadId === targetSquadId;
+  return false;
+}
+
+/**
+ * QA_ENGINEER ต้องรอ reviewApprovedAt ก่อนจึงจะย้ายงานเข้า Done ได้
+ * ADMIN และ QA_LEAD ผ่านเสมอ
+ */
+export function canMoveTaskToDone(
+  user: SessionUser,
+  task: { reviewApprovedAt: Date | null }
+): boolean {
+  if (user.role === "ADMIN" || user.role === "QA_LEAD") return true;
+  return task.reviewApprovedAt !== null;
+}
+
+// ─── Flag for Deletion ────────────────────────────────────────────────────────
+
+/**
+ * Flag/unflag งานให้ลบ: ADMIN ทำได้ทุก squad, QA_LEAD ทำได้เฉพาะ squad ตัวเอง
+ * QA_MANAGER / QA_ENGINEER ทำไม่ได้ (QA_MANAGER กดลบได้หลัง flag แต่ flag เองไม่ได้)
+ */
+export function canFlagTaskForDeletion(user: SessionUser, targetSquadId: string | null): boolean {
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_LEAD") return !!targetSquadId && user.squadId === targetSquadId;
+  return false;
+}
+
+// ─── Review State ─────────────────────────────────────────────────────────────
+
+/** ตรวจว่า task ผ่าน review แล้วหรือยัง (ใช้แสดง indicator ฝั่ง UI) */
+export function isReviewApproved(task: { reviewApprovedAt: Date | null }): boolean {
+  return task.reviewApprovedAt !== null;
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────

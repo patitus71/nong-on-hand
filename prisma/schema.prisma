@@ -57,6 +57,7 @@ model User {
   name         String
   role         Role      @default(QA_ENGINEER)
   active       Boolean   @default(true) // admin ปิดการใช้งาน user ได้โดยไม่ต้องลบ
+  deletedAt    DateTime? // soft-delete: null = active, set = ถูกลบโดย admin
   squadId      String?
   squad        Squad?    @relation(fields: [squadId], references: [id])
   boards       Board[]
@@ -68,6 +69,9 @@ model User {
   importBatches ImportBatch[]
   flaggedIssueLogs  TaskIssueLog[] @relation("IssueFlaggedBy")
   resolvedIssueLogs TaskIssueLog[] @relation("IssueResolvedBy")
+  flaggedTasksForDeletion Task[] @relation("TaskDeletionFlaggedBy")
+  reviewedTasks           Task[] @relation("TaskReviewApprovedBy")
+  notifications Notification[]
   createdAt    DateTime  @default(now())
 }
 
@@ -111,9 +115,19 @@ model Task {
   estimatedHours    Float?    // เวลาประมาณการ (ชั่วโมง รองรับทศนิยม เช่น 1.5) — กำหนดตอนดึงงานเข้าบอร์ด
   dueDate           DateTime? // วันที่คาดว่าจะเสร็จ — กรอกตอนดึงงานเข้าบอร์ด
   pulledIntoBoardAt DateTime? // เวลาที่ถูกดึงจาก "งานทั้งหมด" เข้าบอร์ดจริง (null = ยังอยู่ในกองรวม)
+  deletedAt         DateTime? // soft-delete: null = active, set = ถูกลบ
+  flaggedForDeletion    Boolean   @default(false) // QA_LEAD flag งานนี้ให้ลบ (เหตุผลอยู่ใน deletionFlagNote)
+  deletionFlagNote      String?   // เหตุผลที่ QA_LEAD flag
+  deletionFlaggedById   String?
+  deletionFlaggedBy     User?     @relation("TaskDeletionFlaggedBy", fields: [deletionFlaggedById], references: [id])
+  deletionFlaggedAt     DateTime?
+  reviewApprovedAt      DateTime? // เวลาที่ QA_LEAD อนุมัติ review (null = ยังไม่ผ่าน)
+  reviewApprovedById    String?
+  reviewApprovedBy      User?     @relation("TaskReviewApprovedBy", fields: [reviewApprovedById], references: [id])
   timeLogs      TimeLog[]
   retroItems    RetroItem[]
   issueLogs     TaskIssueLog[]
+  notifications Notification[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -187,6 +201,18 @@ model RetroVote {
   createdAt   DateTime  @default(now())
 
   @@unique([retroItemId, userId])
+}
+
+// แจ้งเตือน in-app (เช่น งานถูกลบ)
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  message       String
+  relatedTaskId String?
+  relatedTask   Task?    @relation(fields: [relatedTaskId], references: [id], onDelete: SetNull)
+  readAt        DateTime? // null = ยังไม่ได้อ่าน
+  createdAt     DateTime @default(now())
 }
 
 // บันทึกเวลาทำงานแต่ละช่วง (หยิบมาทำ -> จบ)

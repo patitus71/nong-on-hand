@@ -18,7 +18,7 @@ export default async function SquadsPage() {
   const squads = await prisma.squad.findMany({
     orderBy: { name: 'asc' },
     include: {
-      _count: { select: { users: true, tasks: true } },
+      _count: { select: { users: { where: { active: true } }, tasks: { where: { deletedAt: null } } } },
     },
   });
 

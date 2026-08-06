@@ -45,19 +45,30 @@ export function validateRow(row: Record<string, any>, rowIndex: number) {
  */
 
 /**
- * คำนวณสถานะ coarse สำหรับ Squad Board (4 ค่า)
+ * คำนวณสถานะ coarse สำหรับ Squad Board (5 ค่า)
  * hasIssue มีสิทธิ์สูงสุด — ชนะทุกเงื่อนไข
- * lane.name === "To do" นับเป็น "To do" ไม่ใช่ "On-Board" (bug fix)
+ * lane.name === 'Review' (personal board) → 'Wait for review' (รอ QA_LEAD approve)
  */
 export function computeSquadBoardStatus(task: {
   hasIssue: boolean;
   laneId: string | null;
   lane?: { name: string } | null;
-}): 'To do' | 'On-Board' | 'Done' | 'มีปัญหา' {
+}): 'To do' | 'On-Board' | 'Wait for review' | 'Done' | 'มีปัญหา' {
   if (task.hasIssue) return 'มีปัญหา';
-  if (!task.laneId || task.lane?.name === 'To do') return 'To do';
+  if (!task.laneId || task.lane?.name === 'To do' || task.lane?.name === 'To Do') return 'To do';
+  if (task.lane?.name === 'Review') return 'Wait for review';
   if (task.lane?.name === 'Done') return 'Done';
   return 'On-Board';
+}
+
+/**
+ * ต้อง reset review approval เมื่อ:
+ * - งานกลับเข้า Review (เริ่ม review cycle ใหม่)
+ * - งานออกจาก Review ไปที่อื่นที่ไม่ใช่ Done (แก้ไขก่อน re-submit)
+ */
+export function shouldResetReviewApproval(oldLaneName: string, newLaneName: string): boolean {
+  if (newLaneName === 'Review') return true;
+  return oldLaneName === 'Review' && newLaneName !== 'Done';
 }
 
 /**

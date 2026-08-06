@@ -84,6 +84,57 @@ export default function AdminClient({ actorRole, actorId }: Props) {
     updateUser(userId, patch);
   }
 
+  // ── Rename user (inline) ──────────────────────────────────────
+  const [editingNameId,  setEditingNameId]  = useState<string | null>(null);
+  const [editingName,    setEditingName]    = useState('');
+  const [nameSaving,     setNameSaving]     = useState(false);
+  const [nameError,      setNameError]      = useState('');
+
+  function openEditName(u: UserRow) {
+    setEditingNameId(u.id); setEditingName(u.name); setNameError('');
+  }
+
+  async function saveUserName(userId: string) {
+    if (!editingName.trim()) { setNameError('ชื่อต้องไม่ว่าง'); return; }
+    setNameSaving(true); setNameError('');
+    const res = await fetch('/api/admin/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, name: editingName.trim() }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, name: updated.name } : u));
+      setEditingNameId(null);
+    } else {
+      setNameError(await res.text());
+    }
+    setNameSaving(false);
+  }
+
+  // ── Delete user ───────────────────────────────────────────────
+  const [deleteTarget,    setDeleteTarget]    = useState<UserRow | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleteError,     setDeleteError]     = useState('');
+
+  async function submitDeleteUser() {
+    if (!deleteTarget) return;
+    setDeleteConfirming(true);
+    setDeleteError('');
+    const res = await fetch(`/api/admin/users/${deleteTarget.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      setUsers(prev => {
+        const next = prev.filter(u => u.id !== deleteTarget.id);
+        const adminCount = next.filter(u => u.role === 'ADMIN' && u.active).length;
+        return next.map(u => ({ ...u, isLastAdmin: u.role === 'ADMIN' && adminCount === 1 }));
+      });
+      setDeleteTarget(null);
+    } else {
+      setDeleteError(await res.text());
+    }
+    setDeleteConfirming(false);
+  }
+
   // ── Reset password ────────────────────────────────────────────
   const [resetTarget, setResetTarget] = useState<UserRow | null>(null);
   const [password, setPassword] = useState('');
@@ -146,9 +197,12 @@ export default function AdminClient({ actorRole, actorId }: Props) {
   // ── Squads tab state ─────────────────────────────────────────
   const [loadingSquads, setLoadingSquads] = useState(false);
   const [editingSquadId, setEditingSquadId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
+  const [editingSquadName, setEditingSquadName] = useState('');
   const [squadSaving, setSquadSaving] = useState(false);
   const [squadError, setSquadError] = useState('');
+  const [deleteSquadTarget, setDeleteSquadTarget] = useState<SquadRow | null>(null);
+  const [deletingSquad, setDeletingSquad] = useState(false);
+  const [deleteSquadError, setDeleteSquadError] = useState('');
   const [showAddSquad, setShowAddSquad] = useState(false);
   const [newSquadName, setNewSquadName] = useState('');
   const [addingSquad, setAddingSquad] = useState(false);
@@ -161,11 +215,11 @@ export default function AdminClient({ actorRole, actorId }: Props) {
   }, [activeTab]);
 
   async function saveSquadName() {
-    if (!editingSquadId || !editingName.trim()) return;
+    if (!editingSquadId || !editingSquadName.trim()) return;
     setSquadSaving(true); setSquadError('');
     const res = await fetch(`/api/admin/squads/${editingSquadId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editingName.trim() }),
+      body: JSON.stringify({ name: editingSquadName.trim() }),
     });
     if (res.ok) {
       const updated = await res.json();
@@ -231,7 +285,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <table className="w-full border-collapse bg-surface-1">
                 <thead>
                   <tr className="border-b border-app-border">
-                    {['ผู้ใช้', 'Role', 'Squad', 'ใช้งานอยู่', 'รหัสผ่าน'].map(h => (
+                    {['ผู้ใช้', 'Role', 'Squad', 'ใช้งานอยู่', 'รหัสผ่าน', ...(actorRole === 'ADMIN' ? [''] : [])].map(h => (
                       <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3.5 py-2.5">{h}</th>
                     ))}
                   </tr>
@@ -245,16 +299,51 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                         {/* Name */}
                         <td className="px-3.5 py-2.5">
                           <div className="flex items-center gap-2">
-                            <div className="w-[22px] h-[22px] rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
+                            <div className="w-[22px] h-[22px] rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0 self-start mt-0.5"
                               style={{ background: av.bg, color: av.fg }}>
                               {initials(u.name)}
                             </div>
-                            <div>
-                              <div className="text-[13px] text-txt-primary leading-tight">{u.name}</div>
+                            <div className="flex-1 min-w-0">
+                              {editingNameId === u.id ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    autoFocus
+                                    value={editingName}
+                                    onChange={e => { setEditingName(e.target.value); setNameError(''); }}
+                                    onKeyDown={e => { if (e.key === 'Enter') saveUserName(u.id); if (e.key === 'Escape') setEditingNameId(null); }}
+                                    className="bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-md focus:outline-none w-36"
+                                  />
+                                  <button
+                                    onClick={() => saveUserName(u.id)}
+                                    disabled={nameSaving}
+                                    className="text-[11px] bg-accent text-white px-2 py-1 rounded-md disabled:opacity-50"
+                                  >
+                                    {nameSaving ? '...' : 'บันทึก'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingNameId(null)}
+                                    className="text-[11px] text-txt-muted hover:text-txt-primary"
+                                  >
+                                    ✕
+                                  </button>
+                                  {nameError && <span className="text-[10.5px] text-danger">{nameError}</span>}
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1 group">
+                                  <div className="text-[13px] text-txt-primary leading-tight">{u.name}</div>
+                                  <button
+                                    onClick={() => openEditName(u)}
+                                    className="text-[10px] text-txt-muted opacity-0 group-hover:opacity-100 transition-opacity px-1 hover:text-accent"
+                                    title="แก้ไขชื่อ"
+                                  >
+                                    ✎
+                                  </button>
+                                </div>
+                              )}
                               <div className="text-[11px] text-txt-muted">{u.username}</div>
                             </div>
                             {u.isLastAdmin && (
-                              <span className="text-[9.5px] bg-warning-bg text-warning px-1.5 py-0.5 rounded-full ml-1">Admin คนสุดท้าย</span>
+                              <span className="text-[9.5px] bg-warning-bg text-warning px-1.5 py-0.5 rounded-full whitespace-nowrap">Admin คนสุดท้าย</span>
                             )}
                           </div>
                         </td>
@@ -268,7 +357,9 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                             className={selCls}
                           >
                             {ALL_ROLES.map(r => (
-                              <option key={r} value={r}>{ROLE_LABEL[r]}</option>
+                              <option key={r} value={r} disabled={actorRole !== 'ADMIN' && r === 'ADMIN'}>
+                                {ROLE_LABEL[r]}{actorRole !== 'ADMIN' && r === 'ADMIN' ? ' (ไม่มีสิทธิ์)' : ''}
+                              </option>
                             ))}
                           </select>
                         </td>
@@ -310,6 +401,23 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                             ตั้งรหัสผ่านใหม่
                           </button>
                         </td>
+
+                        {/* Delete user — ADMIN only */}
+                        {actorRole === 'ADMIN' && (
+                          <td className="px-3.5 py-2.5">
+                            <button
+                              onClick={() => { setDeleteTarget(u); setDeleteError(''); }}
+                              disabled={saving === u.id || u.isLastAdmin || u.id === actorId}
+                              title={
+                                u.id === actorId ? 'ไม่สามารถลบบัญชีตัวเองได้' :
+                                u.isLastAdmin    ? 'ไม่สามารถลบ Admin คนสุดท้ายได้' : ''
+                              }
+                              className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1.5 rounded-md hover:bg-danger hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              🗑 ลบ
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -320,7 +428,8 @@ export default function AdminClient({ actorRole, actorId }: Props) {
 
           <p className="text-[11.5px] text-txt-muted mt-3.5 leading-relaxed">
             * ปิดสวิตช์ "ใช้งานอยู่" = user จะ login ไม่ได้ทันที แต่ข้อมูลเดิมไม่ถูกลบ<br />
-            * ระบบจะไม่ยอมให้ลด role หรือปิดใช้งาน Admin คนสุดท้ายในระบบ
+            * กด "🗑 ลบ" = soft-delete — user หายออกจากระบบถาวร แต่งานที่เคย assign ยังอยู่ครบ<br />
+            * ระบบจะไม่ยอมให้ลด role ปิดใช้งาน หรือลบ Admin คนสุดท้ายในระบบ
           </p>
         </div>
       )}
@@ -357,8 +466,8 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                         {editingSquadId === sq.id ? (
                           <div className="flex items-center gap-2">
                             <input
-                              autoFocus value={editingName}
-                              onChange={e => setEditingName(e.target.value)}
+                              autoFocus value={editingSquadName}
+                              onChange={e => setEditingSquadName(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') saveSquadName(); if (e.key === 'Escape') setEditingSquadId(null); }}
                               className="bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-1.5 rounded-md focus:outline-none w-40"
                             />
@@ -372,7 +481,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                       <td className="px-3.5 py-2.5 whitespace-nowrap">
                         {editingSquadId === sq.id ? (
                           <div className="flex gap-2">
-                            <button onClick={saveSquadName} disabled={squadSaving || !editingName.trim()}
+                            <button onClick={saveSquadName} disabled={squadSaving || !editingSquadName.trim()}
                               className="bg-accent hover:bg-accent-hover text-white text-[11.5px] px-2.5 py-1.5 rounded-md disabled:opacity-50 transition-colors">
                               {squadSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                             </button>
@@ -382,10 +491,18 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                             </button>
                           </div>
                         ) : (
-                          <button onClick={() => { setEditingSquadId(sq.id); setEditingName(sq.name); setSquadError(''); }}
-                            className="text-[11.5px] text-txt-secondary hover:text-txt-primary border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-1.5 rounded-md transition-colors">
-                            ✎ แก้ไขชื่อ
-                          </button>
+                          <div className="flex gap-2">
+                            <button onClick={() => { setEditingSquadId(sq.id); setEditingSquadName(sq.name); setSquadError(''); }}
+                              className="text-[11.5px] text-txt-secondary hover:text-txt-primary border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-1.5 rounded-md transition-colors">
+                              ✎ แก้ไขชื่อ
+                            </button>
+                            <button
+                              onClick={() => { setDeleteSquadTarget(sq); setDeleteSquadError(''); }}
+                              className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1.5 rounded-md hover:bg-danger hover:text-white transition-colors"
+                            >
+                              🗑 ลบ
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -397,6 +514,85 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Modal: Delete squad ──────────────────────────────── */}
+      {deleteSquadTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-danger mb-1">🗑 ลบ Squad นี้?</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-3 leading-relaxed">
+              ยืนยันการลบ <span className="font-semibold text-txt-primary">{deleteSquadTarget.name}</span>
+            </p>
+            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-lg mb-4 leading-relaxed">
+              ⚠ ลบได้เฉพาะ Squad ที่ไม่มีสมาชิกและไม่มีงานค้างอยู่เท่านั้น
+            </p>
+            {deleteSquadError && (
+              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-lg mb-3">{deleteSquadError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDeleteSquadTarget(null)}
+                disabled={deletingSquad}
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={async () => {
+                  setDeletingSquad(true); setDeleteSquadError('');
+                  const res = await fetch(`/api/admin/squads/${deleteSquadTarget.id}`, { method: 'DELETE' });
+                  if (res.ok) {
+                    setSquads(prev => prev.filter(s => s.id !== deleteSquadTarget.id));
+                    setDeleteSquadTarget(null);
+                  } else {
+                    setDeleteSquadError(await res.text());
+                  }
+                  setDeletingSquad(false);
+                }}
+                disabled={deletingSquad}
+                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-lg hover:bg-[#d94848] transition-colors disabled:opacity-50 ${deletingSquad ? 'btn-loading' : ''}`}
+              >
+                ยืนยันลบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Delete user ───────────────────────────────── */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-danger mb-1">🗑 ลบผู้ใช้นี้?</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-3 leading-relaxed">
+              ยืนยันการลบ <span className="font-semibold text-txt-primary">{deleteTarget.name}</span>{' '}
+              ({deleteTarget.username}) — role: {ROLE_LABEL[deleteTarget.role]}
+            </p>
+            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-lg mb-4 leading-relaxed">
+              ⚠ user จะหายออกจากระบบทันที — login ไม่ได้อีก แต่งานที่เคย assign ให้ยังอยู่ครบ
+            </p>
+            {deleteError && (
+              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-lg mb-3">{deleteError}</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={deleteConfirming}
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={submitDeleteUser}
+                disabled={deleteConfirming}
+                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-lg hover:bg-[#d94848] transition-colors disabled:opacity-50 ${deleteConfirming ? 'btn-loading' : ''}`}
+              >
+                ยืนยันลบ
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -417,8 +613,8 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <button onClick={() => setResetTarget(null)} disabled={resetSaving}
                 className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg transition-colors">ยกเลิก</button>
               <button onClick={submitReset} disabled={resetSaving || password.length < 6}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
-                {resetSaving ? 'กำลังบันทึก...' : 'บันทึกรหัสผ่านใหม่'}
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${resetSaving ? 'btn-loading' : ''}`}>
+                บันทึกรหัสผ่านใหม่
               </button>
             </div>
           </div>
@@ -491,8 +687,8 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <button onClick={() => setShowAddUser(false)} disabled={addingUser}
                 className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg transition-colors">ยกเลิก</button>
               <button onClick={submitAddUser} disabled={addingUser || !newUser.name.trim() || !newUser.username.trim() || newUser.password.length < 6}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
-                {addingUser ? 'กำลังสร้าง...' : 'สร้าง User'}
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${addingUser ? 'btn-loading' : ''}`}>
+                สร้าง User
               </button>
             </div>
           </div>
@@ -514,8 +710,8 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <button onClick={() => setShowAddSquad(false)} disabled={addingSquad}
                 className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg transition-colors">ยกเลิก</button>
               <button onClick={addSquad} disabled={addingSquad || !newSquadName.trim()}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
-                {addingSquad ? 'กำลังสร้าง...' : 'สร้าง Squad'}
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${addingSquad ? 'btn-loading' : ''}`}>
+                สร้าง Squad
               </button>
             </div>
           </div>
