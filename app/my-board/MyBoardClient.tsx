@@ -270,10 +270,30 @@ export default function MyBoardClient({
   const [flagError,  setFlagError]  = useState('');
   const [flagging,   setFlagging]   = useState(false);
 
+  /* ── Start-timer modal (To Do → In Progress) ── */
+  type StartTimerModal = { taskId: string; taskTitle: string; pendingLanes: LaneData[] };
+  const [startTimerModal,   setStartTimerModal]   = useState<StartTimerModal | null>(null);
+  const [startTimerSaving,  setStartTimerSaving]  = useState(false);
+
+  /* ── Review-time modal (any → Review) ── */
+  type ReviewTimeModalData = {
+    taskId: string; taskTitle: string; pendingLanes: LaneData[];
+    hasTime: boolean; totalNormalMin: number; totalOtMin: number;
+  };
+  const [reviewTimeModal,   setReviewTimeModal]   = useState<ReviewTimeModalData | null>(null);
+  const [reviewMode,        setReviewMode]        = useState<'auto' | 'manual' | null>(null);
+  const [reviewNormalHrs,   setReviewNormalHrs]   = useState('');
+  const [reviewOtHrs,       setReviewOtHrs]       = useState('');
+  const [reviewReplace,     setReviewReplace]     = useState(false);
+  const [reviewTimeAdded,   setReviewTimeAdded]   = useState(false);
+  const [reviewTimeSaving,  setReviewTimeSaving]  = useState(false);
+  const [reviewTimeError,   setReviewTimeError]   = useState('');
+
   /* ── Lane management ── */
   const [addingLane,  setAddingLane]  = useState(false);
   const [newLaneName, setNewLaneName] = useState('');
   const [savingLane,  setSavingLane]  = useState(false);
+
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -359,6 +379,34 @@ export default function MyBoardClient({
         setReviewBlockMsg('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้');
         setLanes(preDragRef.current);
         return;
+      }
+    }
+
+    /* ── Time tracking intercepts for cross-lane moves ── */
+    {
+      const preDragSrc = preDragRef.current.find(l => l.tasks.some(t => t.id === activeId));
+      const currentDst = current.find(l => l.tasks.some(t => t.id === activeId));
+      if (preDragSrc && currentDst && preDragSrc.id !== currentDst.id) {
+        const srcName = preDragSrc.name;
+        const dstName = currentDst.name;
+
+        if (srcName === 'To Do' && dstName === 'In Progress') {
+          const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
+          setStartTimerModal({ taskId: activeId, taskTitle: t.title, pendingLanes: current });
+          return;
+        }
+
+        if (dstName === 'Review') {
+          const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
+          setReviewTimeModal({
+            taskId: activeId, taskTitle: t.title, pendingLanes: current,
+            hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
+            totalNormalMin: t.totalNormalMin, totalOtMin: t.totalOtMin,
+          });
+          setReviewMode(null); setReviewNormalHrs(''); setReviewOtHrs('');
+          setReviewReplace(false); setReviewTimeAdded(false); setReviewTimeError('');
+          return;
+        }
       }
     }
 
@@ -466,6 +514,87 @@ export default function MyBoardClient({
 
   function onTaskCreated(laneId: string, task: TaskData) {
     setLanes(lanesRef.current.map(l => l.id === laneId ? { ...l, tasks: [...l.tasks, task] } : l));
+  }
+
+  /* ─── Start-timer modal handlers ─── */
+  async function confirmStartTimer() {
+    if (!startTimerModal) return;
+    setStartTimerSaving(true);
+    await fetch(`/api/tasks/${startTimerModal.taskId}/timelog/start`, { method: 'POST' });
+    saveOrder(startTimerModal.pendingLanes);
+    setStartTimerModal(null);
+    setStartTimerSaving(false);
+  }
+  function skipStartTimer() {
+    if (!startTimerModal) return;
+    saveOrder(startTimerModal.pendingLanes);
+    setStartTimerModal(null);
+  }
+
+  /* ─── Review-time modal handlers ─── */
+  async function submitReviewAuto() {
+    if (!reviewTimeModal) return;
+    setReviewTimeSaving(true); setReviewTimeError('');
+    const res = await fetch(`/api/tasks/${reviewTimeModal.taskId}/timelog/stop`, { method: 'POST' });
+    if (res.ok) {
+      const log = await res.json();
+      const updatedLanes = reviewTimeModal.pendingLanes.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === reviewTimeModal.taskId
+            ? { ...t, totalNormalMin: t.totalNormalMin + log.normalMinutes, totalOtMin: t.totalOtMin + log.otMinutes }
+            : t
+        ),
+      }));
+      setLanes(updatedLanes);
+      setReviewTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true } : m);
+      setReviewTimeAdded(true);
+    } else {
+      setReviewTimeError(
+        res.status === 404
+          ? 'ไม่มีตัวจับเวลาที่กำลังทำงานอยู่ — กรุณาเลือกบันทึก manual'
+          : await res.text()
+      );
+    }
+    setReviewTimeSaving(false);
+  }
+
+  async function submitReviewManual() {
+    if (!reviewTimeModal) return;
+    const n = parseFloat(reviewNormalHrs);
+    if (!n || n <= 0) { setReviewTimeError('กรุณากรอกชั่วโมงที่ทำงาน'); return; }
+    setReviewTimeSaving(true); setReviewTimeError('');
+    const res = await fetch(`/api/tasks/${reviewTimeModal.taskId}/timelog`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ normalHours: n, otHours: parseFloat(reviewOtHrs) || 0, replace: reviewReplace }),
+    });
+    if (res.ok) {
+      const log = await res.json();
+      const newNormal = reviewReplace ? log.normalMinutes : reviewTimeModal.totalNormalMin + log.normalMinutes;
+      const newOt     = reviewReplace ? log.otMinutes    : reviewTimeModal.totalOtMin    + log.otMinutes;
+      const updatedLanes = reviewTimeModal.pendingLanes.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === reviewTimeModal.taskId ? { ...t, totalNormalMin: newNormal, totalOtMin: newOt } : t
+        ),
+      }));
+      setLanes(updatedLanes);
+      setReviewTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true, totalNormalMin: newNormal, totalOtMin: newOt } : m);
+      setReviewNormalHrs(''); setReviewOtHrs('');
+      setReviewTimeAdded(true);
+    } else {
+      setReviewTimeError(await res.text());
+    }
+    setReviewTimeSaving(false);
+  }
+
+  function proceedToReview() {
+    saveOrder(lanesRef.current);
+    setReviewTimeModal(null);
+    setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
+  }
+  function cancelReviewModal() {
+    setLanes(preDragRef.current);
+    setReviewTimeModal(null);
+    setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
   }
 
   /* ─── Render ─────────────────────────────────────────── */
@@ -628,6 +757,156 @@ export default function MyBoardClient({
         </div>
       )}
 
+      {/* ── Modal: Start timer (To Do → In Progress) ──────── */}
+      {startTimerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[420px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">▶ เริ่มบันทึกเวลา?</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-4">
+              งาน <span className="font-medium text-txt-primary">"{startTimerModal.taskTitle}"</span>{' '}
+              กำลังย้ายไป <span className="text-accent">In Progress</span><br />
+              ต้องการให้ระบบเริ่มจับเวลาอัตโนมัติไหม?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={skipStartTimer} disabled={startTimerSaving}
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                ข้าม — ย้ายโดยไม่จับเวลา
+              </button>
+              <button onClick={confirmStartTimer} disabled={startTimerSaving}
+                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
+                {startTimerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Record time before Review ────────────── */}
+      {reviewTimeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[450px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">⏱ บันทึกเวลาก่อนส่ง Review</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-2">
+              งาน <span className="font-medium text-txt-primary">"{reviewTimeModal.taskTitle}"</span>
+            </p>
+
+            {reviewTimeModal.hasTime && !reviewTimeAdded && (
+              <div className="flex items-center gap-2 text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-lg mb-3">
+                <span>✓ เวลาที่บันทึกแล้ว:</span>
+                <span className="font-medium">{fmt(reviewTimeModal.totalNormalMin)}</span>
+                {reviewTimeModal.totalOtMin > 0 && (
+                  <span className="text-warning">+OT {fmt(reviewTimeModal.totalOtMin)}</span>
+                )}
+                <span className="text-txt-muted ml-auto">· เพิ่มเวลาได้ถ้าต้องการ</span>
+              </div>
+            )}
+
+            {reviewTimeAdded && (
+              <div className="text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-lg mb-3">
+                ✓ บันทึกเวลาเรียบร้อย — กดยืนยันเพื่อย้ายงานไป Review
+              </div>
+            )}
+
+            {!reviewTimeAdded && (
+              <div className="mb-3">
+                <p className="text-[11.5px] text-txt-muted mb-2.5">
+                  {reviewTimeModal.hasTime ? 'เพิ่มเวลาเพิ่มเติม (ไม่บังคับ):' : <>กรุณาเลือกวิธีบันทึกเวลา <span className="text-danger">(จำเป็น)</span></>}
+                </p>
+
+                {/* Mode selector */}
+                <div className="flex flex-col gap-2 mb-3">
+                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                    reviewMode === 'auto' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
+                  }`}>
+                    <input type="radio" name="revMode" value="auto" checked={reviewMode === 'auto'}
+                      onChange={() => { setReviewMode('auto'); setReviewTimeError(''); }} className="mt-0.5 accent-accent" />
+                    <div>
+                      <p className="text-[12.5px] text-txt-primary">⏹ หยุดตัวจับเวลา (บันทึกอัตโนมัติ)</p>
+                      <p className="text-[11px] text-txt-muted">หยุดการนับเวลาที่กำลังทำงานอยู่และบันทึกเวลาที่ผ่านมา</p>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                    reviewMode === 'manual' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
+                  }`}>
+                    <input type="radio" name="revMode" value="manual" checked={reviewMode === 'manual'}
+                      onChange={() => { setReviewMode('manual'); setReviewTimeError(''); }} className="mt-0.5 accent-accent" />
+                    <span className="text-[12.5px] text-txt-primary">✎ บันทึกเวลา manual</span>
+                  </label>
+                </div>
+
+                {/* Auto confirm */}
+                {reviewMode === 'auto' && (
+                  <button onClick={submitReviewAuto} disabled={reviewTimeSaving}
+                    className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50">
+                    {reviewTimeSaving ? 'กำลังบันทึก...' : '⏹ หยุดและบันทึกเวลา'}
+                  </button>
+                )}
+
+                {/* Manual inputs */}
+                {reviewMode === 'manual' && (
+                  <div className="flex flex-col gap-2">
+                    {reviewTimeModal.hasTime && (
+                      <div className="flex gap-4 px-1">
+                        <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
+                          <input type="radio" name="revManualMode" checked={!reviewReplace}
+                            onChange={() => setReviewReplace(false)} className="accent-accent" />
+                          เพิ่มเติม (บวกกับเวลาเดิม)
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
+                          <input type="radio" name="revManualMode" checked={reviewReplace}
+                            onChange={() => setReviewReplace(true)} className="accent-accent" />
+                          แทนที่เวลาเดิม
+                        </label>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="block text-[11px] text-txt-muted mb-1">Normal (ชม.)</label>
+                        <input type="number" min="0.25" step="0.25" autoFocus
+                          value={reviewNormalHrs} onChange={e => setReviewNormalHrs(e.target.value)}
+                          placeholder="เช่น 2.5"
+                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-[11px] text-txt-muted mb-1">OT (ชม.) — ไม่บังคับ</label>
+                        <input type="number" min="0" step="0.25"
+                          value={reviewOtHrs} onChange={e => setReviewOtHrs(e.target.value)}
+                          placeholder="0"
+                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+                      </div>
+                    </div>
+                    <button onClick={submitReviewManual} disabled={reviewTimeSaving || !reviewNormalHrs}
+                      className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50">
+                      {reviewTimeSaving ? 'กำลังบันทึก...' : '✎ บันทึกเวลา'}
+                    </button>
+                  </div>
+                )}
+
+                {reviewTimeError && <p className="text-[11.5px] text-danger mt-2">{reviewTimeError}</p>}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end mt-1">
+              <button onClick={cancelReviewModal}
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                ยกเลิก
+              </button>
+              {reviewTimeModal.hasTime && !reviewTimeAdded && (
+                <button onClick={proceedToReview}
+                  className="px-4 py-2 text-[12.5px] text-txt-secondary hover:text-txt-primary border border-app-border rounded-lg transition-colors">
+                  ข้าม — ย้ายงานเลย
+                </button>
+              )}
+              <button onClick={proceedToReview}
+                disabled={!reviewTimeModal.hasTime && !reviewTimeAdded}
+                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
+                ยืนยันและย้ายงาน →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal: Resolve issue ───────────────────────── */}
       {resolveTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
@@ -659,6 +938,7 @@ export default function MyBoardClient({
           </div>
         </div>
       )}
+
     </div>
   );
 }

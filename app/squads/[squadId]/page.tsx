@@ -1,44 +1,52 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getSession } from '@/lib/session';
 import { redirect, notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import type { SessionUser } from '@/lib/rbac';
+import { canApproveReview as canApproveReviewFn, canCreateTaskOnSquadBoard } from '@/lib/rbac';
 import { computeSquadBoardStatus } from '@/lib/importTasks';
 import Topbar from '@/components/Topbar';
 import SquadBoardClient from './SquadBoardClient';
 
 export default async function SquadPage({ params }: { params: { squadId: string } }) {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
-  // QA_MANAGER ดูได้ทุก squad — ADMIN เช่นกัน
-  if (user.role !== 'ADMIN' && user.role !== 'QA_MANAGER' && user.squadId !== params.squadId) {
+  // ADMIN, QA_MANAGER และ floating pool member ดูได้ทุก squad
+  if (
+    user.role !== 'ADMIN' &&
+    user.role !== 'QA_MANAGER' &&
+    !user.isFloatingPoolMember &&
+    user.squadId !== params.squadId
+  ) {
     redirect(user.squadId ? `/squads/${user.squadId}` : '/tasks');
   }
 
-  const squad = await prisma.squad.findUnique({
-    where: { id: params.squadId },
-    include: { users: { where: { active: true }, select: { id: true, name: true, role: true } } },
-  });
+  const [squad, tasks, allSquads] = await Promise.all([
+    prisma.squad.findUnique({
+      where: { id: params.squadId },
+      include: { users: { where: { active: true }, select: { id: true, name: true, role: true } } },
+    }),
+    prisma.task.findMany({
+      where: { squadId: params.squadId, deletedAt: null },
+      include: {
+        lane:     { select: { name: true } },
+        assignee: { select: { id: true, name: true } },
+        timeLogs: { select: { normalMinutes: true, otMinutes: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+    (user.role === 'ADMIN' || user.role === 'QA_MANAGER' || user.isFloatingPoolMember)
+      ? prisma.squad.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
+      : Promise.resolve(null),
+  ]);
   if (!squad) notFound();
 
-  const tasks = await prisma.task.findMany({
-    where: { squadId: params.squadId, deletedAt: null },
-    include: {
-      lane:     { select: { name: true } },
-      assignee: { select: { id: true, name: true } },
-      timeLogs: { select: { normalMinutes: true, otMinutes: true } },
-    },
-    orderBy: { createdAt: 'asc' },
-  });
+  const squads = allSquads ?? [{ id: squad.id, name: squad.name }];
 
-  const squads = (user.role === 'ADMIN' || user.role === 'QA_MANAGER')
-    ? await prisma.squad.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })
-    : [{ id: squad.id, name: squad.name }];
-
-  const canAssign       = user.role === 'ADMIN' || user.role === 'QA_LEAD';
-  const canApproveReview = user.role === 'ADMIN' || (user.role === 'QA_LEAD' && user.squadId === params.squadId);
+  const canAssign        = user.role === 'ADMIN' || user.role === 'QA_LEAD';
+  const canApproveReview = canApproveReviewFn(user, params.squadId);
+  const canCreate        = canCreateTaskOnSquadBoard(user, params.squadId);
 
   // Group tasks into 5 derived columns
   const COLUMNS = ['To do', 'On-Board', 'Wait for review', 'Done', 'มีปัญหา'] as const;
@@ -61,8 +69,8 @@ export default async function SquadPage({ params }: { params: { squadId: string 
       assignee:           t.assignee,
       laneName:           t.lane?.name ?? null,
       reviewApprovedAt:   t.reviewApprovedAt?.toISOString() ?? null,
-      totalNormalMin:     t.timeLogs.reduce((s, l) => s + l.normalMinutes, 0),
-      totalOtMin:         t.timeLogs.reduce((s, l) => s + l.otMinutes, 0),
+      totalNormalMin:     t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+      totalOtMin:         t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
     })),
   }));
 
@@ -82,8 +90,10 @@ export default async function SquadPage({ params }: { params: { squadId: string 
         members={members}
         squads={squads}
         userId={user.id}
+        userName={user.name}
         canAssign={canAssign}
         canApproveReview={canApproveReview}
+        canCreateTask={canCreate}
       />
     </>
   );

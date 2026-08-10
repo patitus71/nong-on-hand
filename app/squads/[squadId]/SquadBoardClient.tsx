@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { fmt, initials, avatarColor } from '@/lib/ui';
@@ -29,19 +29,89 @@ type Props = {
   members:           Member[];
   squads:            SquadOpt[];
   userId:            string;
+  userName:          string;
   canAssign:         boolean;
   canApproveReview:  boolean;
+  canCreateTask:     boolean;
 };
 
 type ClaimTarget = { taskId: string; taskTitle: string };
 type FlagTarget  = { taskId: string; taskTitle: string };
 
 export default function SquadBoardClient({
-  currentSquadId, currentSquadName, lanes, members, squads, userId, canAssign, canApproveReview,
+  currentSquadId, currentSquadName, lanes, members, squads, userId, userName, canAssign, canApproveReview, canCreateTask,
 }: Props) {
   const router = useRouter();
 
+  // ── Auto-refresh every 30 s so changes by other users (QA Engineer moving cards)
+  // become visible without a manual reload ────────────────────────────────────────
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const refreshingRef = useRef(false);
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      router.refresh();
+      setLastRefreshed(new Date());
+      refreshingRef.current = false;
+    }, 30_000);
+    return () => clearInterval(tick);
+  }, [router]);
+
+  function manualRefresh() {
+    router.refresh();
+    setLastRefreshed(new Date());
+  }
+
   const [activeMember, setActiveMember] = useState<string | null>(null);
+
+  // ── Personal export ──────────────────────────────────────────────────────────
+  const [showExport,    setShowExport]    = useState(false);
+  const [exportStart,   setExportStart]   = useState('');
+  const [exportEnd,     setExportEnd]     = useState('');
+  const [exportMd,      setExportMd]      = useState('');
+  const [exportLoading, setExportLoading] = useState(false);
+
+  function openExport() {
+    const today = new Date();
+    const day   = today.getDay();
+    const mon   = new Date(today);
+    mon.setDate(today.getDate() + (day === 0 ? -6 : 1 - day));
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    const toISO = (d: Date) => d.toISOString().slice(0, 10);
+    setExportStart(toISO(mon));
+    setExportEnd(toISO(sun));
+    setExportMd('');
+    setShowExport(true);
+  }
+
+  async function fetchExport() {
+    if (!exportStart || !exportEnd) return;
+    setExportLoading(true);
+    const res = await fetch(`/api/reports/personal?weekStart=${exportStart}&weekEnd=${exportEnd}`);
+    if (res.ok) setExportMd(await res.text());
+    setExportLoading(false);
+  }
+
+  function downloadMd() {
+    const blob = new Blob([exportMd], { type: 'text/markdown;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `personal-report-${exportStart}.md`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printPdf() {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<html><head><title>Personal Report</title>
+      <style>body{font-family:sans-serif;padding:2rem;max-width:800px;margin:auto}
+      pre{white-space:pre-wrap;font-family:inherit;line-height:1.6;font-size:14px}</style>
+      </head><body><pre>${exportMd.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre></body></html>`);
+    win.document.close(); win.print();
+  }
 
   const visibleLanes = lanes.map(lane => ({
     ...lane,
@@ -130,6 +200,28 @@ export default function SquadBoardClient({
     if (res.ok) router.refresh();
   }
 
+  // ── Create task (inline, To do column) ─────────────────────────────────────
+  const [showCreate,   setShowCreate]   = useState(false);
+  const [createTitle,  setCreateTitle]  = useState('');
+  const [createLoading, setCreateLoading] = useState(false);
+
+  async function submitCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!createTitle.trim()) return;
+    setCreateLoading(true);
+    const res = await fetch('/api/tasks', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ title: createTitle.trim(), squadId: currentSquadId, assigneeId: null }),
+    });
+    if (res.ok) {
+      setCreateTitle('');
+      setShowCreate(false);
+      router.refresh();
+    }
+    setCreateLoading(false);
+  }
+
   // ── Approve review ───────────────────────────────────────────────────────────
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
@@ -158,6 +250,24 @@ export default function SquadBoardClient({
           >
             {squads.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={manualRefresh}
+            title="อัปเดตข้อมูลล่าสุด"
+            className="bg-surface-2 border border-app-border text-txt-muted text-[13px] px-2.5 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] hover:text-txt-primary transition-colors"
+          >
+            ↻
+            <span className="text-[11px]">
+              {lastRefreshed.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          </button>
+          <button
+            onClick={openExport}
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] transition-colors"
+          >
+            ↓ Export Report
+          </button>
         </div>
       </div>
 
@@ -346,6 +456,46 @@ export default function SquadBoardClient({
                 </div>
               );
             })}
+
+            {lane.name === 'To do' && canCreateTask && (
+              <div className="mt-2">
+                {showCreate ? (
+                  <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
+                    <input
+                      autoFocus
+                      value={createTitle}
+                      onChange={e => setCreateTitle(e.target.value)}
+                      placeholder="ชื่องาน..."
+                      className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-md focus:outline-none font-[inherit]"
+                    />
+                    <div className="flex gap-1.5">
+                      <button
+                        type="submit"
+                        disabled={createLoading || !createTitle.trim()}
+                        className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-md font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
+                      >
+                        เพิ่ม
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowCreate(false); setCreateTitle(''); }}
+                        disabled={createLoading}
+                        className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-md transition-colors"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => setShowCreate(true)}
+                    className="w-full text-[12px] text-txt-muted hover:text-txt-primary border border-dashed border-app-border rounded-lg py-2 transition-colors hover:border-accent hover:bg-surface-2"
+                  >
+                    + เพิ่มงานใหม่
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -388,6 +538,55 @@ export default function SquadBoardClient({
                 ยืนยัน Flag
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Export modal ── */}
+      {showExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[600px] max-h-[85vh] flex flex-col shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[15px] font-semibold text-txt-primary">Export รายงานส่วนตัว — {userName}</h3>
+              <button onClick={() => setShowExport(false)}
+                className="text-txt-muted hover:text-txt-secondary text-[18px] leading-none px-1">✕</button>
+            </div>
+            <div className="flex items-end gap-3 mb-4">
+              <div>
+                <label className="block text-[12px] text-txt-secondary mb-1">ตั้งแต่วันที่</label>
+                <input type="date" value={exportStart}
+                  onChange={e => { setExportStart(e.target.value); setExportMd(''); }}
+                  className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+              </div>
+              <div>
+                <label className="block text-[12px] text-txt-secondary mb-1">ถึงวันที่</label>
+                <input type="date" value={exportEnd}
+                  onChange={e => { setExportEnd(e.target.value); setExportMd(''); }}
+                  className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+              </div>
+              <button onClick={fetchExport}
+                disabled={exportLoading || !exportStart || !exportEnd}
+                className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-[7px] rounded-lg disabled:opacity-50 transition-colors">
+                {exportLoading ? 'กำลังสร้าง...' : 'สร้าง Report'}
+              </button>
+            </div>
+            {exportMd && (
+              <>
+                <div className="flex-1 overflow-y-auto bg-surface-2 border border-app-border rounded-lg p-3 mb-4 min-h-0">
+                  <pre className="text-[12.5px] text-txt-secondary whitespace-pre-wrap font-mono leading-relaxed">{exportMd}</pre>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button onClick={printPdf}
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-lg hover:bg-[#2a2e3a] transition-colors">
+                    Print / PDF
+                  </button>
+                  <button onClick={downloadMd}
+                    className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-lg transition-colors">
+                    ↓ Download .md
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

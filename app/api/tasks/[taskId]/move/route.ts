@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import type { SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
+import { resolveTimerAction, startTimer, stopTimer } from '@/lib/autoTimeTracking';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -34,7 +35,8 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     return new Response('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้', { status: 403 });
   }
 
-  const resetApproval = shouldResetReviewApproval(oldLaneName, newLaneName);
+  const resetApproval  = shouldResetReviewApproval(oldLaneName, newLaneName);
+  const enteringDone   = newLaneName === 'Done';
 
   const updated = await prisma.task.update({
     where: { id: params.taskId },
@@ -42,8 +44,17 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
       laneId,
       order: order ?? 0,
       ...(resetApproval ? { reviewApprovedAt: null, reviewApprovedById: null } : {}),
+      ...(enteringDone   ? { completedAt: new Date() } : {}),
     },
   });
+
+  // Auto time tracking — start/stop timer ตามชื่อเลน
+  const timerAction = resolveTimerAction(oldLaneName, newLaneName);
+  if (timerAction === 'start') {
+    await startTimer(params.taskId, user.id);
+  } else if (timerAction === 'stop') {
+    await stopTimer(params.taskId, user.id);
+  }
 
   return Response.json(updated);
 }

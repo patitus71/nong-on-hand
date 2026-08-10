@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { fmt, initials, avatarColor } from '@/lib/ui';
 
-type TimeLog  = { normalMinutes: number; otMinutes: number; startAt: string; endAt: string };
-type RetroRef = { id: string; category: string; content: string; retroId: string; retroTitle: string; createdAt: string };
+type TimeLog     = { normalMinutes: number; otMinutes: number; startAt: string; endAt: string };
+type TaskLogEntry = { id: string; action: string; detail: string | null; createdAt: string; userName: string };
+type RetroRef    = { id: string; category: string; content: string; retroId: string; retroTitle: string; createdAt: string };
 type IssueLog = {
   id: string; issueNote: string;
   flaggedByName: string; flaggedAt: string;
@@ -19,9 +21,19 @@ type Task = {
   assignee: { id: string; name: string } | null;
   laneName: string | null;
   timeLogs:   TimeLog[];
+  taskLogs:   TaskLogEntry[];
   retroItems: RetroRef[];
   issueLogs:  IssueLog[];
 };
+
+function fmtElapsed(secs: number) {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleString('th-TH', {
@@ -37,6 +49,7 @@ function catLabel(cat: string) {
 }
 
 export default function TaskDetailClient({ task: init, userId }: { task: Task; userId: string }) {
+  const router = useRouter();
   const [task, setTask] = useState(init);
 
   // Flag state
@@ -49,6 +62,96 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
   const [resolutionNote,  setResolutionNote]  = useState('');
   const [resolveError,    setResolveError]    = useState('');
   const [resolveSaving,   setResolveSaving]   = useState(false);
+
+  // Manual time log state
+  const [timeLogOpen,    setTimeLogOpen]    = useState(false);
+  const [normalHours,    setNormalHours]    = useState('');
+  const [otHours,        setOtHours]        = useState('');
+  const [timeLogSaving,  setTimeLogSaving]  = useState(false);
+  const [timeLogError,   setTimeLogError]   = useState('');
+
+  // Clear all time logs state
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearSaving,  setClearSaving]  = useState(false);
+
+  async function clearAllTimeLogs() {
+    setClearSaving(true);
+    const res = await fetch(`/api/tasks/${task.id}/timelog`, { method: 'DELETE' });
+    if (res.ok) {
+      const data = await res.json();
+      setTask(t => ({ ...t, timeLogs: [], taskLogs: [data.taskLog, ...t.taskLogs] }));
+      setClearConfirm(false);
+    }
+    setClearSaving(false);
+  }
+
+  // Auto timer state
+  const [timerSaving,  setTimerSaving]  = useState(false);
+  const openSession = task.timeLogs.find(l => l.endAt === '');
+  const [elapsed, setElapsed] = useState<number>(() =>
+    openSession ? Math.floor((Date.now() - new Date(openSession.startAt).getTime()) / 1000) : 0
+  );
+
+  useEffect(() => {
+    if (!openSession) return;
+    setElapsed(Math.floor((Date.now() - new Date(openSession.startAt).getTime()) / 1000));
+    const tick = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - new Date(openSession.startAt).getTime()) / 1000));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [openSession?.startAt]);
+
+  async function startTimerFn() {
+    setTimerSaving(true);
+    const res = await fetch(`/api/tasks/${task.id}/timelog/start`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      setTask(t => ({
+        ...t,
+        timeLogs: [{ normalMinutes: 0, otMinutes: 0, startAt: data.startAt, endAt: '' }, ...t.timeLogs],
+      }));
+      setElapsed(0);
+    }
+    setTimerSaving(false);
+  }
+
+  async function stopTimerFn() {
+    setTimerSaving(true);
+    const res = await fetch(`/api/tasks/${task.id}/timelog/stop`, { method: 'POST' });
+    if (res.ok) {
+      const log = await res.json();
+      setTask(t => ({
+        ...t,
+        timeLogs: t.timeLogs.map(l =>
+          l.endAt === ''
+            ? { normalMinutes: log.normalMinutes, otMinutes: log.otMinutes, startAt: log.startAt, endAt: log.endAt }
+            : l
+        ),
+      }));
+      setElapsed(0);
+    }
+    setTimerSaving(false);
+  }
+
+  async function submitTimeLog(e: React.FormEvent) {
+    e.preventDefault();
+    const n = parseFloat(normalHours);
+    if (!n || n <= 0) { setTimeLogError('กรุณากรอกชั่วโมงที่ทำงาน'); return; }
+    setTimeLogSaving(true);
+    setTimeLogError('');
+    const res = await fetch(`/api/tasks/${task.id}/timelog`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ normalHours: n, otHours: parseFloat(otHours) || 0 }),
+    });
+    if (res.ok) {
+      const log = await res.json();
+      setTask(t => ({ ...t, timeLogs: [...t.timeLogs, log] }));
+      setNormalHours(''); setOtHours(''); setTimeLogOpen(false);
+    } else {
+      setTimeLogError(await res.text());
+    }
+    setTimeLogSaving(false);
+  }
 
   // Send-to-retro state
   const [retroOpen,    setRetroOpen]    = useState(false);
@@ -130,9 +233,12 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
 
   return (
     <div className="max-w-[900px] mx-auto px-7 py-6 pb-16">
-      <Link href="/tasks" className="text-[12.5px] text-txt-secondary hover:text-txt-primary inline-block mb-3.5">
+      <button
+        onClick={() => router.back()}
+        className="text-[12.5px] text-txt-secondary hover:text-txt-primary inline-block mb-3.5"
+      >
         ← กลับ
-      </Link>
+      </button>
 
       {/* Issue banner */}
       {task.hasIssue && (
@@ -216,26 +322,63 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
             </>
           )}
 
-          {/* Time logs */}
-          {task.timeLogs.length > 0 && (
-            <>
-              <p className="text-[11px] uppercase tracking-wider text-txt-muted font-medium mt-5 mb-2">ประวัติเวลาที่ log</p>
-              <div className="bg-surface-1 border border-app-border rounded-[10px] overflow-hidden">
-                {task.timeLogs.map((l, i) => {
-                  const nFmt = fmt(l.normalMinutes);
-                  const oFmt = fmt(l.otMinutes);
-                  return (
-                    <div key={i} className="flex items-center justify-between text-[12.5px] px-3.5 py-2.5 border-b border-app-border last:border-none">
-                      <span className="text-txt-secondary">{fmtDate(l.startAt)} – {fmtDate(l.endAt)}</span>
-                      <span className="text-txt-primary">
-                        {nFmt ?? '—'}{oFmt && <span className="text-warning text-[11px] ml-1.5">+OT {oFmt}</span>}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+          {/* Combined time history (TimeLogs + TaskLogs) */}
+          {(task.timeLogs.length > 0 || task.taskLogs.length > 0) && (() => {
+            type H = { key: string } & (
+              | { kind: 'time'; log: TimeLog }
+              | { kind: 'action'; log: TaskLogEntry }
+            );
+            const history: H[] = [
+              ...task.timeLogs.map(l  => ({ kind: 'time'   as const, log: l,  key: l.startAt  })),
+              ...task.taskLogs.map(l  => ({ kind: 'action' as const, log: l,  key: l.createdAt })),
+            ].sort((a, b) => new Date(b.key).getTime() - new Date(a.key).getTime());
+
+            return (
+              <>
+                <p className="text-[11px] uppercase tracking-wider text-txt-muted font-medium mt-5 mb-2">ประวัติเวลาที่ log</p>
+                <div className="bg-surface-1 border border-app-border rounded-[10px] overflow-hidden">
+                  {history.map((h, i) => {
+                    if (h.kind === 'action') {
+                      let detail: { deletedCount?: number; totalNormalMin?: number; totalOtMin?: number } = {};
+                      try { detail = JSON.parse(h.log.detail ?? '{}'); } catch { /* empty */ }
+                      const nFmt = fmt(detail.totalNormalMin ?? 0);
+                      const oFmt = fmt(detail.totalOtMin ?? 0);
+                      return (
+                        <div key={h.log.id} className="flex items-start justify-between text-[12px] px-3.5 py-2.5 border-b border-app-border last:border-none bg-danger-bg/40">
+                          <div>
+                            <span className="text-danger font-medium">🗑 ล้างเวลาทั้งหมด</span>
+                            <span className="text-txt-muted text-[11px] ml-2">โดย {h.log.userName}</span>
+                            {(nFmt || oFmt) && (
+                              <p className="text-[11px] text-txt-muted mt-0.5">
+                                ลบ {nFmt ?? '0'}{oFmt ? ` + OT ${oFmt}` : ''} ({detail.deletedCount ?? 0} session)
+                              </p>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-txt-muted whitespace-nowrap ml-3">{fmtDate(h.log.createdAt)}</span>
+                        </div>
+                      );
+                    }
+                    const l    = h.log as TimeLog;
+                    const nFmt = fmt(l.normalMinutes);
+                    const oFmt = fmt(l.otMinutes);
+                    return (
+                      <div key={i} className="flex items-center justify-between text-[12.5px] px-3.5 py-2.5 border-b border-app-border last:border-none">
+                        <span className="text-txt-secondary">
+                          {fmtDate(l.startAt)} – {l.endAt
+                            ? fmtDate(l.endAt)
+                            : <span className="text-accent font-mono text-[11px]">กำลังนับ {fmtElapsed(elapsed)}</span>}
+                        </span>
+                        <span className="text-txt-primary">
+                          {l.endAt === '' ? <span className="text-accent text-[11px]">ยังไม่จบ</span> : (nFmt ?? '—')}
+                          {oFmt && <span className="text-warning text-[11px] ml-1.5">+OT {oFmt}</span>}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
         {/* ─── Right ─── */}
@@ -263,6 +406,91 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
 
           {/* Actions */}
           <div className="bg-surface-1 border border-app-border rounded-[10px] p-3.5 flex flex-col gap-2">
+
+            {/* Auto timer */}
+            {openSession ? (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between px-3 py-2 rounded-md border border-accent/50 bg-surface-2">
+                  <span className="text-[12px] text-accent">⏱ กำลังจับเวลา</span>
+                  <span className="text-[13px] font-mono text-txt-primary">{fmtElapsed(elapsed)}</span>
+                </div>
+                <button onClick={stopTimerFn} disabled={timerSaving}
+                  className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-danger/40 bg-surface-2 text-danger hover:bg-danger-bg transition-colors disabled:opacity-50">
+                  {timerSaving ? 'กำลังหยุด...' : '⏹ หยุดจับเวลา'}
+                </button>
+              </div>
+            ) : (
+              <button onClick={startTimerFn} disabled={timerSaving}
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-app-border bg-surface-2 hover:bg-[#2a2e3a] text-txt-primary transition-colors disabled:opacity-50">
+                {timerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
+              </button>
+            )}
+
+            {/* Manual time log */}
+            {!timeLogOpen ? (
+              <button onClick={() => { setTimeLogOpen(true); setTimeLogError(''); }}
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-app-border bg-surface-2 hover:bg-[#2a2e3a] text-txt-primary transition-colors">
+                ✎ บันทึกเวลา (manual)
+              </button>
+            ) : (
+              <form onSubmit={submitTimeLog} className="flex flex-col gap-2">
+                <p className="text-[12px] text-txt-secondary font-medium">บันทึกเวลาทำงาน</p>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="block text-[11px] text-txt-muted mb-1">Normal (ชม.)</label>
+                    <input
+                      type="number" min="0.25" step="0.25" autoFocus
+                      value={normalHours}
+                      onChange={e => setNormalHours(e.target.value)}
+                      placeholder="เช่น 2.5"
+                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-[11px] text-txt-muted mb-1">OT (ชม.) — ไม่บังคับ</label>
+                    <input
+                      type="number" min="0" step="0.25"
+                      value={otHours}
+                      onChange={e => setOtHours(e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
+                {timeLogError && <p className="text-[11.5px] text-danger">{timeLogError}</p>}
+                <div className="flex gap-1.5">
+                  <button type="submit" disabled={timeLogSaving || !normalHours}
+                    className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50">
+                    {timeLogSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+                  </button>
+                  <button type="button" onClick={() => { setTimeLogOpen(false); setTimeLogError(''); }}
+                    className="text-txt-muted text-[12px] px-2 py-1.5 hover:text-txt-secondary">ยกเลิก</button>
+                </div>
+              </form>
+            )}
+
+            {/* Clear all time logs */}
+            {task.timeLogs.length > 0 && (
+              !clearConfirm ? (
+                <button onClick={() => setClearConfirm(true)}
+                  className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-danger/30 bg-surface-2 text-danger/80 hover:text-danger hover:bg-danger-bg transition-colors">
+                  🗑 ล้างเวลาทั้งหมด
+                </button>
+              ) : (
+                <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-md border border-danger/40 bg-danger-bg">
+                  <p className="text-[12px] text-danger font-medium">ยืนยันลบเวลาทั้งหมด?</p>
+                  <p className="text-[11px] text-txt-muted">ไม่สามารถกู้คืนได้ แต่จะบันทึกลง Log</p>
+                  <div className="flex gap-1.5">
+                    <button onClick={clearAllTimeLogs} disabled={clearSaving}
+                      className="bg-danger text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50 hover:bg-danger/80 transition-colors">
+                      {clearSaving ? 'กำลังลบ...' : 'ยืนยัน ลบทั้งหมด'}
+                    </button>
+                    <button onClick={() => setClearConfirm(false)}
+                      className="text-txt-muted text-[12px] px-2 py-1.5 hover:text-txt-secondary">ยกเลิก</button>
+                  </div>
+                </div>
+              )
+            )}
 
             {/* Flag issue */}
             {!task.hasIssue && !flagging && (

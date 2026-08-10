@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { canCreateTask, type SessionUser } from '@/lib/rbac';
@@ -19,7 +18,7 @@ const SQ_TO_PERSONAL_LANE: Record<string, string> = {
 };
 
 export default async function MyBoardPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
@@ -101,8 +100,8 @@ export default async function MyBoardPage() {
         hasIssue:       t.hasIssue,
         laneName:       t.lane!.name,
         squadName:      t.squad!.name,
-        totalNormalMin: t.timeLogs.reduce((s, l) => s + l.normalMinutes, 0),
-        totalOtMin:     t.timeLogs.reduce((s, l) => s + l.otMinutes, 0),
+        totalNormalMin: t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+        totalOtMin:     t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
       });
     }
   }
@@ -119,8 +118,8 @@ export default async function MyBoardPage() {
         reviewApprovedAt: t.reviewApprovedAt?.toISOString() ?? null,
         squad:            t.squad ? { name: t.squad.name } : null,
         assignee:         t.assignee ? { name: t.assignee.name } : null,
-        totalNormalMin:   t.timeLogs.reduce((s, l) => s + l.normalMinutes, 0),
-        totalOtMin:       t.timeLogs.reduce((s, l) => s + l.otMinutes, 0),
+        totalNormalMin:   t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+        totalOtMin:       t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
       })),
       ...(sqByPersonalLane.get(l.name) ?? []).map(t => ({
         id:               t.id,
@@ -130,8 +129,8 @@ export default async function MyBoardPage() {
         reviewApprovedAt: null,
         squad:            t.squad ? { name: t.squad.name } : null,
         assignee:         null,
-        totalNormalMin:   t.timeLogs.reduce((s, l) => s + l.normalMinutes, 0),
-        totalOtMin:       t.timeLogs.reduce((s, l) => s + l.otMinutes, 0),
+        totalNormalMin:   t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+        totalOtMin:       t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
       })),
     ],
   }));

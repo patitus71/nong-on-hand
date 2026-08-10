@@ -10,6 +10,7 @@ export type SessionUser = {
   id: string;
   role: "ADMIN" | "QA_LEAD" | "QA_MANAGER" | "QA_ENGINEER";
   squadId: string | null;
+  isFloatingPoolMember?: boolean;
 };
 
 // ─── Basic Guards ──────────────────────────────────────────────────────────────
@@ -58,10 +59,11 @@ export async function assertNotLastAdmin(targetUserId: string) {
 
 /**
  * กรอง query ให้ QA_LEAD/QA_ENGINEER เห็นเฉพาะ squad ตัวเอง
- * ADMIN และ QA_MANAGER ไม่ถูกกรอง (QA_MANAGER ดูได้ทุก squad โดยเลือกจาก dropdown)
+ * ADMIN, QA_MANAGER และ floating pool member ไม่ถูกกรอง
  */
 export function squadScopeFilter(user: SessionUser) {
   if (user.role === "ADMIN" || user.role === "QA_MANAGER") return {};
+  if (user.isFloatingPoolMember) return {};
   if (!user.squadId) return { squadId: "___no_squad___" };
   return { squadId: user.squadId };
 }
@@ -115,9 +117,17 @@ export function canImportTasks(user: SessionUser): boolean {
   return user.role === "ADMIN" || user.role === "QA_LEAD";
 }
 
-/** สร้างงานใหม่: ทุก role ยกเว้น QA_MANAGER */
+/** สร้างงานใหม่ (My Board / tasks page): ทุก role ยกเว้น QA_MANAGER */
 export function canCreateTask(user: SessionUser): boolean {
   return user.role !== "QA_MANAGER";
+}
+
+/** สร้างงานบน Squad Board: ADMIN, QA_LEAD (เฉพาะ squad ตัวเอง), QA_MANAGER ทำได้ */
+export function canCreateTaskOnSquadBoard(user: SessionUser, targetSquadId: string): boolean {
+  if (user.role === "ADMIN") return true;
+  if (user.role === "QA_MANAGER") return true;
+  if (user.role === "QA_LEAD") return user.squadId === targetSquadId;
+  return false;
 }
 
 export type DeletableTask = {
@@ -199,12 +209,22 @@ export function canResetPassword(
 
 /**
  * อนุมัติ review: ADMIN ทำได้ทุก squad, QA_LEAD ทำได้เฉพาะ squad ตัวเอง
+ * Floating pool member review ได้ทุก squad (ไม่เช็ค squadId)
  * QA_MANAGER / QA_ENGINEER ทำไม่ได้
  */
 export function canApproveReview(user: SessionUser, targetSquadId: string): boolean {
   if (user.role === "ADMIN") return true;
+  if (user.isFloatingPoolMember) return true;
   if (user.role === "QA_LEAD") return user.squadId === targetSquadId;
   return false;
+}
+
+/**
+ * Self-assign งานข้าม squad: เฉพาะ floating pool member เท่านั้น
+ * QA_LEAD/QA_ENGINEER ปกติ assign ได้แค่ใน squad ตัวเอง
+ */
+export function canSelfAssignAcrossSquads(user: SessionUser): boolean {
+  return user.isFloatingPoolMember === true;
 }
 
 /**

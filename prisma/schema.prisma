@@ -40,14 +40,23 @@ enum RetroStatus {
   CLOSED
 }
 
+enum TimeLogSource {
+  AUTO
+  MANUAL
+}
+
 model Squad {
-  id        String   @id @default(cuid())
-  name      String   @unique // เช่น SQ1, SQ2
-  users     User[]
-  tasks     Task[]
-  retros    Retro[]
-  importBatches ImportBatch[]
-  createdAt DateTime @default(now())
+  id             String        @id @default(cuid())
+  name           String        @unique
+  isFloatingPool Boolean       @default(false)
+  users          User[]
+  tasks          Task[]
+  retros         Retro[]
+  importBatches  ImportBatch[]
+  weeklyReports  WeeklyReport[]
+  createdAt      DateTime      @default(now())
+
+  @@index([isFloatingPool])
 }
 
 model User {
@@ -69,10 +78,15 @@ model User {
   importBatches ImportBatch[]
   flaggedIssueLogs  TaskIssueLog[] @relation("IssueFlaggedBy")
   resolvedIssueLogs TaskIssueLog[] @relation("IssueResolvedBy")
-  flaggedTasksForDeletion Task[] @relation("TaskDeletionFlaggedBy")
-  reviewedTasks           Task[] @relation("TaskReviewApprovedBy")
-  notifications Notification[]
+  taskLogs          TaskLog[]
+  flaggedTasksForDeletion Task[]         @relation("TaskDeletionFlaggedBy")
+  reviewedTasks           Task[]         @relation("TaskReviewApprovedBy")
+  notifications           Notification[]
+  weeklyReports           WeeklyReport[] @relation("WeeklyReportGeneratedBy")
   createdAt    DateTime  @default(now())
+
+  @@index([squadId, active])
+  @@index([role, squadId, active])
 }
 
 model Board {
@@ -83,6 +97,8 @@ model Board {
   owner     User      @relation(fields: [ownerId], references: [id])
   lanes     Lane[]
   createdAt DateTime  @default(now())
+
+  @@index([ownerId, type])
 }
 
 // เลนแบบ Jira ที่ user สร้าง/จัดเรียงเองได้
@@ -124,12 +140,20 @@ model Task {
   reviewApprovedAt      DateTime? // เวลาที่ QA_LEAD อนุมัติ review (null = ยังไม่ผ่าน)
   reviewApprovedById    String?
   reviewApprovedBy      User?     @relation("TaskReviewApprovedBy", fields: [reviewApprovedById], references: [id])
+  completedAt           DateTime? // set ตอนย้ายเข้าเลน Done (update ถ้าเข้า Done ซ้ำ)
   timeLogs      TimeLog[]
+  taskLogs      TaskLog[]
   retroItems    RetroItem[]
   issueLogs     TaskIssueLog[]
   notifications Notification[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([deletedAt])
+  @@index([squadId, deletedAt])
+  @@index([assigneeId, deletedAt])
+  @@index([laneId])
+  @@index([flaggedForDeletion])
 }
 
 model TaskIssueLog {
@@ -148,7 +172,20 @@ model TaskIssueLog {
   createdAt      DateTime  @default(now())
 }
 
-// กระดาน Retrospective ต่อ Squad (ทำได้หลายรอบ เช่น ทุกจบ Sprint)
+model WeeklyReport {
+  id              String   @id @default(cuid())
+  squadId         String
+  squad           Squad    @relation(fields: [squadId], references: [id])
+  weekStart       DateTime
+  weekEnd         DateTime
+  generatedById   String
+  generatedBy     User     @relation("WeeklyReportGeneratedBy", fields: [generatedById], references: [id])
+  contentMarkdown String
+  retroId         String?
+  retro           Retro?   @relation(fields: [retroId], references: [id])
+  createdAt       DateTime @default(now())
+}
+
 // บันทึกทุกครั้งที่มีการ import งานจาก Excel/CSV เพื่อ track ว่าใคร upload ไฟล์ไหนเมื่อไหร่
 model ImportBatch {
   id         String   @id @default(cuid())
@@ -168,9 +205,10 @@ model Retro {
   squad     Squad         @relation(fields: [squadId], references: [id])
   title     String        // เช่น "Retro Sprint 12"
   status    RetroStatus   @default(OPEN)
-  items     RetroItem[]
-  createdAt DateTime      @default(now())
-  closedAt  DateTime?
+  items         RetroItem[]
+  weeklyReports WeeklyReport[]
+  createdAt     DateTime      @default(now())
+  closedAt      DateTime?
 }
 
 // การ์ดใน retro แต่ละใบ (Went well / To improve / Action item)
@@ -201,6 +239,7 @@ model RetroVote {
   createdAt   DateTime  @default(now())
 
   @@unique([retroItemId, userId])
+  @@index([userId])
 }
 
 // แจ้งเตือน in-app (เช่น งานถูกลบ)
@@ -213,18 +252,38 @@ model Notification {
   relatedTask   Task?    @relation(fields: [relatedTaskId], references: [id], onDelete: SetNull)
   readAt        DateTime? // null = ยังไม่ได้อ่าน
   createdAt     DateTime @default(now())
+
+  @@index([userId, readAt])
+}
+
+// บันทึก action ที่เกิดกับ task เช่น ลบเวลาทั้งหมด
+model TaskLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String   // "TIME_CLEARED"
+  detail    String?  // JSON string เก็บ context เช่น { deletedCount, totalNormalMin, totalOtMin }
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
 }
 
 // บันทึกเวลาทำงานแต่ละช่วง (หยิบมาทำ -> จบ)
 model TimeLog {
-  id            String   @id @default(cuid())
+  id            String        @id @default(cuid())
   taskId        String
-  task          Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task          Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
   startAt       DateTime
-  endAt         DateTime
-  normalMinutes Int      // เวลาทำงานปกติ (นาที) คำนวณจาก working hours
-  otMinutes     Int      // เวลา OT (นาที)
-  createdAt     DateTime @default(now())
+  endAt         DateTime?     // null = timer ยังนับอยู่ (session เปิด)
+  normalMinutes Int?          // คำนวณตอน stop เท่านั้น
+  otMinutes     Int?
+  source        TimeLogSource @default(AUTO) // AUTO = ลากการ์ด, MANUAL = กรอกเอง
+  createdAt     DateTime      @default(now())
+
+  @@index([taskId])
+  @@index([userId])
 }

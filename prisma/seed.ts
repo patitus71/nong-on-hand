@@ -15,6 +15,13 @@ async function main() {
     create: { name: "SQ2" },
   });
 
+  // Squad 0 — floating pool สำหรับ helper ที่ช่วยงานข้าม squad
+  const sq0 = await prisma.squad.upsert({
+    where: { name: "Squad 0" },
+    update: {},
+    create: { name: "Squad 0", isFloatingPool: true },
+  });
+
   const passwordHash = await bcrypt.hash("password123", 10);
 
   const admin = await prisma.user.upsert({
@@ -66,6 +73,19 @@ async function main() {
     },
   });
 
+  // helper0 — QA_ENGINEER สังกัด Squad 0 (floating pool) ช่วยงานได้ทุก squad
+  const helper0 = await prisma.user.upsert({
+    where: { username: "helper0" },
+    update: {},
+    create: {
+      username: "helper0",
+      passwordHash,
+      name: "Floating Helper",
+      role: "QA_ENGINEER",
+      squadId: sq0.id,
+    },
+  });
+
   // สร้างบอร์ดส่วนตัวของ QA Engineer พร้อมเลนเริ่มต้น
   const board = await prisma.board.create({
     data: {
@@ -99,9 +119,10 @@ async function main() {
     qaLead: qaLead.username,
     qaManager: qaManager.username,
     qaEngineer: qaEngineer.username,
+    helper0: helper0.username,
   });
   console.log("Default password for all users: password123");
-  console.log(`Squads created: ${sq1.name}, ${sq2.name}`);
+  console.log(`Squads created: ${sq1.name}, ${sq2.name}, ${sq0.name} (floating pool)`);
 }
 
 main()

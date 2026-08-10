@@ -17,6 +17,10 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
       assignee: { select: { id: true, name: true } },
       lane:     { select: { name: true } },
       timeLogs: { orderBy: { startAt: 'desc' } },
+      taskLogs: {
+        orderBy: { createdAt: 'desc' },
+        include: { user: { select: { name: true } } },
+      },
       retroItems: {
         include: { retro: { select: { id: true, title: true } } },
         orderBy: { createdAt: 'desc' },
@@ -44,10 +48,17 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
     assignee:    task.assignee,
     laneName:    task.lane?.name ?? null,
     timeLogs: task.timeLogs.map(l => ({
-      normalMinutes: l.normalMinutes,
-      otMinutes:     l.otMinutes,
+      normalMinutes: l.normalMinutes ?? 0,
+      otMinutes:     l.otMinutes ?? 0,
       startAt:       l.startAt.toISOString(),
-      endAt:         l.endAt.toISOString(),
+      endAt:         l.endAt?.toISOString() ?? '',
+    })),
+    taskLogs: task.taskLogs.map(l => ({
+      id:        l.id,
+      action:    l.action,
+      detail:    l.detail,
+      createdAt: l.createdAt.toISOString(),
+      userName:  l.user.name,
     })),
     retroItems: task.retroItems.map(r => ({
       id:         r.id,

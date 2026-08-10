@@ -4,10 +4,8 @@
 
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
-
-const prisma = new PrismaClient();
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -27,6 +25,7 @@ export const authOptions: NextAuthOptions = {
 
         const user = await prisma.user.findUnique({
           where: { username: credentials.username },
+          include: { squad: { select: { isFloatingPool: true } } },
         });
         if (!user) return null;
 
@@ -42,6 +41,7 @@ export const authOptions: NextAuthOptions = {
           username: user.username,
           role: user.role,
           squadId: user.squadId,
+          isFloatingPoolMember: user.squad?.isFloatingPool ?? false,
         } as any;
       },
     }),
@@ -56,6 +56,7 @@ export const authOptions: NextAuthOptions = {
         token.username = (user as any).username;
         token.role = (user as any).role;
         token.squadId = (user as any).squadId;
+        token.isFloatingPoolMember = (user as any).isFloatingPoolMember ?? false;
       }
       return token;
     },
@@ -65,6 +66,7 @@ export const authOptions: NextAuthOptions = {
         (session.user as any).username = token.username;
         (session.user as any).role = token.role;
         (session.user as any).squadId = token.squadId;
+        (session.user as any).isFloatingPoolMember = token.isFloatingPoolMember ?? false;
       }
       return session;
     },

@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { type SessionUser } from '@/lib/rbac';
@@ -7,7 +6,7 @@ import Topbar from '@/components/Topbar';
 import TasksClient from './TasksClient';
 
 export default async function TasksPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
@@ -50,8 +49,8 @@ export default async function TasksPage() {
     squad:               t.squad,
     assignee:            t.assignee,
     laneName:            t.lane?.name ?? null,
-    totalNormalMin:      t.timeLogs.reduce((s, l) => s + l.normalMinutes, 0),
-    totalOtMin:          t.timeLogs.reduce((s, l) => s + l.otMinutes, 0),
+    totalNormalMin:      t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+    totalOtMin:          t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
   }));
 
   return (

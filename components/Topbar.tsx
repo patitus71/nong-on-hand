@@ -1,5 +1,4 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getSession } from '@/lib/session';
 import Link from 'next/link';
 import NavTabs from './NavTabs';
 import LogoutButton from './LogoutButton';
@@ -9,7 +8,7 @@ function initials(name: string) {
 }
 
 export default async function Topbar() {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   const user = session?.user as any;
   const firstName = user?.name?.split(' ')[0] ?? 'User';
   const squadHref = user?.squadId ? `/squads/${user.squadId}` : '/squads';

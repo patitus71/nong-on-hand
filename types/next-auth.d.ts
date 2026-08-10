@@ -7,6 +7,7 @@ declare module 'next-auth' {
       username: string;
       role: 'ADMIN' | 'QA_LEAD' | 'QA_MANAGER' | 'QA_ENGINEER';
       squadId: string | null;
+      isFloatingPoolMember: boolean;
     } & DefaultSession['user'];
   }
 }
