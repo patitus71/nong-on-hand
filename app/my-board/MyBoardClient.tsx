@@ -11,7 +11,7 @@ import {
   verticalListSortingStrategy, horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { fmt, initials, avatarColor } from '@/lib/ui';
+import { fmt, initials, avatarColor, renderReportMarkdown } from '@/lib/ui';
 
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
@@ -288,6 +288,43 @@ export default function MyBoardClient({
   const [reviewTimeAdded,   setReviewTimeAdded]   = useState(false);
   const [reviewTimeSaving,  setReviewTimeSaving]  = useState(false);
   const [reviewTimeError,   setReviewTimeError]   = useState('');
+
+  /* ── Personal export ── */
+  const [showExport,     setShowExport]     = useState(false);
+  const [exporting,      setExporting]      = useState(false);
+  const [exportMarkdown, setExportMarkdown] = useState<string | null>(null);
+  const [exportError,    setExportError]    = useState('');
+
+  async function openExport() {
+    setExportMarkdown(null);
+    setExportError('');
+    setShowExport(true);
+    setExporting(true);
+    const now   = new Date();
+    const day   = now.getDay();
+    const diff  = day === 0 ? -6 : 1 - day;
+    const start = new Date(now); start.setDate(now.getDate() + diff); start.setHours(0, 0, 0, 0);
+    const end   = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999);
+    const res = await fetch(
+      `/api/reports/personal?weekStart=${start.toISOString()}&weekEnd=${end.toISOString()}`
+    );
+    if (res.ok) {
+      setExportMarkdown(await res.text());
+    } else {
+      setExportError(await res.text());
+    }
+    setExporting(false);
+  }
+
+  function downloadMarkdown() {
+    if (!exportMarkdown) return;
+    const blob = new Blob([exportMarkdown], { type: 'text/markdown' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `my-board-report-${new Date().toISOString().slice(0, 10)}.md`;
+    a.click(); URL.revokeObjectURL(url);
+  }
 
   /* ── Lane management ── */
   const [addingLane,  setAddingLane]  = useState(false);
@@ -604,6 +641,12 @@ export default function MyBoardClient({
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2.5">
         <h1 className="text-[19px] font-semibold text-txt-primary">บอร์ดของฉัน</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={openExport}
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors"
+          >
+            📄 Export Report
+          </button>
           {canEditLanes && (
             <button
               onClick={() => { setEditMode(e => !e); setAddingLane(false); }}
@@ -935,6 +978,51 @@ export default function MyBoardClient({
                 ยืนยันและกลับไป To Do
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Export modal ── */}
+      {showExport && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={e => { if (e.target === e.currentTarget) setShowExport(false); }}
+        >
+          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-app-border">
+              <div>
+                <h2 className="text-[15px] font-semibold text-txt-primary">📄 Export Report (บอร์ดของฉัน)</h2>
+                <p className="text-[12px] text-txt-muted mt-0.5">สรุปงานส่วนตัว — สัปดาห์ปัจจุบัน</p>
+              </div>
+              <button onClick={() => setShowExport(false)} className="text-txt-muted hover:text-txt-primary text-lg leading-none">✕</button>
+            </div>
+
+            {exporting && (
+              <div className="flex items-center gap-2.5 px-5 py-6 text-[13px] text-txt-secondary">
+                <span className="animate-spin inline-block w-4 h-4 border-2 border-accent border-t-transparent rounded-full" />
+                กำลังสร้างรายงาน...
+              </div>
+            )}
+
+            {exportError && <p className="px-5 py-3 text-[12.5px] text-danger">{exportError}</p>}
+
+            {exportMarkdown && (
+              <>
+                <div className="flex-1 overflow-y-auto px-5 py-4">
+                  <div dangerouslySetInnerHTML={{ __html: renderReportMarkdown(exportMarkdown) }} />
+                </div>
+                <div className="px-5 py-3 border-t border-app-border flex items-center gap-2.5">
+                  <button onClick={downloadMarkdown}
+                    className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-[7px] rounded-md transition-colors">
+                    ⬇ ดาวน์โหลด .md
+                  </button>
+                  <button onClick={() => window.print()}
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">
+                    🖨 พิมพ์ / บันทึก PDF
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

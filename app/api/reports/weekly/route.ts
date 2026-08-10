@@ -4,7 +4,11 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canEditSquadBoard } from '@/lib/rbac';
 import type { SessionUser } from '@/lib/rbac';
-import { generateWeeklyReportMarkdown } from '@/lib/weeklyReport';
+import {
+  generateWeeklyReportMarkdown,
+  buildDashboardRows,
+  type DashboardData,
+} from '@/lib/weeklyReport';
 
 // POST /api/reports/weekly
 // Body: { squadId, weekStart, weekEnd, retroId? }
@@ -28,6 +32,20 @@ export async function POST(req: NextRequest) {
   const weekStart = new Date(weekStartStr);
   const weekEnd   = new Date(weekEndStr);
 
+  // คำนวณสัปดาห์ก่อนหน้า (7 วัน)
+  const prevWeekStart = new Date(weekStart); prevWeekStart.setDate(weekStart.getDate() - 7);
+  const prevWeekEnd   = new Date(weekEnd);   prevWeekEnd.setDate(weekEnd.getDate() - 7);
+
+  const completedSelect = {
+    title:    true,
+    squad:    { select: { name: true } },
+    assignee: { select: { name: true } },
+    timeLogs: {
+      where:  { endAt: { not: null } },
+      select: { normalMinutes: true, otMinutes: true },
+    },
+  } as const;
+
   const retroSelect = {
     id:    true,
     title: true,
@@ -40,51 +58,63 @@ export async function POST(req: NextRequest) {
     },
   } as const;
 
-  const [squad, completedTasks, issueLogs, deletedTasks, retro] = await Promise.all([
+  const [
+    squad,
+    completedRaw,
+    prevCompletedRaw,
+    issueLogsRaw,
+    deletedRaw,
+    retro,
+  ] = await Promise.all([
     prisma.squad.findUnique({ where: { id: squadId }, select: { name: true } }),
 
+    // สัปดาห์นี้ — งานที่เสร็จ
     prisma.task.findMany({
-      where: {
-        squadId,
-        deletedAt:   null,
-        completedAt: { gte: weekStart, lte: weekEnd },
-      },
-      select: {
-        id:             true,
-        title:          true,
-        estimatedHours: true,
-        completedAt:    true,
-        assignee:       { select: { name: true } },
-      },
+      where: { squadId, deletedAt: null, completedAt: { gte: weekStart, lte: weekEnd } },
+      select: { id: true, ...completedSelect },
       orderBy: { completedAt: 'asc' },
     }),
 
+    // สัปดาห์ก่อน — สำหรับ dashboard comparison
+    prisma.task.findMany({
+      where: { squadId, deletedAt: null, completedAt: { gte: prevWeekStart, lte: prevWeekEnd } },
+      select: completedSelect,
+    }),
+
+    // ปัญหาที่เจอสัปดาห์นี้
     prisma.taskIssueLog.findMany({
-      where: {
-        task:      { squadId },
-        flaggedAt: { gte: weekStart, lte: weekEnd },
-      },
+      where: { task: { squadId }, flaggedAt: { gte: weekStart, lte: weekEnd } },
       select: {
         issueNote:      true,
         resolutionNote: true,
         flaggedAt:      true,
         resolvedAt:     true,
-        task:      { select: { id: true, title: true } },
-        flaggedBy: { select: { name: true } },
+        flaggedBy:      { select: { name: true } },
+        task: {
+          select: {
+            title:    true,
+            squad:    { select: { name: true } },
+            assignee: { select: { name: true } },
+            timeLogs: {
+              where:  { endAt: { not: null } },
+              select: { normalMinutes: true, otMinutes: true },
+            },
+          },
+        },
       },
       orderBy: { flaggedAt: 'asc' },
     }),
 
+    // ticket ที่ถูกลบสัปดาห์นี้
     prisma.task.findMany({
-      where: {
-        squadId,
-        deletedAt: { gte: weekStart, lte: weekEnd },
-      },
+      where: { squadId, deletedAt: { gte: weekStart, lte: weekEnd } },
       select: {
         id:               true,
         title:            true,
         deletedAt:        true,
         deletionFlagNote: true,
+        squad:            { select: { name: true } },
+        deletedBy:        { select: { name: true, role: true } },
       },
       orderBy: { deletedAt: 'asc' },
     }),
@@ -106,19 +136,63 @@ export async function POST(req: NextRequest) {
 
   if (!squad) return new NextResponse('ไม่พบ squad', { status: 404 });
 
+  // แปลงข้อมูล
+  const completedTasks = completedRaw.map(t => ({
+    id:            t.id,
+    title:         t.title,
+    squadName:     t.squad?.name ?? '—',
+    assigneeName:  t.assignee?.name ?? null,
+    normalMinutes: t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+    otMinutes:     t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
+    completedAt:   new Date(),
+  }));
+
+  const prevCompleted = prevCompletedRaw.map(t => ({
+    assigneeName:  t.assignee?.name ?? null,
+    normalMinutes: t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+    otMinutes:     t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
+  }));
+
+  const dashboardRows = buildDashboardRows(
+    completedTasks.map(t => ({ assigneeName: t.assigneeName, normalMinutes: t.normalMinutes, otMinutes: t.otMinutes })),
+    prevCompleted,
+  );
+
+  const dashboard: DashboardData | null = dashboardRows.length > 0
+    ? { rows: dashboardRows, hasPrevWeek: prevCompleted.length > 0 }
+    : null;
+
+  const issueLogs = issueLogsRaw.map(log => ({
+    issueNote:      log.issueNote,
+    resolutionNote: log.resolutionNote,
+    flaggedAt:      log.flaggedAt,
+    resolvedAt:     log.resolvedAt,
+    taskTitle:      log.task.title,
+    taskSquadName:  log.task.squad?.name ?? '—',
+    assigneeName:   log.task.assignee?.name ?? null,
+    normalMinutes:  log.task.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+    otMinutes:      log.task.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
+    flaggedByName:  log.flaggedBy.name,
+  }));
+
+  const deletedTasks = deletedRaw.map(t => ({
+    id:               t.id,
+    title:            t.title,
+    squadName:        t.squad?.name ?? '—',
+    deletedAt:        t.deletedAt!,
+    deletionFlagNote: t.deletionFlagNote,
+    deletedByName:    t.deletedBy?.name ?? null,
+    deletedByRole:    t.deletedBy?.role ?? null,
+  }));
+
   const contentMarkdown = generateWeeklyReportMarkdown({
-    squad,
+    squadName: squad.name,
     weekStart,
     weekEnd,
-    completedTasks: completedTasks.map(t => ({
-      ...t,
-      completedAt: t.completedAt!,
-    })),
+    dashboard,
+    completedTasks,
     issueLogs,
-    deletedTasks: deletedTasks.map(t => ({
-      ...t,
-      deletedAt: t.deletedAt!,
-    })),
+    deletedTasks,
     retro: retro
       ? {
           title: retro.title,
@@ -142,5 +216,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return NextResponse.json({ id: record.id, contentMarkdown });
+  return NextResponse.json({ id: record.id, contentMarkdown, dashboard });
 }

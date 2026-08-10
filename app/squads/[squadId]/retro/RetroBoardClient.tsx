@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { initials, avatarColor } from '@/lib/ui';
+import { initials, avatarColor, renderReportMarkdown } from '@/lib/ui';
 
 
 function fmtDate(iso: string) {
@@ -29,6 +29,50 @@ type RetroData = {
   squadName: string;
   items: RetroItemData[];
 };
+
+type DashboardPersonRow = {
+  name: string;
+  thisWeekTasks: number;
+  thisWeekNormalMin: number;
+  thisWeekOtMin: number;
+  prevWeekTasks: number;
+  prevWeekNormalMin: number;
+  prevWeekOtMin: number;
+};
+type DashboardData = { rows: DashboardPersonRow[]; hasPrevWeek: boolean };
+
+// Pie chart ใน export modal — SVG วนตามสัดส่วนงานต่อคน
+const PIE_COLORS = ['#6d8cff', '#4fbf7a', '#e3a83e', '#f26b6b', '#a78bfa', '#38bdf8', '#fb923c', '#34d399'];
+
+function PieChart({ rows }: { rows: DashboardPersonRow[] }) {
+  const total = rows.reduce((s, r) => s + r.thisWeekTasks, 0);
+  if (total === 0) return null;
+  const cx = 60, cy = 60, r = 50;
+  let angle = -Math.PI / 2;
+  const slices: React.ReactNode[] = [];
+  rows.forEach((row, i) => {
+    if (row.thisWeekTasks === 0) return;
+    const slice = (row.thisWeekTasks / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle);
+    const y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(angle + slice);
+    const y2 = cy + r * Math.sin(angle + slice);
+    const large = slice > Math.PI ? 1 : 0;
+    slices.push(
+      <path key={i}
+        d={`M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z`}
+        fill={PIE_COLORS[i % PIE_COLORS.length]}
+        stroke="var(--surface-1)" strokeWidth="1"
+      />
+    );
+    angle += slice;
+  });
+  return (
+    <svg width="120" height="120" viewBox="0 0 120 120" style={{ flexShrink: 0 }}>
+      {slices}
+    </svg>
+  );
+}
 
 const COLS = [
   { key: 'WENT_WELL',   label: 'Went well',    cls: 'text-success'  },
@@ -66,6 +110,7 @@ export default function RetroBoardClient({
   const [exporting,      setExporting]      = useState(false);
   const [exportMarkdown, setExportMarkdown] = useState<string | null>(null);
   const [exportError,    setExportError]    = useState('');
+  const [exportDashboard, setExportDashboard] = useState<DashboardData | null>(null);
 
   const selectedRetro  = retros.find(r => r.id === selectedId) ?? null;
   const hasOpenRetro   = retros.some(r => r.status === 'OPEN');
@@ -185,6 +230,7 @@ export default function RetroBoardClient({
     if (res.ok) {
       const data = await res.json();
       setExportMarkdown(data.contentMarkdown);
+      setExportDashboard(data.dashboard ?? null);
     } else {
       setExportError(await res.text());
     }
@@ -411,7 +457,52 @@ export default function RetroBoardClient({
             {exportMarkdown && (
               <>
                 <div className="flex-1 overflow-y-auto px-5 py-4">
-                  <pre className="text-[12.5px] text-txt-primary font-mono whitespace-pre-wrap leading-relaxed">{exportMarkdown}</pre>
+                  {/* Dashboard Overview */}
+                  {exportDashboard && exportDashboard.rows.length > 0 && (
+                    <div style={{ marginBottom: 20, padding: 14, background: 'var(--surface-2)', borderRadius: 10, border: '1px solid var(--app-border)' }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt-primary)', marginBottom: 10 }}>Dashboard — สรุปภาพรวม</p>
+                      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                        {/* ตาราง */}
+                        <div style={{ flex: 1, overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign: 'left', padding: '5px 8px', background: 'var(--surface-3, var(--bg))', color: 'var(--txt-secondary)', border: '1px solid var(--app-border)', whiteSpace: 'nowrap' }}>คน</th>
+                                {exportDashboard.hasPrevWeek && <th style={{ textAlign: 'right', padding: '5px 8px', background: 'var(--surface-3, var(--bg))', color: 'var(--txt-secondary)', border: '1px solid var(--app-border)', whiteSpace: 'nowrap' }}>ก่อน (งาน)</th>}
+                                <th style={{ textAlign: 'right', padding: '5px 8px', background: 'var(--surface-3, var(--bg))', color: 'var(--txt-secondary)', border: '1px solid var(--app-border)', whiteSpace: 'nowrap' }}>นี้ (งาน)</th>
+                                {exportDashboard.hasPrevWeek && <th style={{ textAlign: 'right', padding: '5px 8px', background: 'var(--surface-3, var(--bg))', color: 'var(--txt-secondary)', border: '1px solid var(--app-border)', whiteSpace: 'nowrap' }}>Δ</th>}
+                                <th style={{ textAlign: 'left', padding: '5px 8px', background: 'var(--surface-3, var(--bg))', color: 'var(--txt-secondary)', border: '1px solid var(--app-border)' }}>Legend</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {exportDashboard.rows.map((r, i) => {
+                                const improved = exportDashboard.hasPrevWeek && r.thisWeekTasks > r.prevWeekTasks;
+                                const delta = exportDashboard.hasPrevWeek
+                                  ? (r.prevWeekTasks === 0
+                                    ? (r.thisWeekTasks > 0 ? '+' + r.thisWeekTasks : '—')
+                                    : (r.thisWeekTasks >= r.prevWeekTasks ? '+' : '') + (r.thisWeekTasks - r.prevWeekTasks) + ' (' + Math.round(((r.thisWeekTasks - r.prevWeekTasks) / r.prevWeekTasks) * 100) + '%)')
+                                  : null;
+                                return (
+                                  <tr key={r.name} style={{ background: improved ? 'rgba(79,191,122,.08)' : undefined }}>
+                                    <td style={{ padding: '5px 8px', border: '1px solid var(--app-border)', color: 'var(--txt-primary)' }}>{r.name}</td>
+                                    {exportDashboard.hasPrevWeek && <td style={{ padding: '5px 8px', border: '1px solid var(--app-border)', color: 'var(--txt-muted)', textAlign: 'right' }}>{r.prevWeekTasks}</td>}
+                                    <td style={{ padding: '5px 8px', border: '1px solid var(--app-border)', color: 'var(--txt-primary)', fontWeight: 600, textAlign: 'right' }}>{r.thisWeekTasks}</td>
+                                    {exportDashboard.hasPrevWeek && <td style={{ padding: '5px 8px', border: '1px solid var(--app-border)', color: improved ? 'var(--success)' : 'var(--txt-muted)', textAlign: 'right' }}>{delta}</td>}
+                                    <td style={{ padding: '5px 8px', border: '1px solid var(--app-border)' }}>
+                                      <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: PIE_COLORS[i % PIE_COLORS.length], marginRight: 4 }} />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {/* Pie chart */}
+                        <PieChart rows={exportDashboard.rows} />
+                      </div>
+                    </div>
+                  )}
+                  <div dangerouslySetInnerHTML={{ __html: renderReportMarkdown(exportMarkdown) }} />
                 </div>
                 <div className="px-5 py-3 border-t border-app-border flex items-center gap-2.5">
                   <button onClick={downloadMarkdown}

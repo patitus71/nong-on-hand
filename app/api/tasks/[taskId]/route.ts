@@ -43,7 +43,7 @@ export async function DELETE(
   });
 
   await prisma.$transaction(async (tx) => {
-    await tx.task.update({ where: { id: task.id }, data: { deletedAt: new Date() } });
+    await tx.task.update({ where: { id: task.id }, data: { deletedAt: new Date(), deletedById: user.id } });
     if (notifRows.length > 0) {
       await tx.notification.createMany({ data: notifRows });
     }

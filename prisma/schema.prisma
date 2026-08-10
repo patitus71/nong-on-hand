@@ -81,6 +81,7 @@ model User {
   taskLogs          TaskLog[]
   flaggedTasksForDeletion Task[]         @relation("TaskDeletionFlaggedBy")
   reviewedTasks           Task[]         @relation("TaskReviewApprovedBy")
+  deletedTasks            Task[]         @relation("TaskDeletedBy")
   notifications           Notification[]
   weeklyReports           WeeklyReport[] @relation("WeeklyReportGeneratedBy")
   createdAt    DateTime  @default(now())
@@ -132,6 +133,8 @@ model Task {
   dueDate           DateTime? // วันที่คาดว่าจะเสร็จ — กรอกตอนดึงงานเข้าบอร์ด
   pulledIntoBoardAt DateTime? // เวลาที่ถูกดึงจาก "งานทั้งหมด" เข้าบอร์ดจริง (null = ยังอยู่ในกองรวม)
   deletedAt         DateTime? // soft-delete: null = active, set = ถูกลบ
+  deletedById       String?   // คนที่กดลบจริง — ใช้โชว์ "ลบโดย + Role" ใน Weekly Report
+  deletedBy         User?     @relation("TaskDeletedBy", fields: [deletedById], references: [id])
   flaggedForDeletion    Boolean   @default(false) // QA_LEAD flag งานนี้ให้ลบ (เหตุผลอยู่ใน deletionFlagNote)
   deletionFlagNote      String?   // เหตุผลที่ QA_LEAD flag
   deletionFlaggedById   String?
