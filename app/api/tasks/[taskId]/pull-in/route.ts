@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     return new Response('Forbidden', { status: 403 });
   }
 
-  const { estimatedHours, dueDate, assigneeId } = await req.json();
+  const { estimatedHours, dueDate, assigneeId, sprintId } = await req.json();
 
   const task = await prisma.task.findUnique({ where: { id: params.taskId } });
   if (!task) return new Response('Not Found', { status: 404 });
@@ -33,6 +33,18 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     });
     if (!assignee || !canAssignToQaEngineer(assignee as any, user.squadId)) {
       return new Response('Invalid assignee', { status: 400 });
+    }
+  }
+
+  // Validate sprintId if provided
+  if (sprintId) {
+    const sprint = await prisma.sprint.findUnique({
+      where: { id: sprintId },
+      select: { status: true, squadId: true },
+    });
+    const targetSquadId2 = task.squadId ?? user.squadId;
+    if (!sprint || sprint.status !== 'OPEN' || sprint.squadId !== targetSquadId2) {
+      return new Response('Invalid or closed sprint', { status: 400 });
     }
   }
 
@@ -72,6 +84,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
       estimatedHours:    estimatedHours ? Number(estimatedHours) : task.estimatedHours,
       dueDate:           dueDate ? new Date(dueDate) : null,
       assigneeId:        assigneeId || null,
+      sprintId:          sprintId || null,
       order:             (maxOrder._max.order ?? -1) + 1,
     },
   });

@@ -23,6 +23,8 @@ type TaskRow = {
 
 type PullInEntry = { est: string; due: string; assignee: string };
 
+type OpenSprint = { id: string; name: string; squadId: string };
+
 type Props = {
   tasks:        TaskRow[];
   squads:       { id: string; name: string }[];
@@ -31,6 +33,7 @@ type Props = {
   userSquadId:  string | null;
   userId:       string;
   qaEngineers:  { id: string; name: string }[];
+  openSprints:  OpenSprint[];
 };
 
 function isPendingImport(t: TaskRow) {
@@ -67,7 +70,7 @@ function isUnflagEnabled(t: TaskRow, userRole: string, userSquadId: string | nul
   return false;
 }
 
-export default function TasksClient({ tasks, squads, users, userRole, userSquadId, userId, qaEngineers }: Props) {
+export default function TasksClient({ tasks, squads, users, userRole, userSquadId, userId, qaEngineers, openSprints }: Props) {
   const router = useRouter();
 
   // ── Filters ─────────────────────────────────────────────────────────────────
@@ -136,11 +139,13 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   }, [closeMenu]);
 
   // ── Pull-in modal ────────────────────────────────────────────────────────────
-  const [showPullInModal, setShowPullInModal] = useState(false);
-  const [modalTaskIds,    setModalTaskIds]    = useState<string[]>([]);
-  const [pullInData,      setPullInData]      = useState<Record<string, PullInEntry>>({});
-  const [pullSubmitting,  setPullSubmitting]  = useState(false);
-  const [pullError,       setPullError]       = useState('');
+  const [showPullInModal,  setShowPullInModal]  = useState(false);
+  const [modalTaskIds,     setModalTaskIds]     = useState<string[]>([]);
+  const [pullInData,       setPullInData]       = useState<Record<string, PullInEntry>>({});
+  const [pullSubmitting,   setPullSubmitting]   = useState(false);
+  const [pullError,        setPullError]        = useState('');
+  const [selectedSprintId, setSelectedSprintId] = useState('');
+  const [modalSquadId,     setModalSquadId]     = useState<string | null>(null);
 
   function openPullIn(taskIds: string[]) {
     const init: Record<string, PullInEntry> = {};
@@ -148,6 +153,13 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
     setPullInData(init);
     setModalTaskIds(taskIds);
     setPullError('');
+    // Determine squad from tasks — block if mixed squads
+    const squadIds = Array.from(new Set(taskIds.map(id => tasks.find(t => t.id === id)?.squad?.id ?? null).filter(Boolean)));
+    const singleSquadId = squadIds.length === 1 ? (squadIds[0] as string) : null;
+    setModalSquadId(singleSquadId);
+    // Pre-select the open sprint for this squad if there is one
+    const sprint = singleSquadId ? openSprints.find(s => s.squadId === singleSquadId) : null;
+    setSelectedSprintId(sprint?.id ?? '');
     setShowPullInModal(true);
     setOpenMenuId(null);
   }
@@ -157,6 +169,10 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   }
 
   async function submitPullIn() {
+    if (!selectedSprintId) {
+      setPullError('กรุณาเลือก Sprint ก่อนดึงงานเข้าบอร์ด');
+      return;
+    }
     setPullSubmitting(true);
     setPullError('');
     for (const id of modalTaskIds) {
@@ -168,6 +184,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
           estimatedHours: f.est ? Number(f.est) : undefined,
           dueDate:        f.due || undefined,
           assigneeId:     f.assignee || undefined,
+          sprintId:       selectedSprintId,
         }),
       });
       if (!res.ok) {
@@ -251,7 +268,9 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   // Bulk bar derived state
   const selectedTasks      = tasks.filter(t => selectedIds.has(t.id));
   const allSelectedPending = selectedTasks.length > 0 && selectedTasks.every(t => isPendingImport(t));
-  const canBulkPullIn      = canPullIn && allSelectedPending;
+  const selectedSquadIds   = Array.from(new Set(selectedTasks.map(t => t.squad?.id).filter(Boolean)));
+  const isSingleSquad      = selectedSquadIds.length === 1;
+  const canBulkPullIn      = canPullIn && allSelectedPending && isSingleSquad;
 
   const selCls = 'bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent';
   const btnCls = 'bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 transition-colors hover:bg-[#2a2e3a]';
@@ -340,7 +359,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
             <button
               onClick={() => openPullIn(Array.from(selectedIds))}
               disabled={!canBulkPullIn}
-              title={canBulkPullIn ? '' : 'ดึงเข้าบอร์ดได้เฉพาะงาน pending-import ล้วนๆ เท่านั้น'}
+              title={canBulkPullIn ? '' : 'ดึงเข้าบอร์ดได้เฉพาะงาน pending-import ล้วนๆ และต้องอยู่ Squad เดียวกันเท่านั้น'}
               className="bg-accent text-white text-[12.5px] px-3 py-1.5 rounded-md font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               📥 ดึงเข้าบอร์ด ({selectedIds.size} งาน)
@@ -582,6 +601,36 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
               </div>
               <button onClick={() => setShowPullInModal(false)} className="text-txt-muted hover:text-txt-primary text-[18px] leading-none">✕</button>
             </div>
+            {/* Sprint selector */}
+            <div className="px-5 py-3 border-b border-app-border">
+              {(() => {
+                const squadSprints = modalSquadId ? openSprints.filter(s => s.squadId === modalSquadId) : [];
+                if (!modalSquadId) {
+                  return <p className="text-[12px] text-danger">⚠ งานที่เลือกมาจากหลาย Squad — ไม่สามารถดึงพร้อมกันได้</p>;
+                }
+                if (squadSprints.length === 0) {
+                  return (
+                    <div className="bg-warning-bg border border-warning/30 rounded-lg px-3 py-2">
+                      <p className="text-[12px] text-warning font-medium">⚠ Squad นี้ยังไม่มี Sprint ที่เปิดอยู่</p>
+                      <p className="text-[11px] text-txt-secondary mt-0.5">ADMIN หรือ QA Lead ต้องเปิด Sprint ที่ Squad Board ก่อนจึงจะดึงงานได้</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div>
+                    <label className="block text-[11px] text-txt-secondary mb-1.5 font-medium">Sprint (บังคับเลือก)</label>
+                    <select
+                      value={selectedSprintId}
+                      onChange={e => setSelectedSprintId(e.target.value)}
+                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-md focus:outline-none focus:border-accent"
+                    >
+                      <option value="">— เลือก Sprint —</option>
+                      {squadSprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                );
+              })()}
+            </div>
             <div className="overflow-y-auto flex-1 px-5 py-2">
               {modalTaskIds.map(id => {
                 const task = tasks.find(t => t.id === id);
@@ -627,8 +676,11 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                 className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors">
                 ยกเลิก
               </button>
-              <button onClick={submitPullIn} disabled={pullSubmitting}
-                className={`bg-accent text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 ${pullSubmitting ? 'btn-loading' : ''}`}>
+              <button
+                onClick={submitPullIn}
+                disabled={pullSubmitting || !modalSquadId || !selectedSprintId}
+                className={`bg-accent text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 ${pullSubmitting ? 'btn-loading' : ''}`}
+              >
                 ยืนยันดึงเข้าบอร์ด
               </button>
             </div>

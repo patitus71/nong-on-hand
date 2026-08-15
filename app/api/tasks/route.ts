@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as any;
 
-  const { title, laneId, squadId, assigneeId: assigneeParam } = await req.json();
+  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId } = await req.json();
   if (!title?.trim()) return new Response('title required', { status: 400 });
 
   // หา order สูงสุดใน lane นั้น
@@ -18,12 +18,24 @@ export async function POST(req: Request) {
   // assigneeParam: undefined = ไม่ส่งมา (default เป็น creator), null = ไม่ assign ใคร (Squad Board)
   const resolvedAssigneeId = assigneeParam !== undefined ? (assigneeParam ?? null) : user.id;
 
+  // If sprintId not provided, auto-assign the open sprint for the squad
+  const targetSquadId = squadId ?? user.squadId ?? null;
+  let resolvedSprintId = sprintId ?? null;
+  if (!resolvedSprintId && targetSquadId) {
+    const openSprint = await prisma.sprint.findFirst({
+      where: { squadId: targetSquadId, status: 'OPEN' },
+      select: { id: true },
+    });
+    resolvedSprintId = openSprint?.id ?? null;
+  }
+
   const task = await prisma.task.create({
     data: {
       title:      title.trim(),
       laneId:     laneId ?? null,
-      squadId:    squadId ?? user.squadId ?? null,
+      squadId:    targetSquadId,
       assigneeId: resolvedAssigneeId,
+      sprintId:   resolvedSprintId,
       order:      (maxOrder._max.order ?? -1) + 1,
     },
     include: {

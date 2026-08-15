@@ -10,7 +10,7 @@ export default async function TasksPage() {
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
-  const [tasks, squads, users, qaEngineers] = await Promise.all([
+  const [tasks, squads, users, qaEngineers, openSprints] = await Promise.all([
     prisma.task.findMany({
       where: { deletedAt: null },
       include: {
@@ -35,6 +35,12 @@ export default async function TasksPage() {
           orderBy: { name: 'asc' },
         })
       : Promise.resolve([] as { id: string; name: string }[]),
+    // OPEN sprints per squad — used in pull-in modal to assign task to a sprint
+    prisma.sprint.findMany({
+      where:   { status: 'OPEN' },
+      select:  { id: true, name: true, squadId: true },
+      orderBy: { startedAt: 'desc' },
+    }),
   ]);
 
   const rows = tasks.map(t => ({
@@ -64,6 +70,7 @@ export default async function TasksPage() {
         userSquadId={user.squadId ?? null}
         userId={user.id}
         qaEngineers={qaEngineers}
+        openSprints={openSprints}
       />
     </>
   );

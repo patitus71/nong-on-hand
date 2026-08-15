@@ -264,3 +264,11 @@ export function isReviewApproved(task: { reviewApprovedAt: Date | null }): boole
 export function isSquadRequiredForRole(role: SessionUser["role"]): boolean {
   return role === "QA_LEAD" || role === "QA_ENGINEER";
 }
+
+/** ใครเปิด/ปิด Sprint ได้: ADMIN (ทุก squad), floating-pool member, QA_LEAD (เฉพาะ squad ตัวเอง) */
+export function canManageSprint(user: SessionUser, targetSquadId: string): boolean {
+  if (user.role === 'ADMIN') return true;
+  if (user.isFloatingPoolMember) return true;
+  if (user.role === 'QA_LEAD') return user.squadId === targetSquadId;
+  return false;
+}

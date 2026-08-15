@@ -45,6 +45,11 @@ enum TimeLogSource {
   MANUAL
 }
 
+enum SprintStatus {
+  OPEN
+  CLOSED
+}
+
 model Squad {
   id             String        @id @default(cuid())
   name           String        @unique
@@ -54,6 +59,7 @@ model Squad {
   retros         Retro[]
   importBatches  ImportBatch[]
   weeklyReports  WeeklyReport[]
+  sprints        Sprint[]
   createdAt      DateTime      @default(now())
 
   @@index([isFloatingPool])
@@ -84,6 +90,7 @@ model User {
   deletedTasks            Task[]         @relation("TaskDeletedBy")
   notifications           Notification[]
   weeklyReports           WeeklyReport[] @relation("WeeklyReportGeneratedBy")
+  sprintsClosed           Sprint[]       @relation("SprintClosedBy")
   createdAt    DateTime  @default(now())
 
   @@index([squadId, active])
@@ -144,6 +151,8 @@ model Task {
   reviewApprovedById    String?
   reviewApprovedBy      User?     @relation("TaskReviewApprovedBy", fields: [reviewApprovedById], references: [id])
   completedAt           DateTime? // set ตอนย้ายเข้าเลน Done (update ถ้าเข้า Done ซ้ำ)
+  sprintId              String?   // Sprint ที่ task นี้อยู่ — null ถ้ายังไม่ถูก pull-in หรือ pull-in ก่อนมี Sprint
+  sprint                Sprint?   @relation(fields: [sprintId], references: [id])
   timeLogs      TimeLog[]
   taskLogs      TaskLog[]
   retroItems    RetroItem[]
@@ -157,6 +166,7 @@ model Task {
   @@index([assigneeId, deletedAt])
   @@index([laneId])
   @@index([flaggedForDeletion])
+  @@index([sprintId])
 }
 
 model TaskIssueLog {
@@ -171,8 +181,26 @@ model TaskIssueLog {
   resolvedById   String?
   resolvedBy     User?     @relation("IssueResolvedBy", fields: [resolvedById], references: [id])
   resolvedAt     DateTime?
-  sprintId       String?   // เผื่อไว้อนาคต ปล่อย null ก่อน
+  sprintId       String?
+  sprint         Sprint?   @relation(fields: [sprintId], references: [id])
   createdAt      DateTime  @default(now())
+}
+
+model Sprint {
+  id          String       @id @default(cuid())
+  squadId     String
+  squad       Squad        @relation(fields: [squadId], references: [id])
+  name        String
+  status      SprintStatus @default(OPEN)
+  startedAt   DateTime     @default(now())
+  closedAt    DateTime?
+  closedById  String?
+  closedBy    User?        @relation("SprintClosedBy", fields: [closedById], references: [id])
+  tasks       Task[]
+  issueLogs   TaskIssueLog[]
+  createdAt   DateTime     @default(now())
+
+  @@index([squadId, status])
 }
 
 model WeeklyReport {

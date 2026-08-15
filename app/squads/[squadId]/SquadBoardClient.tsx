@@ -22,6 +22,14 @@ type LaneData  = { name: string; tasks: TaskCard[] };
 type Member    = { id: string; name: string; taskCount: number };
 type SquadOpt  = { id: string; name: string };
 
+type SprintInfo = {
+  id:        string;
+  name:      string;
+  status:    'OPEN' | 'CLOSED';
+  startedAt: string;
+  closedAt:  string | null;
+};
+
 type Props = {
   currentSquadId:    string;
   currentSquadName:  string;
@@ -33,13 +41,18 @@ type Props = {
   canAssign:         boolean;
   canApproveReview:  boolean;
   canCreateTask:     boolean;
+  canManageSprint:   boolean;
+  sprints:           SprintInfo[];
+  activeSprintId:    string | null;
+  hasOpenSprint:     boolean;
 };
 
 type ClaimTarget = { taskId: string; taskTitle: string };
 type FlagTarget  = { taskId: string; taskTitle: string };
 
 export default function SquadBoardClient({
-  currentSquadId, currentSquadName, lanes, members, squads, userId, userName, canAssign, canApproveReview, canCreateTask,
+  currentSquadId, currentSquadName, lanes, members, squads, userId, userName,
+  canAssign, canApproveReview, canCreateTask, canManageSprint, sprints, activeSprintId, hasOpenSprint,
 }: Props) {
   const router = useRouter();
 
@@ -65,6 +78,106 @@ export default function SquadBoardClient({
   }
 
   const [activeMember, setActiveMember] = useState<string | null>(null);
+
+  // ── Sprint management ────────────────────────────────────────────────────────
+  const activeSprint = sprints.find(s => s.id === activeSprintId) ?? null;
+  const isReadonly   = activeSprint?.status === 'CLOSED';
+
+  const [showOpenSprint,  setShowOpenSprint]  = useState(false);
+  const [newSprintName,   setNewSprintName]   = useState('');
+  const [openingLoading,  setOpeningLoading]  = useState(false);
+  const [openSprintError, setOpenSprintError] = useState('');
+
+  const [showCloseSprint,   setShowCloseSprint]   = useState(false);
+  const [closingLoading,    setClosingLoading]    = useState(false);
+  const [closeSprintError,  setCloseSprintError]  = useState('');
+  const [unfinishedCount,   setUnfinishedCount]   = useState<number | null>(null);
+
+  async function submitOpenSprint() {
+    setOpeningLoading(true);
+    setOpenSprintError('');
+    const name = newSprintName.trim() || `Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`;
+    const res = await fetch(`/api/squads/${currentSquadId}/sprints`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      setShowOpenSprint(false);
+      setNewSprintName('');
+      router.refresh();
+    } else {
+      setOpenSprintError(await res.text());
+    }
+    setOpeningLoading(false);
+  }
+
+  async function submitCloseSprint(confirm = false) {
+    if (!activeSprint) return;
+    setClosingLoading(true);
+    setCloseSprintError('');
+    const res = await fetch(`/api/sprints/${activeSprint.id}/close`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ confirmClose: confirm }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setCloseSprintError(data?.error ?? 'เกิดข้อผิดพลาด');
+      setClosingLoading(false);
+      return;
+    }
+    if (data.requiresConfirm) {
+      setUnfinishedCount(data.unfinishedCount);
+      setClosingLoading(false);
+      return;
+    }
+    setShowCloseSprint(false);
+    setUnfinishedCount(null);
+    router.refresh();
+    setClosingLoading(false);
+  }
+
+  // ── Sprint export (squad-level, only for closed sprints) ────────────────────
+  const [showSprintExport,   setShowSprintExport]   = useState(false);
+  const [sprintExportMd,     setSprintExportMd]     = useState('');
+  const [sprintExportLoading, setSprintExportLoading] = useState(false);
+
+  async function openSprintExport() {
+    if (!activeSprint) return;
+    setSprintExportMd('');
+    setShowSprintExport(true);
+    setSprintExportLoading(true);
+    try {
+      const res = await fetch('/api/reports/weekly', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          squadId:   currentSquadId,
+          weekStart: activeSprint.startedAt,
+          weekEnd:   activeSprint.closedAt ?? new Date().toISOString(),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSprintExportMd(data.contentMarkdown ?? '');
+      } else {
+        setSprintExportMd('เกิดข้อผิดพลาดในการสร้างรายงาน');
+      }
+    } finally {
+      setSprintExportLoading(false);
+    }
+  }
+
+  function downloadSprintMd() {
+    const blob = new Blob([sprintExportMd], { type: 'text/markdown;charset=utf-8' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `sprint-report-${activeSprint?.name ?? 'sprint'}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   // ── Personal export ──────────────────────────────────────────────────────────
   const [showExport,    setShowExport]    = useState(false);
@@ -241,7 +354,7 @@ export default function SquadBoardClient({
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2.5">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-[19px] font-semibold text-txt-primary">Squad Board</h1>
           <select
             className="bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent"
@@ -250,8 +363,46 @@ export default function SquadBoardClient({
           >
             {squads.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+
+          {/* Sprint selector */}
+          {sprints.length > 0 ? (
+            <select
+              className="bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent"
+              value={activeSprintId ?? ''}
+              onChange={e => router.push(`/squads/${currentSquadId}?sprint=${e.target.value}`)}
+            >
+              {sprints.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.status === 'OPEN' ? '🟢 ' : '🔴 '}{s.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-[12px] text-txt-muted bg-surface-1 border border-app-border px-2.5 py-[7px] rounded-md">
+              ยังไม่มี Sprint
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Sprint management buttons */}
+          {canManageSprint && activeSprint?.status === 'OPEN' && (
+            <button
+              onClick={() => { setShowCloseSprint(true); setCloseSprintError(''); setUnfinishedCount(null); }}
+              className="bg-surface-2 border border-danger/40 text-danger text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-danger-bg transition-colors"
+            >
+              🔴 ปิด Sprint
+            </button>
+          )}
+          {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
+            <button
+              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setOpenSprintError(''); }}
+              className="bg-surface-2 border border-success/40 text-success text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-success-bg transition-colors"
+            >
+              🟢 เปิด Sprint ใหม่
+            </button>
+          )}
+
           <button
             onClick={manualRefresh}
             title="อัปเดตข้อมูลล่าสุด"
@@ -262,6 +413,14 @@ export default function SquadBoardClient({
               {lastRefreshed.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           </button>
+          {isReadonly && activeSprint && (
+            <button
+              onClick={openSprintExport}
+              className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] transition-colors"
+            >
+              📄 Export Sprint
+            </button>
+          )}
           <button
             onClick={openExport}
             className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] transition-colors"
@@ -297,8 +456,26 @@ export default function SquadBoardClient({
         </div>
       )}
 
+      {/* Readonly banner for closed sprint */}
+      {isReadonly && (
+        <div className="flex items-center gap-2 bg-surface-1 border border-app-border rounded-lg px-4 py-2.5 mb-4 text-[12.5px] text-txt-secondary">
+          <span className="text-lg">🔒</span>
+          <span>
+            Sprint นี้ปิดแล้ว ({activeSprint?.closedAt ? new Date(activeSprint.closedAt).toLocaleDateString('th-TH') : ''}) — ดูข้อมูลได้อย่างเดียว
+          </span>
+          {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
+            <button
+              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setOpenSprintError(''); }}
+              className="ml-auto bg-success-bg border border-success/40 text-success text-[12px] px-3 py-1 rounded-md hover:bg-success/15 transition-colors"
+            >
+              🟢 เปิด Sprint ใหม่
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Board */}
-      <div className="flex gap-3.5 overflow-x-auto pb-5">
+      <div className={`flex gap-3.5 overflow-x-auto pb-5 ${isReadonly ? 'opacity-70 pointer-events-none select-none' : ''}`}>
         {visibleLanes.map(lane => (
           <div
             key={lane.name}
@@ -457,7 +634,7 @@ export default function SquadBoardClient({
               );
             })}
 
-            {lane.name === 'To do' && canCreateTask && (
+            {lane.name === 'To do' && canCreateTask && hasOpenSprint && (
               <div className="mt-2">
                 {showCreate ? (
                   <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
@@ -633,6 +810,116 @@ export default function SquadBoardClient({
                 className="px-4 py-2 text-[13px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-md transition-colors"
               >
                 ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sprint export modal ── */}
+      {showSprintExport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[620px] max-h-[85vh] flex flex-col shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[15px] font-semibold text-txt-primary">📄 Sprint Report — {activeSprint?.name}</h3>
+              <button onClick={() => setShowSprintExport(false)}
+                className="text-txt-muted hover:text-txt-secondary text-[18px] leading-none px-1">✕</button>
+            </div>
+            {sprintExportLoading ? (
+              <div className="flex-1 flex items-center justify-center py-12 text-txt-muted text-[13px]">
+                กำลังสร้างรายงาน...
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto bg-surface-2 border border-app-border rounded-lg p-3 mb-4 min-h-0">
+                  <pre className="text-[12.5px] text-txt-secondary whitespace-pre-wrap font-mono leading-relaxed">{sprintExportMd}</pre>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button onClick={downloadSprintMd}
+                    className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-lg transition-colors">
+                    ↓ Download .md
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Open Sprint modal ── */}
+      {showOpenSprint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[400px] shadow-2xl p-5">
+            <h2 className="text-[15px] font-semibold text-success mb-1">🟢 เปิด Sprint ใหม่</h2>
+            <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">
+              Squad <b>{currentSquadName}</b> จะเริ่ม Sprint ใหม่ทันที — สามารถดึงงานเข้า Sprint นี้ได้ที่หน้างานทั้งหมด
+            </p>
+            <label className="block text-[12px] text-txt-secondary mb-1.5">ชื่อ Sprint</label>
+            <input
+              autoFocus
+              value={newSprintName}
+              onChange={e => setNewSprintName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && submitOpenSprint()}
+              placeholder={`Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`}
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-md focus:outline-none focus:border-accent mb-3 font-[inherit]"
+            />
+            {openSprintError && <p className="text-[12px] text-danger mb-3">{openSprintError}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowOpenSprint(false)}
+                disabled={openingLoading}
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={submitOpenSprint}
+                disabled={openingLoading}
+                className={`bg-success border border-success text-white text-[13px] px-4 py-2 rounded-md font-medium hover:opacity-90 transition-colors disabled:opacity-50 ${openingLoading ? 'btn-loading' : ''}`}
+              >
+                เปิด Sprint
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Close Sprint modal ── */}
+      {showCloseSprint && activeSprint && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[440px] shadow-2xl p-5">
+            <h2 className="text-[15px] font-semibold text-danger mb-1">🔴 ปิด Sprint</h2>
+            <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">
+              ยืนยันการปิด <b>{activeSprint.name}</b> — หลังปิดแล้วบอร์ดจะเป็น read-only และเปิด Sprint ใหม่ได้
+            </p>
+
+            {unfinishedCount !== null && unfinishedCount > 0 && (
+              <div className="bg-warning-bg border border-warning/30 rounded-lg px-3 py-2.5 mb-4">
+                <p className="text-[12.5px] text-warning font-medium">
+                  ⚠ ยังมีงานที่ยังไม่เสร็จ {unfinishedCount} งาน
+                </p>
+                <p className="text-[11.5px] text-txt-secondary mt-1">
+                  งานเหล่านี้จะยังอยู่ใน Sprint นี้ (read-only) ไม่ถูก carry over อัตโนมัติ
+                </p>
+              </div>
+            )}
+
+            {closeSprintError && <p className="text-[12px] text-danger mb-3">{closeSprintError}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShowCloseSprint(false); setUnfinishedCount(null); }}
+                disabled={closingLoading}
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={() => submitCloseSprint(unfinishedCount !== null)}
+                disabled={closingLoading}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-[#d94848] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
+              >
+                {unfinishedCount !== null ? 'ยืนยันปิด (มีงานค้าง)' : 'ปิด Sprint'}
               </button>
             </div>
           </div>
