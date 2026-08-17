@@ -57,11 +57,13 @@ export function computeSquadBoardStatus(task: {
   hasIssue: boolean;
   laneId: string | null;
   lane?: { name: string } | null;
+  assigneeId?: string | null;
 }): 'To do list' | 'On-Board' | 'On-Board In Progress' | 'Wait for review' | 'Done' | 'มีปัญหา' {
   if (task.hasIssue) return 'มีปัญหา';
   if (!task.laneId) return 'To do list';
   const ln = task.lane?.name?.toLowerCase();
-  if (ln === 'to do') return 'On-Board';
+  // lane "to do": ถ้ายังไม่มี assignee = ยังรอ → To do list; ถ้า assign แล้ว = อยู่ในบอร์ดแล้ว → On-Board
+  if (ln === 'to do') return task.assigneeId ? 'On-Board' : 'To do list';
   if (ln === 'in progress') return 'On-Board In Progress';
   if (ln === 'review') return 'Wait for review';
   if (ln === 'done') return 'Done';
