@@ -16,6 +16,8 @@ type TaskCard = {
   reviewApprovedAt:   string | null;
   totalNormalMin:     number;
   totalOtMin:         number;
+  isAtRisk:           boolean;
+  riskReason:         string;
 };
 
 type LaneData  = { name: string; tasks: TaskCard[] };
@@ -23,11 +25,12 @@ type Member    = { id: string; name: string; taskCount: number };
 type SquadOpt  = { id: string; name: string };
 
 type SprintInfo = {
-  id:        string;
-  name:      string;
-  status:    'OPEN' | 'CLOSED';
-  startedAt: string;
-  closedAt:  string | null;
+  id:             string;
+  name:           string;
+  status:         'OPEN' | 'CLOSED';
+  startedAt:      string;
+  closedAt:       string | null;
+  plannedEndDate: string | null;
 };
 
 type Props = {
@@ -83,10 +86,11 @@ export default function SquadBoardClient({
   const activeSprint = sprints.find(s => s.id === activeSprintId) ?? null;
   const isReadonly   = activeSprint?.status === 'CLOSED';
 
-  const [showOpenSprint,  setShowOpenSprint]  = useState(false);
-  const [newSprintName,   setNewSprintName]   = useState('');
-  const [openingLoading,  setOpeningLoading]  = useState(false);
-  const [openSprintError, setOpenSprintError] = useState('');
+  const [showOpenSprint,   setShowOpenSprint]   = useState(false);
+  const [newSprintName,    setNewSprintName]    = useState('');
+  const [newSprintEndDate, setNewSprintEndDate] = useState('');
+  const [openingLoading,   setOpeningLoading]   = useState(false);
+  const [openSprintError,  setOpenSprintError]  = useState('');
 
   const [showCloseSprint,   setShowCloseSprint]   = useState(false);
   const [closingLoading,    setClosingLoading]    = useState(false);
@@ -100,7 +104,7 @@ export default function SquadBoardClient({
     const res = await fetch(`/api/squads/${currentSquadId}/sprints`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name }),
+      body:    JSON.stringify({ name, ...(newSprintEndDate ? { plannedEndDate: newSprintEndDate } : {}) }),
     });
     if (res.ok) {
       setShowOpenSprint(false);
@@ -396,7 +400,7 @@ export default function SquadBoardClient({
           )}
           {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
             <button
-              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setOpenSprintError(''); }}
+              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setOpenSprintError(''); }}
               className="bg-surface-2 border border-success/40 text-success text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-success-bg transition-colors"
             >
               🟢 เปิด Sprint ใหม่
@@ -465,7 +469,7 @@ export default function SquadBoardClient({
           </span>
           {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
             <button
-              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setOpenSprintError(''); }}
+              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setOpenSprintError(''); }}
               className="ml-auto bg-success-bg border border-success/40 text-success text-[12px] px-3 py-1 rounded-md hover:bg-success/15 transition-colors"
             >
               🟢 เปิด Sprint ใหม่
@@ -484,9 +488,10 @@ export default function SquadBoardClient({
             {/* Lane header */}
             <div className="flex items-center gap-1.5 px-1 pb-2.5">
               <span className={`text-[13px] font-semibold ${
-                lane.name === 'มีปัญหา'        ? 'text-danger'   :
-                lane.name === 'Done'            ? 'text-success'  :
-                lane.name === 'Wait for review' ? 'text-warning'  :
+                lane.name === 'มีปัญหา'             ? 'text-danger'   :
+                lane.name === 'Done'                 ? 'text-success'  :
+                lane.name === 'Wait for review'      ? 'text-warning'  :
+                lane.name === 'On-Board In Progress' ? 'text-accent'   :
                 'text-txt-primary'
               }`}>
                 {lane.name}
@@ -498,7 +503,7 @@ export default function SquadBoardClient({
 
             {lane.tasks.length === 0 && (
               <div className="text-center text-[12px] text-txt-muted py-6 px-2">
-                {lane.name === 'To do' ? 'ดึงงานเข้าบอร์ดเพื่อเริ่มต้น' : 'ว่างอยู่'}
+                {lane.name === 'To do list' ? 'ดึงงานเข้าบอร์ดเพื่อเริ่มต้น' : 'ว่างอยู่'}
               </div>
             )}
 
@@ -510,9 +515,15 @@ export default function SquadBoardClient({
               const isApproving = approvingId === t.id;
 
               return (
-                <div key={t.id} className="relative mb-2 last:mb-0">
+                <div key={t.id} className={`relative mb-2 last:mb-0 ${t.isAtRisk ? 'card-at-risk' : ''}`}>
+                  {t.isAtRisk && (
+                    <span
+                      className="absolute top-1.5 right-2 text-[13px] leading-none z-10 pointer-events-none"
+                      title={t.riskReason}
+                    >🔥</span>
+                  )}
                   <div className={`bg-surface-2 border rounded-lg p-2.5 ${
-                    t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : 'border-app-border'
+                    t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
                   }`}>
 
                     {/* Title row */}
@@ -552,8 +563,8 @@ export default function SquadBoardClient({
                       </div>
                     )}
 
-                    {/* On-Board: show personal lane */}
-                    {lane.name === 'On-Board' && t.laneName && t.assignee && (
+                    {/* On-Board / On-Board In Progress: show personal lane */}
+                    {(lane.name === 'On-Board' || lane.name === 'On-Board In Progress') && t.laneName && t.assignee && (
                       <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
                         อยู่เลน &ldquo;{t.laneName}&rdquo; ในบอร์ดของ {t.assignee.name}
                       </p>
@@ -634,7 +645,7 @@ export default function SquadBoardClient({
               );
             })}
 
-            {lane.name === 'To do' && canCreateTask && hasOpenSprint && (
+            {lane.name === 'To do list' && canCreateTask && hasOpenSprint && (
               <div className="mt-2">
                 {showCreate ? (
                   <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
@@ -861,6 +872,13 @@ export default function SquadBoardClient({
               onChange={e => setNewSprintName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && submitOpenSprint()}
               placeholder={`Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`}
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-md focus:outline-none focus:border-accent mb-3 font-[inherit]"
+            />
+            <label className="block text-[12px] text-txt-secondary mb-1.5">วันปิด Sprint <span className="text-txt-muted">(ไม่บังคับ — ใช้แจ้งเตือนงานเสี่ยง)</span></label>
+            <input
+              type="date"
+              value={newSprintEndDate}
+              onChange={e => setNewSprintEndDate(e.target.value)}
               className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-md focus:outline-none focus:border-accent mb-3 font-[inherit]"
             />
             {openSprintError && <p className="text-[12px] text-danger mb-3">{openSprintError}</p>}

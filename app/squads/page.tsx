@@ -15,12 +15,25 @@ export default async function SquadsPage() {
   if (user.squadId) redirect(`/squads/${user.squadId}`);
 
   // ADMIN ไม่มี squad → แสดงรายชื่อ squad ทั้งหมดให้เลือก
-  const squads = await prisma.squad.findMany({
-    orderBy: { name: 'asc' },
-    include: {
-      _count: { select: { users: { where: { active: true } }, tasks: { where: { deletedAt: null } } } },
-    },
-  });
+  const [squads, boardCounts, pendingCounts] = await Promise.all([
+    prisma.squad.findMany({
+      orderBy: { name: 'asc' },
+      include: { _count: { select: { users: { where: { active: true } } } } },
+    }),
+    prisma.task.groupBy({
+      by: ['squadId'],
+      where: { deletedAt: null, pulledIntoBoardAt: { not: null }, squadId: { not: null } },
+      _count: { id: true },
+    }),
+    prisma.task.groupBy({
+      by: ['squadId'],
+      where: { deletedAt: null, pulledIntoBoardAt: null, squadId: { not: null } },
+      _count: { id: true },
+    }),
+  ]);
+
+  const boardMap   = new Map(boardCounts.map(r   => [r.squadId, r._count.id]));
+  const pendingMap = new Map(pendingCounts.map(r => [r.squadId, r._count.id]));
 
   return (
     <>
@@ -30,18 +43,27 @@ export default async function SquadsPage() {
         <p className="text-[13px] text-txt-secondary mb-6">คลิก squad เพื่อดูบอร์ด</p>
 
         <div className="flex gap-3 flex-wrap">
-          {squads.map(s => (
-            <Link
-              key={s.id}
-              href={`/squads/${s.id}`}
-              className="bg-surface-1 border border-app-border rounded-[10px] px-5 py-4 min-w-[160px] hover:border-accent transition-colors"
-            >
-              <div className="text-base font-semibold text-txt-primary">{s.name}</div>
-              <div className="text-[12px] text-txt-secondary mt-1">
-                {s._count.users} คน · {s._count.tasks} งาน
-              </div>
-            </Link>
-          ))}
+          {squads.map(s => {
+            const inBoard = boardMap.get(s.id) ?? 0;
+            const pending = pendingMap.get(s.id) ?? 0;
+            return (
+              <Link
+                key={s.id}
+                href={`/squads/${s.id}`}
+                className="bg-surface-1 border border-app-border rounded-[10px] px-5 py-4 min-w-[160px] hover:border-accent transition-colors"
+              >
+                <div className="text-base font-semibold text-txt-primary">{s.name}</div>
+                <div className="text-[12px] text-txt-secondary mt-1">
+                  {s._count.users} คน · {inBoard} งานในบอร์ด
+                </div>
+                {pending > 0 && (
+                  <div className="text-[11px] text-warning mt-0.5">
+                    {pending} รอดึงเข้าบอร์ด
+                  </div>
+                )}
+              </Link>
+            );
+          })}
           {squads.length === 0 && (
             <p className="text-[13px] text-txt-muted">ยังไม่มี squad</p>
           )}

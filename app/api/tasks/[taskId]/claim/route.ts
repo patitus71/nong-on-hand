@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { ensureSquadBoard } from '@/lib/squadBoard';
 
 export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -28,14 +29,24 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
     }
   }
 
-  // Find "To do" lane in the squad's SQUAD board — always land in To do, user drags to In progress themselves
-  const todoLane = await prisma.lane.findFirst({
+  // Find "To do" lane in the squad's SQUAD board — auto-create board if it doesn't exist yet
+  let todoLane = await prisma.lane.findFirst({
     where: {
       name: { in: ['To do', 'To Do'] },
       board: { type: 'SQUAD', owner: { squadId: task.squadId } },
     },
   });
-  if (!todoLane) return new Response('Squad board not set up yet', { status: 400 });
+
+  if (!todoLane) {
+    const squad = await prisma.squad.findUnique({
+      where:  { id: task.squadId },
+      select: { name: true },
+    });
+    const board = await ensureSquadBoard(task.squadId, user.id, squad?.name ?? '');
+    const lane = board?.lanes.find(l => l.name === 'To do');
+    if (!lane) return new Response('Board setup error', { status: 500 });
+    todoLane = lane;
+  }
 
   const updated = await prisma.task.update({
     where: { id: params.taskId },

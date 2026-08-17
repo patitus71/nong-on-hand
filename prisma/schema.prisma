@@ -187,14 +187,15 @@ model TaskIssueLog {
 }
 
 model Sprint {
-  id          String       @id @default(cuid())
-  squadId     String
-  squad       Squad        @relation(fields: [squadId], references: [id])
-  name        String
-  status      SprintStatus @default(OPEN)
-  startedAt   DateTime     @default(now())
-  closedAt    DateTime?
-  closedById  String?
+  id             String       @id @default(cuid())
+  squadId        String
+  squad          Squad        @relation(fields: [squadId], references: [id])
+  name           String
+  status         SprintStatus @default(OPEN)
+  startedAt      DateTime     @default(now())
+  plannedEndDate DateTime?
+  closedAt       DateTime?
+  closedById     String?
   closedBy    User?        @relation("SprintClosedBy", fields: [closedById], references: [id])
   tasks       Task[]
   issueLogs   TaskIssueLog[]

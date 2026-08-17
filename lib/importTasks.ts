@@ -45,20 +45,27 @@ export function validateRow(row: Record<string, any>, rowIndex: number) {
  */
 
 /**
- * คำนวณสถานะ coarse สำหรับ Squad Board (5 ค่า)
+ * คำนวณสถานะ coarse สำหรับ Squad Board (6 ค่า)
  * hasIssue มีสิทธิ์สูงสุด — ชนะทุกเงื่อนไข
- * lane.name === 'Review' (personal board) → 'Wait for review' (รอ QA_LEAD approve)
+ * laneId === null → 'To do list' (ยังไม่ได้ดึงเข้าบอร์ดใคร)
+ * lane 'to do'       → 'On-Board' (อยู่ในบอร์ดแล้ว รอเริ่ม)
+ * lane 'in progress' → 'On-Board In Progress'
+ * lane 'review'      → 'Wait for review'
+ * lane 'done'        → 'Done'
  */
 export function computeSquadBoardStatus(task: {
   hasIssue: boolean;
   laneId: string | null;
   lane?: { name: string } | null;
-}): 'To do' | 'On-Board' | 'Wait for review' | 'Done' | 'มีปัญหา' {
+}): 'To do list' | 'On-Board' | 'On-Board In Progress' | 'Wait for review' | 'Done' | 'มีปัญหา' {
   if (task.hasIssue) return 'มีปัญหา';
-  if (!task.laneId || task.lane?.name === 'To do' || task.lane?.name === 'To Do') return 'To do';
-  if (task.lane?.name === 'Review') return 'Wait for review';
-  if (task.lane?.name === 'Done') return 'Done';
-  return 'On-Board';
+  if (!task.laneId) return 'To do list';
+  const ln = task.lane?.name?.toLowerCase();
+  if (ln === 'to do') return 'On-Board';
+  if (ln === 'in progress') return 'On-Board In Progress';
+  if (ln === 'review') return 'Wait for review';
+  if (ln === 'done') return 'Done';
+  return 'On-Board In Progress';
 }
 
 /**
@@ -82,13 +89,18 @@ export function canPullIntoBoard(task: { squadId: string | null }, qaLeadSquadId
 }
 
 /**
- * เงื่อนไขตอน assign งานให้ QA_ENGINEER:
+ * เงื่อนไขตอน assign งานให้ engineer:
  * - assignee ต้องมี role = QA_ENGINEER
- * - assignee ต้องอยู่ squad เดียวกับ QA_LEAD ที่กำลัง assign (กันโยนงานข้าม squad)
+ * - ADMIN assign ได้ทุก squad
+ * - floating pool member assign ข้าม squad ได้
+ * - QA_LEAD assign ได้เฉพาะ engineer ใน squad ตัวเอง
  */
-export function canAssignToQaEngineer(
-  assignee: { role: string; squadId: string | null },
-  qaLeadSquadId: string
+export function canAssignTaskTo(
+  actor: { role: string; squadId: string | null; isFloatingPoolMember?: boolean },
+  assignee: { role: string; squadId: string | null }
 ) {
-  return assignee.role === "QA_ENGINEER" && assignee.squadId === qaLeadSquadId;
+  if (assignee.role !== "QA_ENGINEER") return false;
+  if (actor.role === "ADMIN") return true;
+  if (actor.isFloatingPoolMember) return true;
+  return assignee.squadId === actor.squadId;
 }

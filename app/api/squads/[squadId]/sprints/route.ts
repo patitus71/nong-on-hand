@@ -26,10 +26,11 @@ export async function POST(req: NextRequest, { params }: { params: { squadId: st
   const name: string = typeof body.name === 'string' && body.name.trim()
     ? body.name.trim()
     : `Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`;
+  const plannedEndDate = body.plannedEndDate ? new Date(body.plannedEndDate) : null;
 
   const sprint = await prisma.sprint.create({
-    data: { squadId: params.squadId, name },
-    select: { id: true, name: true, status: true, startedAt: true },
+    data: { squadId: params.squadId, name, ...(plannedEndDate ? { plannedEndDate } : {}) },
+    select: { id: true, name: true, status: true, startedAt: true, plannedEndDate: true },
   });
 
   return NextResponse.json(sprint, { status: 201 });

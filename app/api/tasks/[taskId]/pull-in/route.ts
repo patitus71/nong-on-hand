@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { canPullIntoBoard, canAssignToQaEngineer } from '@/lib/importTasks';
+import { canPullIntoBoard, canAssignTaskTo } from '@/lib/importTasks';
 import { ensureSquadBoard } from '@/lib/squadBoard';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
@@ -26,12 +26,12 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     return new Response('Forbidden: task belongs to another squad', { status: 403 });
   }
 
-  if (assigneeId && user.squadId) {
+  if (assigneeId) {
     const assignee = await prisma.user.findUnique({
       where:  { id: assigneeId },
       select: { role: true, squadId: true },
     });
-    if (!assignee || !canAssignToQaEngineer(assignee as any, user.squadId)) {
+    if (!assignee || !canAssignTaskTo(user, assignee)) {
       return new Response('Invalid assignee', { status: 400 });
     }
   }

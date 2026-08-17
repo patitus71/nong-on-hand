@@ -46,7 +46,7 @@
    - Flow: parse ไฟล์ → validate ทุกแถวด้วย `lib/importTasks.ts` (`validateRow`) → โชว์ preview + error ก่อน confirm → สร้าง `ImportBatch` แล้ว bulk create `Task` (`source: "IMPORTED"`, `laneId: null`, `assigneeId: null`)
    - งานที่ import แล้วจะโผล่ในหน้า **"งานทั้งหมด"** ทันที (ยังไม่อยู่ในบอร์ดของใคร เพราะ `laneId` เป็น null)
    - **QA_LEAD** มองเห็นงานใน "งานทั้งหมด" ที่ `squadId` ตรงกับ squad ตัวเอง (หรือยังไม่ระบุ squad) แล้วกดปุ่ม **"ดึงเข้าบอร์ด"** → เช็คสิทธิ์ด้วย `canPullIntoBoard()` → set `laneId` เป็นเลนเริ่มต้นของบอร์ด squad ตัวเอง และ set `pulledIntoBoardAt = now()`
-   - หลังดึงเข้าบอร์ดแล้ว QA_LEAD กรอก **estimate** (`estimatedMinutes`) และเลือกผู้รับผิดชอบจาก dropdown ที่ filter เฉพาะ user ที่เป็น `QA_ENGINEER` ใน squad เดียวกัน — validate ด้วย `canAssignToQaEngineer()` ก่อนบันทึกกัน assign ข้าม squad ผิดพลาด
+   - หลังดึงเข้าบอร์ดแล้ว QA_LEAD กรอก **estimate** (`estimatedMinutes`) และเลือกผู้รับผิดชอบจาก dropdown ที่ filter เฉพาะ user ที่เป็น `QA_ENGINEER` ใน squad เดียวกัน — validate ด้วย `canAssignTaskTo()` ก่อนบันทึกกัน assign ข้าม squad ผิดพลาด
    - หน้า "งานทั้งหมด" ควรมี badge บอกว่างานไหน `source: IMPORTED` และงานไหนยังไม่ถูกดึงเข้าบอร์ด (`pulledIntoBoardAt: null`) เพื่อให้ QA_LEAD หาได้ง่าย
 
 ## Auth & Roles (อ้างอิงจาก qa-assist)

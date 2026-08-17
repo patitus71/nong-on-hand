@@ -20,6 +20,7 @@ type TaskData = {
   squad: { name: string } | null;
   assignee: { name: string } | null;
   totalNormalMin: number; totalOtMin: number;
+  isAtRisk: boolean; riskReason: string;
 };
 type LaneData = { id: string; name: string; tasks: TaskData[] };
 
@@ -42,12 +43,19 @@ function SortableCard({ task, overlay = false }: { task: TaskData; overlay?: boo
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes} {...listeners}
-      className={`bg-surface-2 border rounded-lg p-2.5 cursor-grab active:cursor-grabbing transition-colors select-none
-        ${task.hasIssue ? 'border-danger/40' : 'border-app-border'}
+      className={`bg-surface-2 border rounded-lg p-2.5 cursor-grab active:cursor-grabbing transition-colors select-none relative
+        ${task.hasIssue ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
         ${isDragging && !overlay ? 'opacity-40' : ''}
         ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#3a3f4d]'}
+        ${task.isAtRisk && !isDragging && !overlay ? 'card-at-risk' : ''}
       `}
     >
+      {task.isAtRisk && (
+        <span
+          className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10"
+          title={task.riskReason}
+        >🔥</span>
+      )}
       <Link
         href={`/tasks/${task.id}`}
         onClick={e => e.stopPropagation()}
@@ -192,6 +200,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         id: task.id, title: task.title, hasIssue: false, order: task.order,
         reviewApprovedAt: null,
         squad: task.squad, assignee: task.assignee, totalNormalMin: 0, totalOtMin: 0,
+        isAtRisk: false, riskReason: '',
       });
       setTitle(''); setOpen(false);
     }

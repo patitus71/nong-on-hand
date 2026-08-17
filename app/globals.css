@@ -51,3 +51,13 @@ input, button, select, textarea {
 @keyframes btn-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── At-risk card shake ───────────────────────────────────── */
+@keyframes card-shake {
+  0%, 100% { transform: translateX(0); }
+  25%       { transform: translateX(-4px); }
+  75%       { transform: translateX(4px); }
+}
+.card-at-risk {
+  animation: card-shake 0.4s ease-in-out 3;
+}

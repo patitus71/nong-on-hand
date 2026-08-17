@@ -91,9 +91,10 @@ export function isTaskVisibleOnSquadBoard(
   return task.assigneeRole === "QA_LEAD" || task.assigneeRole === "QA_ENGINEER";
 }
 
-/** ADMIN/QA_LEAD assign งานได้, QA_MANAGER/QA_ENGINEER ทำไม่ได้ */
+/** ADMIN/QA_LEAD assign งานได้, floating pool member assign ได้ข้าม squad, QA_MANAGER/QA_ENGINEER ทำไม่ได้ */
 export function canAssignTaskOnSquadBoard(user: SessionUser, targetSquadId: string): boolean {
   if (user.role === "ADMIN") return true;
+  if (user.isFloatingPoolMember) return true;
   if (user.role === "QA_LEAD") return user.squadId === targetSquadId;
   return false;
 }
