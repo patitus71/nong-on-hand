@@ -11,7 +11,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
-    "seed:test": "tsx prisma/seed-test-tasks.ts"
+    "seed:test": "tsx prisma/seed-test-tasks.ts",
+    "timecalc:test": "tsx lib/timeCalc.test-run.ts",
+    "timecalc:recalc": "tsx prisma/recalc-timelogs.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
