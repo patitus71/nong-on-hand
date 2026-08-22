@@ -11,6 +11,8 @@ export const HINT_RELINK =
 // LINE hard limit is 5,000 chars; leave buffer for mention prefix
 export const LINE_CHAR_LIMIT = 4800;
 
+const DIVIDER = '━━━━━━━━━━━━━━';
+
 // ─── Standup ──────────────────────────────────────────────────────────────────
 
 type StandupPerson = { displayName: string; doing: string[]; queue: string[] };
@@ -66,25 +68,30 @@ function formatStandupBody(byAssignee: Map<string, StandupPerson>): { lines: str
   return { lines, totalOnBoard };
 }
 
-/** Per-squad: full standup block with "☀️ Standup เช้านี้ — {squad} ({date})" header */
+/** Per-squad: full standup block with date header + squad divider section */
 export async function buildStandupText(squadId: string, squadName: string): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const { lines, totalOnBoard } = formatStandupBody(byAssignee);
   const todayTH = thaiDate(new Date());
   return [
-    `☀️ Standup เช้านี้ — ${squadName} (${todayTH})`,
+    `☀️ Standup เช้านี้ — (${todayTH})`,
+    DIVIDER,
+    `📍 ${squadName}`,
+    DIVIDER,
     ...lines,
     '',
     byAssignee.size === 0 ? 'ไม่มีงานในบอร์ดวันนี้' : `รวม ${totalOnBoard} งาน On-Board วันนี้`,
   ].join('\n');
 }
 
-/** Send-all: squad section starting with squad name only — caller prepends the global date header */
+/** Send-all: squad section with divider header — caller prepends the global date header */
 export async function buildStandupBlock(squadId: string, squadName: string): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const { lines, totalOnBoard } = formatStandupBody(byAssignee);
   return [
-    squadName,
+    DIVIDER,
+    `📍 ${squadName}`,
+    DIVIDER,
     ...lines,
     '',
     byAssignee.size === 0 ? 'ไม่มีงานในบอร์ดวันนี้' : `รวม ${totalOnBoard} งาน On-Board วันนี้`,
@@ -203,7 +210,7 @@ function buildEodFooterLines(
   return lines;
 }
 
-/** Per-squad: chunked EOD output with "📊 สรุปสิ้นวัน — {squad} ({date})" header */
+/** Per-squad: chunked EOD output with date header + squad divider section */
 export async function buildEodChunks(squadId: string, squadName: string): Promise<string[]> {
   const ictOffset = 7 * 60 * 60 * 1000;
   const todayICT  = new Date(Date.now() + ictOffset);
@@ -211,8 +218,10 @@ export async function buildEodChunks(squadId: string, squadName: string): Promis
 
   const { statusCount, totalRemaining, doneToday, byAssignee } = await fetchEodData(squadId);
 
-  const header  = `📊 สรุปสิ้นวัน — ${squadName} (${todayTH})`;
-  const footer  = buildEodFooterLines(statusCount, totalRemaining, doneToday).join('\n');
+  const dateHeader   = `📊 สรุปสิ้นวัน — (${todayTH})`;
+  const squadSection = `${DIVIDER}\n📍 ${squadName}\n${DIVIDER}`;
+  const header       = `${dateHeader}\n${squadSection}`;
+  const footer       = buildEodFooterLines(statusCount, totalRemaining, doneToday).join('\n');
 
   const personBlocks: string[] = [];
   for (const [, person] of Array.from(byAssignee)) {
@@ -227,7 +236,7 @@ export async function buildEodChunks(squadId: string, squadName: string): Promis
     const withFooter = candidate + '\n' + footer;
     if (withFooter.length > LINE_CHAR_LIMIT && body !== header + '\n') {
       chunks.push(body.trimEnd());
-      body = `${header} (ต่อ)\n\n${block}\n`;
+      body = `${dateHeader} (ต่อ)\n${squadSection}\n\n${block}\n`;
     } else {
       body = candidate;
     }
@@ -237,12 +246,12 @@ export async function buildEodChunks(squadId: string, squadName: string): Promis
   return chunks;
 }
 
-/** Send-all: squad EOD section starting with squad name only — caller prepends the global date header */
+/** Send-all: squad EOD section with divider header — caller prepends the global date header */
 export async function buildEodBlock(squadId: string, squadName: string): Promise<string> {
   const { statusCount, totalRemaining, doneToday, byAssignee } = await fetchEodData(squadId);
   const footerLines = buildEodFooterLines(statusCount, totalRemaining, doneToday);
 
-  const lines: string[] = [squadName];
+  const lines: string[] = [DIVIDER, `📍 ${squadName}`, DIVIDER];
   for (const [, person] of Array.from(byAssignee)) {
     lines.push('');
     lines.push(`@${person.displayName}`);
