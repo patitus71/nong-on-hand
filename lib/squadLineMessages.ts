@@ -23,19 +23,22 @@ export async function buildStandupText(squadId: string, squadName: string): Prom
     },
     select: {
       id: true, title: true, hasIssue: true, assigneeId: true, laneId: true,
-      assignee: { select: { name: true } },
+      assignee: { select: { name: true, lineDisplayName: true } },
       lane:     { select: { name: true } },
     },
     orderBy: { order: 'asc' },
   });
 
-  const byAssignee = new Map<string, { name: string; doing: string[]; queue: string[] }>();
+  const byAssignee = new Map<string, { displayName: string; doing: string[]; queue: string[] }>();
   for (const task of tasks) {
     if (!task.assigneeId || !task.assignee) continue;
     const status = computeSquadBoardStatus(task);
     if (status === 'Done') continue;
     if (!byAssignee.has(task.assigneeId)) {
-      byAssignee.set(task.assigneeId, { name: task.assignee.name, doing: [], queue: [] });
+      byAssignee.set(task.assigneeId, {
+        displayName: task.assignee.lineDisplayName ?? task.assignee.name,
+        doing: [], queue: [],
+      });
     }
     const entry = byAssignee.get(task.assigneeId)!;
     const label = task.title + (task.hasIssue ? ' 🚩 มีปัญหา' : '');
@@ -52,7 +55,7 @@ export async function buildStandupText(squadId: string, squadName: string): Prom
 
   for (const [, person] of Array.from(byAssignee)) {
     lines.push('');
-    lines.push(`🧑 ${person.name}`);
+    lines.push(`@${person.displayName}`);
     for (const t of person.doing) lines.push(`  • กำลังทำ: ${t}`);
     for (const t of person.queue) lines.push(`  • คิวถัดไป: ${t}`);
     totalOnBoard += person.doing.length + person.queue.length;
