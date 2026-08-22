@@ -11,8 +11,9 @@ export default async function Topbar() {
   const session = await getSession();
   const user = session?.user as any;
   const firstName = user?.name?.split(' ')[0] ?? 'User';
-  const squadHref = user?.squadId ? `/squads/${user.squadId}` : '/squads';
-  const retroHref = user?.squadId ? `/squads/${user.squadId}/retro` : '/squads';
+  const useOwnSquad = user?.squadId && !user?.isFloatingPoolMember;
+  const squadHref   = useOwnSquad ? `/squads/${user.squadId}` : '/squads';
+  const retroHref   = useOwnSquad ? `/squads/${user.squadId}/retro` : '/squads';
 
   return (
     <header className="flex items-center justify-between px-7 py-4 border-b border-app-border sticky top-0 bg-app-bg z-10">

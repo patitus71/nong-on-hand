@@ -13,8 +13,9 @@ export default async function SquadsPage() {
   const user = session.user as SessionUser;
   const canBroadcast = canSendLineBroadcast(user);
 
-  // ถ้ามี squad ให้ redirect เข้าไปเลย
-  if (user.squadId) redirect(`/squads/${user.squadId}`);
+  // Floating pool member และ ADMIN/QA_MANAGER เห็น grid selector ทั้งหมด
+  // QA_LEAD/QA_ENGINEER ที่ผูก squad แล้ว redirect เข้า squad ตัวเองทันที
+  if (user.squadId && !user.isFloatingPoolMember) redirect(`/squads/${user.squadId}`);
 
   // ADMIN ไม่มี squad → แสดงรายชื่อ squad ทั้งหมดให้เลือก
   const [squads, boardCounts, pendingCounts] = await Promise.all([
