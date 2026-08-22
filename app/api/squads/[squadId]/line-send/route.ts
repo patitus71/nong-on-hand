@@ -147,7 +147,8 @@ const EOD_SHOW = new Set<string>(['On-Board In Progress', 'Wait for review', '�
 function eodStatusLabel(status: string): string {
   if (status === 'On-Board In Progress') return 'In Progress';
   if (status === 'Wait for review')      return 'Review';
-  return status; // 'Done' and 'มีปัญหา' displayed as-is
+  if (status === 'มีปัญหา')             return '🚩มีปัญหา';
+  return status; // 'Done' displayed as-is
 }
 
 // LINE's hard limit is 5,000 chars; leave buffer for mention prefix
@@ -189,7 +190,8 @@ async function buildEodChunks(squadId: string, squadName: string): Promise<strin
   const header  = `📊 สรุปสิ้นวัน — ${squadName} (${todayTH})`;
 
   const statusOrder = ['To do list', 'On-Board', 'On-Board In Progress', 'Wait for review', 'มีปัญหา'];
-  const parts = statusOrder.filter(s => statusCount[s]).map(s => `${s}: ${statusCount[s]}`);
+  const statusLabel: Record<string, string> = { 'มีปัญหา': '🚩มีปัญหา' };
+  const parts = statusOrder.filter(s => statusCount[s]).map(s => `${statusLabel[s] ?? s}: ${statusCount[s]}`);
 
   const footerLines: string[] = [
     `งานที่เหลือ (ยังไม่ Done): ${totalRemaining} งาน`,
