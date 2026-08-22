@@ -13,6 +13,8 @@ import {
   formatMinutes,
 } from '@/lib/lineNotify';
 
+const HINT_RELINK = '💡 บางบัญชียังไม่มีชื่อ LINE — พิมพ์ /link <username> ในกลุ่มนี้อีกครั้งเพื่ออัปเดต';
+
 export async function POST(
   req: Request,
   { params }: { params: { squadId: string } }
@@ -45,34 +47,37 @@ export async function POST(
     select: { name: true, lineUserId: true, lineDisplayName: true },
   });
 
-  let text: string;
-
-  if (type === 'standup') {
-    text = await buildStandupText(squad.id, squad.name);
-  } else {
-    text = await buildEodText(squad.id, squad.name);
-  }
-
-  // เพิ่ม @mention prefix ถ้ามี manager ที่ link แล้ว
   const mentions = managers
     .filter(m => m.lineUserId)
     .map(m => ({ placeholderName: `@${m.lineDisplayName ?? m.name}`, userId: m.lineUserId! }));
 
-  // แนะนำ user เก่าที่มี lineUserId แต่ยังไม่มี lineDisplayName ให้ /link ใหม่
   const needsRelinkHint = managers.some(m => m.lineUserId && !m.lineDisplayName);
-
-  let fullText = text;
-  if (needsRelinkHint) {
-    fullText += '\n\n💡 บางบัญชียังไม่มีชื่อ LINE — พิมพ์ /link <username> ในกลุ่มนี้อีกครั้งเพื่ออัปเดต';
-  }
+  const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
 
   let result: { success: boolean; reason?: string };
 
-  if (mentions.length > 0) {
-    const mentionPrefix = mentions.map(m => m.placeholderName).join(' ') + '\n';
-    result = await sendLineGroupMessageWithMention(squad.lineGroupId, mentionPrefix + fullText, mentions);
+  if (type === 'standup') {
+    let text = await buildStandupText(squad.id, squad.name);
+    if (needsRelinkHint) text += '\n\n' + HINT_RELINK;
+
+    if (mentions.length > 0) {
+      result = await sendLineGroupMessageWithMention(squad.lineGroupId, mentionPrefix + text, mentions);
+    } else {
+      result = await sendLineTextMessage(squad.lineGroupId, text);
+    }
   } else {
-    result = await sendLineTextMessage(squad.lineGroupId, fullText);
+    const chunks = await buildEodChunks(squad.id, squad.name);
+    if (needsRelinkHint) chunks[chunks.length - 1] += '\n\n' + HINT_RELINK;
+
+    result = { success: true };
+    for (let i = 0; i < chunks.length; i++) {
+      const isFirst = i === 0 && mentions.length > 0;
+      const msg     = isFirst ? mentionPrefix + chunks[i] : chunks[i];
+      const r       = isFirst
+        ? await sendLineGroupMessageWithMention(squad.lineGroupId, msg, mentions)
+        : await sendLineTextMessage(squad.lineGroupId, msg);
+      if (!r.success) { result = r; break; }
+    }
   }
 
   if (!result.success) {
@@ -82,7 +87,7 @@ export async function POST(
   return Response.json({ ok: result.success, reason: result.reason });
 }
 
-// ─── message builders (reuse logic from cron routes) ─────────────────────────
+// ─── Standup builder (unchanged) ──────────────────────────────────────────────
 
 async function buildStandupText(squadId: string, squadName: string): Promise<string> {
   const tasks = await prisma.task.findMany({
@@ -134,10 +139,24 @@ async function buildStandupText(squadId: string, squadName: string): Promise<str
   return lines.join('\n');
 }
 
-async function buildEodText(squadId: string, squadName: string): Promise<string> {
-  const ictOffset = 7 * 60 * 60 * 1000;
-  const todayICT  = new Date(Date.now() + ictOffset);
-  const yyyymmdd  = todayICT.toISOString().slice(0, 10);
+// ─── EOD builder ──────────────────────────────────────────────────────────────
+
+// Statuses shown in per-person list
+const EOD_SHOW = new Set<string>(['On-Board In Progress', 'Wait for review', 'มีปัญหา', 'Done']);
+
+function eodStatusLabel(status: string): string {
+  if (status === 'On-Board In Progress') return 'In Progress';
+  if (status === 'Wait for review')      return 'Review';
+  return status; // 'Done' and 'มีปัญหา' displayed as-is
+}
+
+// LINE's hard limit is 5,000 chars; leave buffer for mention prefix
+const EOD_CHAR_LIMIT = 4800;
+
+async function buildEodChunks(squadId: string, squadName: string): Promise<string[]> {
+  const ictOffset  = 7 * 60 * 60 * 1000;
+  const todayICT   = new Date(Date.now() + ictOffset);
+  const yyyymmdd   = todayICT.toISOString().slice(0, 10);
   const todayStart = new Date(`${yyyymmdd}T00:00:00+07:00`);
   const todayEnd   = new Date(`${yyyymmdd}T23:59:59.999+07:00`);
 
@@ -146,12 +165,13 @@ async function buildEodText(squadId: string, squadName: string): Promise<string>
     select: {
       id: true, title: true, hasIssue: true, laneId: true,
       assigneeId: true, completedAt: true,
-      assignee: { select: { name: true } },
+      assignee: { select: { name: true, lineDisplayName: true } },
       lane:     { select: { name: true } },
       timeLogs: { where: { endAt: { not: null } }, select: { normalMinutes: true, otMinutes: true } },
     },
   });
 
+  // ── Summary counts (all non-Done — shown in footer, unchanged) ───────────────
   const statusCount: Record<string, number> = {};
   let totalRemaining = 0;
   for (const task of tasks) {
@@ -166,21 +186,66 @@ async function buildEodText(squadId: string, squadName: string): Promise<string>
   );
 
   const todayTH = thaiDate(todayICT);
-  const lines: string[] = [`📊 สรุปสิ้นวัน — ${squadName} (${todayTH})`, ''];
+  const header  = `📊 สรุปสิ้นวัน — ${squadName} (${todayTH})`;
 
-  lines.push(`งานที่เหลือ (ยังไม่ Done): ${totalRemaining} งาน`);
   const statusOrder = ['To do list', 'On-Board', 'On-Board In Progress', 'Wait for review', 'มีปัญหา'];
   const parts = statusOrder.filter(s => statusCount[s]).map(s => `${s}: ${statusCount[s]}`);
-  if (parts.length > 0) lines.push(`  ${parts.join(' · ')}`);
 
-  lines.push('');
-  lines.push(`งานที่เสร็จวันนี้: ${doneToday.length} งาน`);
-  for (const t of doneToday) {
-    const totalMin = t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0) + (l.otMinutes ?? 0), 0);
-    const timeStr  = totalMin > 0 ? ` (${formatMinutes(totalMin)})` : '';
-    lines.push(`  • ${t.assignee?.name ?? 'ไม่ระบุ'}: ${t.title}${timeStr}`);
+  const footerLines: string[] = [
+    `งานที่เหลือ (ยังไม่ Done): ${totalRemaining} งาน`,
+    ...(parts.length > 0 ? [`  ${parts.join(' · ')}`] : []),
+    '',
+    `งานที่เสร็จวันนี้: ${doneToday.length} งาน`,
+  ];
+  if (doneToday.length === 0) {
+    footerLines.push('  ไม่มีงานที่เสร็จวันนี้');
+  } else {
+    for (const t of doneToday) {
+      const totalMin = t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0) + (l.otMinutes ?? 0), 0);
+      const timeStr  = totalMin > 0 ? ` (${formatMinutes(totalMin)})` : '';
+      footerLines.push(`  • ${t.assignee?.name ?? 'ไม่ระบุ'}: ${t.title}${timeStr}`);
+    }
   }
-  if (doneToday.length === 0) lines.push('  ไม่มีงานที่เสร็จวันนี้');
+  const footer = footerLines.join('\n');
 
-  return lines.join('\n');
+  // ── Per-person blocks — only actionable statuses, skip To do list / On-Board ──
+  const byAssignee = new Map<string, { displayName: string; taskLines: string[] }>();
+  for (const task of tasks) {
+    if (!task.assigneeId || !task.assignee) continue;
+    const status = computeSquadBoardStatus(task);
+    if (!EOD_SHOW.has(status)) continue;
+    if (!byAssignee.has(task.assigneeId)) {
+      byAssignee.set(task.assigneeId, {
+        displayName: task.assignee.lineDisplayName ?? task.assignee.name,
+        taskLines:   [],
+      });
+    }
+    byAssignee.get(task.assigneeId)!.taskLines.push(`  • ${task.title} (${eodStatusLabel(status)})`);
+  }
+
+  const personBlocks: string[] = [];
+  for (const [, person] of Array.from(byAssignee)) {
+    personBlocks.push([`@${person.displayName}`, ...person.taskLines].join('\n'));
+  }
+
+  // ── Chunk at person boundaries to stay under LINE's char limit ───────────────
+  const chunks: string[] = [];
+  let body = header + '\n';
+
+  for (const block of personBlocks) {
+    const candidate  = body + '\n' + block + '\n';
+    const withFooter = candidate + '\n' + footer;
+    if (withFooter.length > EOD_CHAR_LIMIT && body !== header + '\n') {
+      // Flush current chunk without footer; continue on next chunk
+      chunks.push(body.trimEnd());
+      body = `${header} (ต่อ)\n\n${block}\n`;
+    } else {
+      body = candidate;
+    }
+  }
+
+  // Last chunk always carries the footer
+  chunks.push(body.trimEnd() + '\n\n' + footer);
+
+  return chunks;
 }
