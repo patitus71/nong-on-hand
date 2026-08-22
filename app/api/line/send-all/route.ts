@@ -1,0 +1,113 @@
+// app/api/line/send-all/route.ts
+// ส่ง standup/EOD ไปทุก squad ในขอบเขตของ user ครั้งเดียว
+// Squad ที่ใช้ lineGroupId เดียวกันรวมเป็นข้อความเดียว ไม่ส่งซ้ำ
+
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { canSendLineBroadcast, squadScopeFilter, type SessionUser } from '@/lib/rbac';
+import {
+  buildStandupText,
+  buildEodChunks,
+  mergeStandupChunks,
+  HINT_RELINK,
+} from '@/lib/squadLineMessages';
+import {
+  sendLineTextMessage,
+  sendLineGroupMessageWithMention,
+} from '@/lib/lineNotify';
+
+export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session) return new Response('Unauthorized', { status: 401 });
+  const user = session.user as SessionUser & { name: string };
+
+  if (!canSendLineBroadcast(user)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  const { type } = (await req.json()) as { type: 'standup' | 'eod' };
+  if (type !== 'standup' && type !== 'eod') {
+    return new Response('type must be standup or eod', { status: 400 });
+  }
+
+  // Squads in scope that have a LINE group configured
+  const scopeFilter = squadScopeFilter(user);
+  const squads = await prisma.squad.findMany({
+    where:  { ...scopeFilter, lineGroupId: { not: null } },
+    select: { id: true, name: true, lineGroupId: true },
+    orderBy: { name: 'asc' },
+  });
+
+  if (squads.length === 0) {
+    return Response.json({ ok: true, sentMessages: 0, totalSquads: 0, groupCount: 0 });
+  }
+
+  // Group squads by lineGroupId — squads sharing a group get one combined message
+  const byGroup = new Map<string, Array<{ id: string; name: string }>>();
+  for (const s of squads) {
+    const gid = s.lineGroupId!;
+    if (!byGroup.has(gid)) byGroup.set(gid, []);
+    byGroup.get(gid)!.push({ id: s.id, name: s.name });
+  }
+
+  // QA_MANAGER @mentions (global — same set across all groups)
+  const managers = await prisma.user.findMany({
+    where:  { role: 'QA_MANAGER', lineUserId: { not: null }, active: true, deletedAt: null },
+    select: { name: true, lineUserId: true, lineDisplayName: true },
+  });
+
+  const mentions = managers
+    .filter(m => m.lineUserId)
+    .map(m => ({ placeholderName: `@${m.lineDisplayName ?? m.name}`, userId: m.lineUserId! }));
+
+  const needsRelinkHint = managers.some(m => m.lineUserId && !m.lineDisplayName);
+  const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
+
+  let sentMessages = 0;
+
+  for (const [groupId, groupSquads] of Array.from(byGroup)) {
+    // Build combined message chunks for all squads in this LINE group
+    let chunks: string[];
+
+    if (type === 'standup') {
+      const parts: string[] = [];
+      for (const sq of groupSquads) {
+        parts.push(await buildStandupText(sq.id, sq.name));
+      }
+      chunks = mergeStandupChunks(parts);
+    } else {
+      // Collect EOD chunks from each squad (each already handles its own char limit)
+      const allChunks: string[] = [];
+      for (const sq of groupSquads) {
+        allChunks.push(...await buildEodChunks(sq.id, sq.name));
+      }
+      chunks = allChunks;
+    }
+
+    if (needsRelinkHint) {
+      chunks[chunks.length - 1] += '\n\n' + HINT_RELINK;
+    }
+
+    for (let i = 0; i < chunks.length; i++) {
+      const isFirst = i === 0 && mentions.length > 0;
+      const msg     = isFirst ? mentionPrefix + chunks[i] : chunks[i];
+      const r       = isFirst
+        ? await sendLineGroupMessageWithMention(groupId, msg, mentions)
+        : await sendLineTextMessage(groupId, msg);
+
+      if (r.success) {
+        sentMessages++;
+      } else {
+        console.error(`[send-all/${type}] group=${groupId}:`, r.reason);
+      }
+    }
+  }
+
+  return Response.json({
+    ok:           true,
+    sentMessages,
+    totalSquads:  squads.length,
+    groupCount:   byGroup.size,
+  });
+}

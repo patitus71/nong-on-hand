@@ -273,3 +273,15 @@ export function canManageSprint(user: SessionUser, targetSquadId: string): boole
   if (user.role === 'QA_LEAD') return user.squadId === targetSquadId;
   return false;
 }
+
+/**
+ * ส่ง LINE standup/EOD (all-squads broadcast): ขยายจาก canManageSprint
+ * เพิ่ม QA_MANAGER เพราะต้องส่งแจ้งเตือนได้แม้จะ view-only ทุกที่อื่น
+ */
+export function canSendLineBroadcast(user: SessionUser): boolean {
+  if (user.role === 'ADMIN') return true;
+  if (user.role === 'QA_MANAGER') return true;
+  if (user.isFloatingPoolMember) return true;
+  if (user.role === 'QA_LEAD') return true;
+  return false;
+}

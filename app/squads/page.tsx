@@ -2,14 +2,16 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import type { SessionUser } from '@/lib/rbac';
+import { canSendLineBroadcast, type SessionUser } from '@/lib/rbac';
 import Topbar from '@/components/Topbar';
 import Link from 'next/link';
+import BroadcastButtons from './BroadcastButtons';
 
 export default async function SquadsPage() {
   const session = await getServerSession(authOptions);
   if (!session) redirect('/login');
   const user = session.user as SessionUser;
+  const canBroadcast = canSendLineBroadcast(user);
 
   // ถ้ามี squad ให้ redirect เข้าไปเลย
   if (user.squadId) redirect(`/squads/${user.squadId}`);
@@ -39,8 +41,13 @@ export default async function SquadsPage() {
     <>
       <Topbar />
       <div className="max-w-[1180px] mx-auto px-7 py-6">
-        <h1 className="text-xl font-semibold text-txt-primary mb-1">เลือก Squad</h1>
-        <p className="text-[13px] text-txt-secondary mb-6">คลิก squad เพื่อดูบอร์ด</p>
+        <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+          <div>
+            <h1 className="text-xl font-semibold text-txt-primary mb-1">เลือก Squad</h1>
+            <p className="text-[13px] text-txt-secondary">คลิก squad เพื่อดูบอร์ด</p>
+          </div>
+          {canBroadcast && <BroadcastButtons />}
+        </div>
 
         <div className="flex gap-3 flex-wrap">
           {squads.map(s => {
