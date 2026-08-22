@@ -51,16 +51,18 @@ enum SprintStatus {
 }
 
 model Squad {
-  id             String        @id @default(cuid())
-  name           String        @unique
-  isFloatingPool Boolean       @default(false)
-  users          User[]
-  tasks          Task[]
-  retros         Retro[]
-  importBatches  ImportBatch[]
-  weeklyReports  WeeklyReport[]
-  sprints        Sprint[]
-  createdAt      DateTime      @default(now())
+  id                       String        @id @default(cuid())
+  name                     String        @unique
+  isFloatingPool           Boolean       @default(false)
+  lineGroupId              String?       // LINE group chat ID (ได้มาตอนบอทถูกเชิญเข้ากลุ่ม — ดู /api/line/webhook)
+  eodReportRecipientEmails String?       // ทางเลือกเสริม: อีเมลรับ EOD report ควบคู่ LINE (comma-separated)
+  users                    User[]
+  tasks                    Task[]
+  retros                   Retro[]
+  importBatches            ImportBatch[]
+  weeklyReports            WeeklyReport[]
+  sprints                  Sprint[]
+  createdAt                DateTime      @default(now())
 
   @@index([isFloatingPool])
 }
@@ -73,6 +75,8 @@ model User {
   role         Role      @default(QA_ENGINEER)
   active       Boolean   @default(true) // admin ปิดการใช้งาน user ได้โดยไม่ต้องลบ
   deletedAt    DateTime? // soft-delete: null = active, set = ถูกลบโดย admin
+  lineUserId   String?   // LINE userId สำหรับ @mention — ได้มาจาก self-link (/link username ในกลุ่ม)
+  email        String?   // ทางเลือกเสริมสำหรับ EOD แบบอีเมล
   squadId      String?
   squad        Squad?    @relation(fields: [squadId], references: [id])
   boards       Board[]

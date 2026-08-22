@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canPullIntoBoard, canAssignTaskTo } from '@/lib/importTasks';
 import { ensureSquadBoard } from '@/lib/squadBoard';
+import { sendLineTextMessage, sendLineGroupMessageWithMention, thaiDate } from '@/lib/lineNotify';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -88,6 +89,62 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
       order:             (maxOrder._max.order ?? -1) + 1,
     },
   });
+
+  // LINE notification — ส่งเฉพาะถ้า pull-in มาพร้อม assignee
+  if (assigneeId) {
+    void (async () => {
+      try {
+        const [assignee, squad] = await Promise.all([
+          prisma.user.findUnique({
+            where:  { id: assigneeId },
+            select: { name: true, lineUserId: true },
+          }),
+          prisma.squad.findUnique({
+            where:  { id: targetSquadId },
+            select: { name: true, lineGroupId: true },
+          }),
+        ]);
+
+        if (!squad?.lineGroupId || !assignee) return;
+
+        // สร้าง Notification ในแอปสำหรับ assignee
+        await prisma.notification.create({
+          data: {
+            userId:        assigneeId,
+            message:       `งาน "${updated.title}" ถูกมอบหมายให้คุณ`,
+            relatedTaskId: updated.id,
+          },
+        });
+
+        const dueDateStr = updated.dueDate ? thaiDate(updated.dueDate) : 'ไม่ระบุ';
+
+        if (assignee.lineUserId) {
+          const placeholder = `@${assignee.name}`;
+          const text = [
+            `📌 ${placeholder} ได้รับมอบหมายงานใหม่`,
+            `งาน: ${updated.title}`,
+            `Squad: ${squad.name}`,
+            `มอบหมายโดย: ${user.name}`,
+            `กำหนดเสร็จ: ${dueDateStr}`,
+          ].join('\n');
+          await sendLineGroupMessageWithMention(squad.lineGroupId, text, [
+            { placeholderName: placeholder, userId: assignee.lineUserId },
+          ]);
+        } else {
+          const text = [
+            `📌 ${assignee.name} ได้รับมอบหมายงานใหม่`,
+            `งาน: ${updated.title}`,
+            `Squad: ${squad.name}`,
+            `มอบหมายโดย: ${user.name}`,
+            `กำหนดเสร็จ: ${dueDateStr}`,
+          ].join('\n');
+          await sendLineTextMessage(squad.lineGroupId, text);
+        }
+      } catch (err) {
+        console.error('[pull-in] LINE notification error:', err);
+      }
+    })();
+  }
 
   return Response.json(updated);
 }

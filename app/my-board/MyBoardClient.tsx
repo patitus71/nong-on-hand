@@ -11,7 +11,7 @@ import {
   verticalListSortingStrategy, horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { fmt, initials, avatarColor, renderReportMarkdown } from '@/lib/ui';
+import { fmt, initials, avatarColor, renderReportMarkdown, markdownToPlainText } from '@/lib/ui';
 
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
@@ -303,6 +303,7 @@ export default function MyBoardClient({
   const [exporting,      setExporting]      = useState(false);
   const [exportMarkdown, setExportMarkdown] = useState<string | null>(null);
   const [exportError,    setExportError]    = useState('');
+  const [copied,         setCopied]         = useState(false);
 
   async function openExport() {
     setExportMarkdown(null);
@@ -333,6 +334,19 @@ export default function MyBoardClient({
     a.href = url;
     a.download = `my-board-report-${new Date().toISOString().slice(0, 10)}.md`;
     a.click(); URL.revokeObjectURL(url);
+  }
+
+  async function copyPlainText() {
+    if (!exportMarkdown) return;
+    const text = markdownToPlainText(exportMarkdown);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      alert(text);
+      return;
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   /* ── Lane management ── */
@@ -1024,6 +1038,10 @@ export default function MyBoardClient({
                   <button onClick={downloadMarkdown}
                     className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-[7px] rounded-md transition-colors">
                     ⬇ ดาวน์โหลด .md
+                  </button>
+                  <button onClick={copyPlainText}
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">
+                    {copied ? '✅ คัดลอกแล้ว!' : '📋 Copy เป็นข้อความ'}
                   </button>
                   <button onClick={() => window.print()}
                     className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">

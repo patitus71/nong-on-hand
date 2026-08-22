@@ -85,6 +85,71 @@ export function renderReportMarkdown(md: string): string {
   return out.join('\n');
 }
 
+/**
+ * แปลง Markdown report เป็น plain text ที่แปะ LINE/Slack ได้โดยไม่มี syntax แปลกๆ
+ * - `# Title`      → ชื่อรายงาน (บรรทัดแรก)
+ * - `## Section`   → 📌 Section
+ * - `### Sub`      → ▶ Sub
+ * - table body row → • col1 · col2 · col3 (ข้ามแถว header และ separator)
+ * - `- item`       → • item
+ * - `**bold**`     → bold, `_italic_` → italic (strip syntax เก็บเนื้อหา)
+ */
+export function markdownToPlainText(md: string): string {
+  function inlinePlain(s: string): string {
+    return s
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/_(.+?)_/g, '$1');
+  }
+
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith('# ')) {
+      out.push(inlinePlain(line.slice(2)));
+      i++; continue;
+    }
+    if (line.startsWith('## ')) {
+      out.push('');
+      out.push(`📌 ${inlinePlain(line.slice(3))}`);
+      i++; continue;
+    }
+    if (line.startsWith('### ')) {
+      out.push(`▶ ${inlinePlain(line.slice(4))}`);
+      i++; continue;
+    }
+    if (line.startsWith('|')) {
+      // รวม table ทั้งหมด — index 0 = header, index 1 = separator, index 2+ = body
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].startsWith('|')) {
+        tableLines.push(lines[i]); i++;
+      }
+      const parseRow = (r: string) =>
+        r.split('|').slice(1, -1).map(c => inlinePlain(c.trim())).filter(Boolean);
+      for (const row of tableLines.slice(2)) { // ข้าม header + separator
+        const cells = parseRow(row);
+        if (cells.length > 0) out.push(`• ${cells.join(' · ')}`);
+      }
+      continue;
+    }
+    if (line.startsWith('- ')) {
+      out.push(`• ${inlinePlain(line.slice(2))}`);
+      i++; continue;
+    }
+    if (line.trim() === '') {
+      out.push('');
+      i++; continue;
+    }
+    out.push(inlinePlain(line));
+    i++;
+  }
+
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function laneBadgeCls(name: string | null): string {
   if (!name) return 'bg-surface-2 text-txt-muted';
   const l = name.toLowerCase();
