@@ -6,7 +6,11 @@
 // รองรับ 2 event:
 // - join: บอทถูกเชิญเข้ากลุ่ม → log groupId เพื่อนำไปตั้งใน Squad.lineGroupId
 // - message: สมาชิกพิมพ์ "/link <username>" → self-link เชื่อม lineUserId กับ User
+//
+// Security: verify ด้วย x-line-signature (HMAC-SHA256 ของ raw body ด้วย LINE_CHANNEL_SECRET)
+// แทนการเช็ค session เพราะ LINE server ยิง POST โดยตรง ไม่มี cookie
 
+import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { replyLineMessage } from '@/lib/lineNotify';
 
@@ -29,10 +33,24 @@ interface LineWebhookBody {
   events: LineEvent[];
 }
 
+function verifyLineSignature(rawBody: string, signature: string): boolean {
+  const secret = process.env.LINE_CHANNEL_SECRET;
+  if (!secret) return true; // dev: ข้ามการตรวจถ้ายังไม่ตั้งค่า
+  const expected = crypto.createHmac('SHA256', secret).update(rawBody).digest('base64');
+  return expected === signature;
+}
+
 export async function POST(req: Request) {
+  const rawBody = await req.text();
+  const signature = req.headers.get('x-line-signature') ?? '';
+
+  if (!verifyLineSignature(rawBody, signature)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+
   let body: LineWebhookBody;
   try {
-    body = await req.json();
+    body = JSON.parse(rawBody) as LineWebhookBody;
   } catch {
     return new Response('Bad Request', { status: 400 });
   }

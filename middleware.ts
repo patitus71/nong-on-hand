@@ -36,5 +36,7 @@ export default withAuth(
 
 export const config = {
   // ปรับ path ตามหน้าที่ต้องการ login ก่อนเข้า (เว้น /login, /api/auth, static assets)
-  matcher: ["/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)"],
+  // /api/line/webhook — public (LINE server ยิง POST โดยตรง verify ด้วย x-line-signature แทน)
+  // /api/cron/*       — public (Vercel cron ยิง GET โดยตรง verify ด้วย CRON_SECRET header แทน)
+  matcher: ["/((?!login|api/auth|api/line/webhook|api/cron|_next/static|_next/image|favicon.ico).*)"],
 };
