@@ -72,7 +72,7 @@ function formatStandupBody(byAssignee: Map<string, StandupPerson>): { lines: str
 export async function buildStandupText(squadId: string, squadName: string): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const { lines, totalOnBoard } = formatStandupBody(byAssignee);
-  const todayTH = thaiDate(new Date());
+  const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
   return [
     `☀️ Standup เช้านี้ — (${todayTH})`,
     DIVIDER,

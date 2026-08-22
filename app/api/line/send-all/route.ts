@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     let chunks: string[];
 
     if (type === 'standup') {
-      const todayTH = thaiDate(new Date());
+      const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
       const parts: string[] = [`☀️ Standup เช้านี้ — (${todayTH})`];
       for (const sq of groupSquads) {
         parts.push(await buildStandupBlock(sq.id, sq.name));
