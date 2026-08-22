@@ -7,14 +7,15 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canSendLineBroadcast, squadScopeFilter, type SessionUser } from '@/lib/rbac';
 import {
-  buildStandupText,
-  buildEodChunks,
+  buildStandupBlock,
+  buildEodBlock,
   mergeIntoChunks,
   HINT_RELINK,
 } from '@/lib/squadLineMessages';
 import {
   sendLineTextMessage,
   sendLineGroupMessageWithMention,
+  thaiDate,
 } from '@/lib/lineNotify';
 
 export async function POST(req: Request) {
@@ -71,17 +72,21 @@ export async function POST(req: Request) {
     let chunks: string[];
 
     if (type === 'standup') {
-      const parts: string[] = [];
+      const todayTH = thaiDate(new Date());
+      const parts: string[] = [`☀️ Standup เช้านี้ — (${todayTH})`];
       for (const sq of groupSquads) {
-        parts.push(await buildStandupText(sq.id, sq.name));
+        parts.push(await buildStandupBlock(sq.id, sq.name));
       }
       chunks = mergeIntoChunks(parts);
     } else {
-      const allChunks: string[] = [];
+      const ictOffset = 7 * 60 * 60 * 1000;
+      const todayICT  = new Date(Date.now() + ictOffset);
+      const todayTH   = thaiDate(todayICT);
+      const parts: string[] = [`📊 สรุปสิ้นวัน — (${todayTH})`];
       for (const sq of groupSquads) {
-        allChunks.push(...await buildEodChunks(sq.id, sq.name));
+        parts.push(await buildEodBlock(sq.id, sq.name));
       }
-      chunks = mergeIntoChunks(allChunks); // pack multi-squad EOD into as few messages as possible
+      chunks = mergeIntoChunks(parts);
     }
 
     console.log(`[send-all/${type}] group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length}`);

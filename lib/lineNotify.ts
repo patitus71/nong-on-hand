@@ -16,18 +16,21 @@ export async function sendLineTextMessage(
 ): Promise<{ success: boolean; reason?: string }> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { success: false, reason: 'LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า' };
+  console.log(`[LINE text] sending to=${to} chars=${text.length}`);
   try {
     const res = await fetch(LINE_PUSH_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ to, messages: [{ type: 'text', text }] }),
     });
+    const responseBody = await res.text();
+    console.log('[LINE text] response:', res.status, responseBody);
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      return { success: false, reason: `LINE API error ${res.status}: ${body}` };
+      return { success: false, reason: `LINE API error ${res.status}: ${responseBody}` };
     }
     return { success: true };
   } catch (err) {
+    console.error('[LINE text] fetch error:', err);
     return { success: false, reason: `Network error: ${String(err)}` };
   }
 }
@@ -86,6 +89,7 @@ export async function sendLineGroupMessageWithMention(
     }
     return { success: true };
   } catch (err) {
+    console.error('[LINE mention] fetch error:', err);
     return { success: false, reason: `Network error: ${String(err)}` };
   }
 }
