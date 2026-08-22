@@ -2,9 +2,7 @@
 // สร้าง Notification records เมื่อมีการลบงาน
 // ใช้ภายใน API route เท่านั้น — ไม่ export ไปฝั่ง client
 
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import type { PrismaClient } from "@prisma/client";
 
 type DeletedTaskInfo = {
   id: string;
