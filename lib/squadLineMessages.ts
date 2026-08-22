@@ -122,22 +122,7 @@ export function eodStatusLabel(status: string): string {
   return EOD_STATUS_LABELS[status] ?? status;
 }
 
-type EodTask = {
-  id: string; title: string; hasIssue: boolean; laneId: string | null;
-  assigneeId: string | null; completedAt: Date | null;
-  assignee: { name: string; lineDisplayName: string | null } | null;
-  lane:     { name: string } | null;
-  timeLogs: Array<{ normalMinutes: number | null; otMinutes: number | null }>;
-};
-
-type EodData = {
-  statusCount:    Record<string, number>;
-  totalRemaining: number;
-  doneToday:      EodTask[];
-  byAssignee:     Map<string, { displayName: string; taskLines: string[] }>;
-};
-
-async function fetchEodData(squadId: string): Promise<EodData> {
+async function fetchEodData(squadId: string) {
   const ictOffset  = 7 * 60 * 60 * 1000;
   const todayICT   = new Date(Date.now() + ictOffset);
   const yyyymmdd   = todayICT.toISOString().slice(0, 10);
@@ -188,7 +173,11 @@ async function fetchEodData(squadId: string): Promise<EodData> {
 function buildEodFooterLines(
   statusCount:    Record<string, number>,
   totalRemaining: number,
-  doneToday:      EodTask[]
+  doneToday:      Array<{
+    title: string;
+    assignee: { name: string } | null;
+    timeLogs: Array<{ normalMinutes: number | null; otMinutes: number | null }>;
+  }>
 ): string[] {
   const statusOrder  = ['To do list', 'On-Board', 'On-Board In Progress', 'Wait for review', 'มีปัญหา'];
   const summaryParts = statusOrder
