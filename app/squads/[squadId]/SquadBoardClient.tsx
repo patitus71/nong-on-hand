@@ -142,6 +142,32 @@ export default function SquadBoardClient({
     setClosingLoading(false);
   }
 
+  // ── LINE send ────────────────────────────────────────────────────────────────
+  const [lineLoading, setLineLoading] = useState<'standup' | 'eod' | null>(null);
+  const [lineResult,  setLineResult]  = useState<string | null>(null);
+
+  async function sendLine(type: 'standup' | 'eod') {
+    setLineLoading(type);
+    setLineResult(null);
+    try {
+      const res = await fetch(`/api/squads/${currentSquadId}/line-send`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ type }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setLineResult(`✅ ส่ง${type === 'standup' ? 'Standup' : 'สรุปสิ้นวัน'}เข้า LINE สำเร็จ`);
+      } else {
+        setLineResult(`❌ ${data.reason ?? 'เกิดข้อผิดพลาด'}`);
+      }
+    } catch {
+      setLineResult('❌ Network error');
+    } finally {
+      setLineLoading(null);
+    }
+  }
+
   // ── Sprint export (squad-level, only for closed sprints) ────────────────────
   const [showSprintExport,   setShowSprintExport]   = useState(false);
   const [sprintExportMd,     setSprintExportMd]     = useState('');
@@ -687,6 +713,29 @@ export default function SquadBoardClient({
           </div>
         ))}
       </div>
+
+      {/* ── LINE send buttons ── */}
+      {canManageSprint && (
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => sendLine('standup')}
+            disabled={lineLoading !== null}
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-lg hover:border-accent hover:bg-surface-1 transition-colors disabled:opacity-50"
+          >
+            {lineLoading === 'standup' ? 'กำลังส่ง...' : '📤 ส่ง Standup เช้านี้'}
+          </button>
+          <button
+            onClick={() => sendLine('eod')}
+            disabled={lineLoading !== null}
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-lg hover:border-accent hover:bg-surface-1 transition-colors disabled:opacity-50"
+          >
+            {lineLoading === 'eod' ? 'กำลังส่ง...' : '📤 ส่งสรุปสิ้นวัน'}
+          </button>
+          {lineResult && (
+            <span className="text-[12.5px] text-txt-secondary">{lineResult}</span>
+          )}
+        </div>
+      )}
 
       {/* ── Flag modal ── */}
       {flagTarget && (

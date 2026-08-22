@@ -33,15 +33,18 @@ export async function sendLineTextMessage(
 }
 
 export interface LineMentionee {
-  index: number;  // ตำแหน่งเริ่มต้นของข้อความที่จะ highlight เป็น mention (นับ UTF-16 code unit)
-  length: number; // ความยาวของข้อความส่วนนั้น
-  userId: string; // LINE userId ของคนที่จะ mention
+  type: 'user';   // required โดย LINE API — ขาดไปทำให้ mention เป็นแค่ตัวหนังสือธรรมดา
+  index: number;  // ตำแหน่ง UTF-16 code unit (JavaScript string index = ค่าที่ถูกต้อง)
+  length: number;
+  userId: string;
 }
 
 /**
- * ส่งข้อความเข้ากลุ่มพร้อม @mention คนใดคนหนึ่ง (หรือหลายคน) — ใช้ตอน assign งาน
- * placeholderName ต้องเป็น substring ที่มีอยู่จริงใน text (เช่น "@Nong") ฟังก์ชันนี้หาตำแหน่ง
- * index/length ให้อัตโนมัติจาก text.indexOf() ไม่ต้องนับเองมือ
+ * ส่งข้อความเข้ากลุ่มพร้อม @mention — ใช้ตอน assign งาน และ standup/EOD
+ * placeholderName ต้องเป็น substring ที่มีอยู่จริงใน text (เช่น "@Nong")
+ * ฟังก์ชันนี้หาตำแหน่ง index/length ให้อัตโนมัติจาก text.indexOf()
+ *
+ * สำคัญ: LINE mention ทำงานได้เฉพาะ userId ที่เป็นสมาชิกจริงของกลุ่มนั้น
  */
 export async function sendLineGroupMessageWithMention(
   groupId: string,
@@ -55,26 +58,31 @@ export async function sendLineGroupMessageWithMention(
     .map(m => {
       const index = text.indexOf(m.placeholderName);
       if (index === -1) return null;
-      return { index, length: m.placeholderName.length, userId: m.userId };
+      return { type: 'user' as const, index, length: m.placeholderName.length, userId: m.userId };
     })
     .filter((m): m is LineMentionee => m !== null);
+
+  const payload = {
+    to: groupId,
+    messages: [{
+      type: 'text',
+      text,
+      ...(mentionees.length > 0 ? { mention: { mentionees } } : {}),
+    }],
+  };
+
+  console.log('[LINE mention] payload:', JSON.stringify(payload));
 
   try {
     const res = await fetch(LINE_PUSH_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        to: groupId,
-        messages: [{
-          type: 'text',
-          text,
-          ...(mentionees.length > 0 ? { mention: { mentionees } } : {}),
-        }],
-      }),
+      body: JSON.stringify(payload),
     });
+    const responseBody = await res.text();
+    console.log('[LINE mention] response:', res.status, responseBody);
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      return { success: false, reason: `LINE API error ${res.status}: ${body}` };
+      return { success: false, reason: `LINE API error ${res.status}: ${responseBody}` };
     }
     return { success: true };
   } catch (err) {
