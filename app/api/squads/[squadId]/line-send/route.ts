@@ -51,6 +51,8 @@ export async function POST(
     .filter(m => m.lineUserId)
     .map(m => ({ placeholderName: `@${m.lineDisplayName ?? m.name}`, userId: m.lineUserId! }));
 
+  console.log(`[line-send/${type}] squad=${squad.name} managers found=${managers.length} mentions=${JSON.stringify(mentions)}`);
+
   const needsRelinkHint = managers.some(m => m.lineUserId && !m.lineDisplayName);
   const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
 
