@@ -67,10 +67,11 @@ export async function buildStandupText(squadId: string, squadName: string): Prom
 }
 
 /**
- * Combine per-squad standup texts into chunks, splitting at squad boundaries
- * when the concatenated text would exceed LINE_CHAR_LIMIT.
+ * Pack an array of text blocks into as few LINE messages as possible,
+ * splitting only when the next block would push past LINE_CHAR_LIMIT.
+ * Used for both standup (per-squad texts) and EOD (per-squad chunks).
  */
-export function mergeStandupChunks(parts: string[]): string[] {
+export function mergeIntoChunks(parts: string[]): string[] {
   const chunks: string[] = [];
   let current = '';
   for (const part of parts) {

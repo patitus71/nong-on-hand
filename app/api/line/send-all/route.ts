@@ -9,7 +9,7 @@ import { canSendLineBroadcast, squadScopeFilter, type SessionUser } from '@/lib/
 import {
   buildStandupText,
   buildEodChunks,
-  mergeStandupChunks,
+  mergeIntoChunks,
   HINT_RELINK,
 } from '@/lib/squadLineMessages';
 import {
@@ -75,15 +75,16 @@ export async function POST(req: Request) {
       for (const sq of groupSquads) {
         parts.push(await buildStandupText(sq.id, sq.name));
       }
-      chunks = mergeStandupChunks(parts);
+      chunks = mergeIntoChunks(parts);
     } else {
-      // Collect EOD chunks from each squad (each already handles its own char limit)
       const allChunks: string[] = [];
       for (const sq of groupSquads) {
         allChunks.push(...await buildEodChunks(sq.id, sq.name));
       }
-      chunks = allChunks;
+      chunks = mergeIntoChunks(allChunks); // pack multi-squad EOD into as few messages as possible
     }
+
+    console.log(`[send-all/${type}] group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length}`);
 
     if (needsRelinkHint) {
       chunks[chunks.length - 1] += '\n\n' + HINT_RELINK;
