@@ -74,7 +74,7 @@ export async function sendLineGroupMessageWithMention(
     }],
   };
 
-  console.log('[LINE mention] payload:\n' + JSON.stringify(payload, null, 2));
+  console.log('LINE_PAYLOAD:', JSON.stringify(payload, null, 2));
 
   try {
     const res = await fetch(LINE_PUSH_ENDPOINT, {
