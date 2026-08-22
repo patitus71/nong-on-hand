@@ -97,7 +97,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
         const [assignee, squad] = await Promise.all([
           prisma.user.findUnique({
             where:  { id: assigneeId },
-            select: { name: true, lineUserId: true },
+            select: { name: true, lineUserId: true, lineDisplayName: true },
           }),
           prisma.squad.findUnique({
             where:  { id: targetSquadId },
@@ -119,7 +119,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
         const dueDateStr = updated.dueDate ? thaiDate(updated.dueDate) : 'ไม่ระบุ';
 
         if (assignee.lineUserId) {
-          const placeholder = `@${assignee.name}`;
+          const placeholder = `@${assignee.lineDisplayName ?? assignee.name}`;
           const text = [
             `📌 ${placeholder} ได้รับมอบหมายงานใหม่`,
             `งาน: ${updated.title}`,

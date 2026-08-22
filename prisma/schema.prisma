@@ -75,8 +75,9 @@ model User {
   role         Role      @default(QA_ENGINEER)
   active       Boolean   @default(true) // admin ปิดการใช้งาน user ได้โดยไม่ต้องลบ
   deletedAt    DateTime? // soft-delete: null = active, set = ถูกลบโดย admin
-  lineUserId   String?   // LINE userId สำหรับ @mention — ได้มาจาก self-link (/link username ในกลุ่ม)
-  email        String?   // ทางเลือกเสริมสำหรับ EOD แบบอีเมล
+  lineUserId      String?   // LINE userId สำหรับ @mention — ได้มาจาก self-link (/link username ในกลุ่ม)
+  lineDisplayName String?   // ชื่อ LINE จริง (displayName จาก LINE Profile API) — ใช้เป็น placeholder ใน @mention
+  email           String?   // ทางเลือกเสริมสำหรับ EOD แบบอีเมล
   squadId      String?
   squad        Squad?    @relation(fields: [squadId], references: [id])
   boards       Board[]

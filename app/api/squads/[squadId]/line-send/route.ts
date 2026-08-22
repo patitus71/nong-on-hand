@@ -42,7 +42,7 @@ export async function POST(
   // Query QA_MANAGER ที่ self-link บัญชี LINE แล้ว — ใช้ @mention ใน message
   const managers = await prisma.user.findMany({
     where:  { role: 'QA_MANAGER', lineUserId: { not: null }, active: true, deletedAt: null },
-    select: { name: true, lineUserId: true },
+    select: { name: true, lineUserId: true, lineDisplayName: true },
   });
 
   let text: string;
@@ -56,16 +56,23 @@ export async function POST(
   // เพิ่ม @mention prefix ถ้ามี manager ที่ link แล้ว
   const mentions = managers
     .filter(m => m.lineUserId)
-    .map(m => ({ placeholderName: `@${m.name}`, userId: m.lineUserId! }));
+    .map(m => ({ placeholderName: `@${m.lineDisplayName ?? m.name}`, userId: m.lineUserId! }));
+
+  // แนะนำ user เก่าที่มี lineUserId แต่ยังไม่มี lineDisplayName ให้ /link ใหม่
+  const needsRelinkHint = managers.some(m => m.lineUserId && !m.lineDisplayName);
+
+  let fullText = text;
+  if (needsRelinkHint) {
+    fullText += '\n\n💡 บางบัญชียังไม่มีชื่อ LINE — พิมพ์ /link <username> ในกลุ่มนี้อีกครั้งเพื่ออัปเดต';
+  }
 
   let result: { success: boolean; reason?: string };
 
   if (mentions.length > 0) {
     const mentionPrefix = mentions.map(m => m.placeholderName).join(' ') + '\n';
-    const fullText = mentionPrefix + text;
-    result = await sendLineGroupMessageWithMention(squad.lineGroupId, fullText, mentions);
+    result = await sendLineGroupMessageWithMention(squad.lineGroupId, mentionPrefix + fullText, mentions);
   } else {
-    result = await sendLineTextMessage(squad.lineGroupId, text);
+    result = await sendLineTextMessage(squad.lineGroupId, fullText);
   }
 
   if (!result.success) {

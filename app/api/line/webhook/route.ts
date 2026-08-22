@@ -82,13 +82,30 @@ export async function POST(req: Request) {
         continue;
       }
 
+      // ดึงชื่อ LINE จริง (displayName) จาก LINE Profile API
+      const lineUid = event.source.userId;
+      let lineDisplayName: string | null = null;
+      const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+      if (token) {
+        try {
+          const profileRes = await fetch(`https://api.line.me/v2/bot/profile/${lineUid}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json() as { displayName: string };
+            lineDisplayName = profile.displayName ?? null;
+          }
+        } catch { /* ข้ามถ้า API เรียกไม่ได้ — lineUserId ยังเก็บตามปกติ */ }
+      }
+
       await prisma.user.update({
         where: { id: user.id },
-        data:  { lineUserId: event.source.userId },
+        data:  { lineUserId: lineUid, lineDisplayName },
       });
 
       if (event.replyToken) {
-        await replyLineMessage(event.replyToken, `✅ เชื่อมบัญชี ${user.name} เรียบร้อย`);
+        const displayStr = lineDisplayName ? ` (LINE: ${lineDisplayName})` : '';
+        await replyLineMessage(event.replyToken, `✅ เชื่อมบัญชี ${user.name}${displayStr} เรียบร้อย`);
       }
     }
   }
