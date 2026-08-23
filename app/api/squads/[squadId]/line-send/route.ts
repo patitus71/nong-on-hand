@@ -9,6 +9,8 @@ import {
   buildStandupText,
   buildEodChunks,
   HINT_RELINK,
+  fetchStandupAssigneeIds,
+  fetchEodAssigneeIds,
 } from '@/lib/squadLineMessages';
 import {
   sendLineTextMessage,
@@ -41,20 +43,26 @@ export async function POST(
     return Response.json({ ok: false, reason: 'Squad ยังไม่ได้ตั้งค่า lineGroupId' }, { status: 422 });
   }
 
-  // Query QA_MANAGER ที่ self-link บัญชี LINE แล้ว — ใช้ @mention ใน message
-  const managers = await prisma.user.findMany({
-    where:  { role: 'QA_MANAGER', lineUserId: { not: null }, active: true, deletedAt: null },
-    select: { name: true, lineUserId: true, lineDisplayName: true },
-  });
+  // Mentions = task assignees of this squad who have LINE linked (any role)
+  const assigneeIds = type === 'standup'
+    ? await fetchStandupAssigneeIds([squad.id])
+    : await fetchEodAssigneeIds([squad.id]);
 
-  const mentions = managers
-    .filter(m => m.lineUserId)
-    .map(m => ({ placeholderName: `@${m.lineDisplayName ?? m.name}`, userId: m.lineUserId! }));
+  const assigneeUsers = assigneeIds.length > 0
+    ? await prisma.user.findMany({
+        where:  { id: { in: assigneeIds }, lineUserId: { not: null }, active: true, deletedAt: null },
+        select: { name: true, lineUserId: true, lineDisplayName: true },
+      })
+    : [];
 
-  console.log(`[line-send/${type}] squad=${squad.name} managers found=${managers.length} mentions=${JSON.stringify(mentions)}`);
+  const mentions = assigneeUsers.map(u => ({
+    placeholderName: `@${u.lineDisplayName ?? u.name}`,
+    userId:          u.lineUserId!,
+  }));
 
-  const needsRelinkHint = managers.some(m => m.lineUserId && !m.lineDisplayName);
-  const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
+  console.log(`[line-send/${type}] squad=${squad.name} assignees=${assigneeIds.length} mentions=${JSON.stringify(mentions)}`);
+
+  const needsRelinkHint = assigneeUsers.some(u => !u.lineDisplayName);
 
   let result: { success: boolean; reason?: string };
 
@@ -62,22 +70,18 @@ export async function POST(
     let text = await buildStandupText(squad.id, squad.name);
     if (needsRelinkHint) text += '\n\n' + HINT_RELINK;
 
-    if (mentions.length > 0) {
-      result = await sendLineGroupMessageWithMention(squad.lineGroupId, mentionPrefix + text, mentions);
-    } else {
-      result = await sendLineTextMessage(squad.lineGroupId, text);
-    }
+    result = mentions.length > 0
+      ? await sendLineGroupMessageWithMention(squad.lineGroupId, text, mentions)
+      : await sendLineTextMessage(squad.lineGroupId, text);
   } else {
     const chunks = await buildEodChunks(squad.id, squad.name);
     if (needsRelinkHint) chunks[chunks.length - 1] += '\n\n' + HINT_RELINK;
 
     result = { success: true };
-    for (let i = 0; i < chunks.length; i++) {
-      const isFirst = i === 0 && mentions.length > 0;
-      const msg     = isFirst ? mentionPrefix + chunks[i] : chunks[i];
-      const r       = isFirst
-        ? await sendLineGroupMessageWithMention(squad.lineGroupId, msg, mentions)
-        : await sendLineTextMessage(squad.lineGroupId, msg);
+    for (const chunk of chunks) {
+      const r = mentions.length > 0
+        ? await sendLineGroupMessageWithMention(squad.lineGroupId, chunk, mentions)
+        : await sendLineTextMessage(squad.lineGroupId, chunk);
       if (!r.success) { result = r; break; }
     }
   }

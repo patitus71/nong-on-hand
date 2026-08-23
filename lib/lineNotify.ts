@@ -57,13 +57,20 @@ export async function sendLineGroupMessageWithMention(
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { success: false, reason: 'LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า' };
 
-  const mentionees: LineMentionee[] = mentions
-    .map(m => {
-      const index = text.indexOf(m.placeholderName);
-      if (index === -1) return null;
-      return { type: 'user' as const, index, length: m.placeholderName.length, userId: m.userId };
-    })
-    .filter((m): m is LineMentionee => m !== null);
+  // Find every occurrence of each placeholder in the text (not just the first)
+  // One mentionee entry per occurrence — required for mentions in multi-squad messages
+  const mentionees: LineMentionee[] = [];
+  for (const m of mentions) {
+    let fromIndex = 0;
+    while (true) {
+      const idx = text.indexOf(m.placeholderName, fromIndex);
+      if (idx === -1) break;
+      mentionees.push({ type: 'user' as const, index: idx, length: m.placeholderName.length, userId: m.userId });
+      fromIndex = idx + m.placeholderName.length;
+    }
+  }
+  // LINE API requires mentionees sorted by ascending index
+  mentionees.sort((a, b) => a.index - b.index);
 
   const payload = {
     to: groupId,

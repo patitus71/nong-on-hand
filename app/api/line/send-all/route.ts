@@ -79,7 +79,6 @@ export async function POST(req: Request) {
     console.log('MENTIONS_BUILT:', JSON.stringify(mentions));
 
     const needsRelinkHint = assigneeUsers.some(u => !u.lineDisplayName);
-    const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
 
     // Build combined message chunks for all squads in this LINE group
     let chunks: string[];
@@ -109,12 +108,10 @@ export async function POST(req: Request) {
     }
 
     for (let i = 0; i < chunks.length; i++) {
-      const isFirst = i === 0 && mentions.length > 0;
-      const msg     = isFirst ? mentionPrefix + chunks[i] : chunks[i];
-      console.log(`SEND_PATH chunk=${i} isFirst=${isFirst} mentionsCount=${mentions.length}`);
-      const r       = isFirst
-        ? await sendLineGroupMessageWithMention(groupId, msg, mentions)
-        : await sendLineTextMessage(groupId, msg);
+      console.log(`SEND_PATH chunk=${i} mentionsCount=${mentions.length}`);
+      const r = mentions.length > 0
+        ? await sendLineGroupMessageWithMention(groupId, chunks[i], mentions)
+        : await sendLineTextMessage(groupId, chunks[i]);
 
       if (r.success) {
         sentMessages++;
