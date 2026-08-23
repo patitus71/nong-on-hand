@@ -277,17 +277,14 @@ export async function buildEodChunks(
  */
 async function buildQaMgrLine(ctx: MentionContext): Promise<string> {
   const managers = await prisma.user.findMany({
-    where: {
-      role:       'QA_MANAGER',
-      lineUserId: { not: null },
-      active:     true,
-      deletedAt:  null,
-    },
+    where: { role: 'QA_MANAGER', active: true, deletedAt: null },
     select: { name: true, lineDisplayName: true, lineUserId: true },
     orderBy: { name: 'asc' },
   });
-  if (managers.length === 0) return '';
-  return managers.map(m => ctx.slot(m.lineDisplayName ?? m.name, m.lineUserId)).join(' ');
+  const linked = managers.filter(m => m.lineUserId);
+  console.log(`[QA_MGR] total=${managers.length} linked=${linked.length} names=${managers.map(m => m.name).join(',')}`);
+  if (linked.length === 0) return '';
+  return linked.map(m => ctx.slot(m.lineDisplayName ?? m.name, m.lineUserId)).join(' ');
 }
 
 /**
