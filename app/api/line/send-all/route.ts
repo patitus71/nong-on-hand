@@ -11,6 +11,8 @@ import {
   buildEodBlock,
   mergeIntoChunks,
   HINT_RELINK,
+  fetchStandupAssigneeIds,
+  fetchEodAssigneeIds,
 } from '@/lib/squadLineMessages';
 import {
   sendLineTextMessage,
@@ -52,24 +54,33 @@ export async function POST(req: Request) {
     byGroup.get(gid)!.push({ id: s.id, name: s.name });
   }
 
-  // QA_MANAGER @mentions (global — same set across all groups)
-  const managers = await prisma.user.findMany({
-    where:  { role: 'QA_MANAGER', lineUserId: { not: null }, active: true, deletedAt: null },
-    select: { name: true, lineUserId: true, lineDisplayName: true },
-  });
-
-  const mentions = managers
-    .filter(m => m.lineUserId)
-    .map(m => ({ placeholderName: `@${m.lineDisplayName ?? m.name}`, userId: m.lineUserId! }));
-
-  console.log('MENTIONS_BUILT:', JSON.stringify(mentions));
-
-  const needsRelinkHint = managers.some(m => m.lineUserId && !m.lineDisplayName);
-  const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
-
   let sentMessages = 0;
 
   for (const [groupId, groupSquads] of Array.from(byGroup)) {
+    const squadIds = groupSquads.map(s => s.id);
+
+    // Mentions = assignees of tasks in this group's squads who have LINE linked (any role)
+    const assigneeIds = type === 'standup'
+      ? await fetchStandupAssigneeIds(squadIds)
+      : await fetchEodAssigneeIds(squadIds);
+
+    const assigneeUsers = assigneeIds.length > 0
+      ? await prisma.user.findMany({
+          where:  { id: { in: assigneeIds }, lineUserId: { not: null }, active: true, deletedAt: null },
+          select: { name: true, lineUserId: true, lineDisplayName: true },
+        })
+      : [];
+
+    const mentions = assigneeUsers.map(u => ({
+      placeholderName: `@${u.lineDisplayName ?? u.name}`,
+      userId:          u.lineUserId!,
+    }));
+
+    console.log('MENTIONS_BUILT:', JSON.stringify(mentions));
+
+    const needsRelinkHint = assigneeUsers.some(u => !u.lineDisplayName);
+    const mentionPrefix   = mentions.length > 0 ? mentions.map(m => m.placeholderName).join(' ') + '\n' : '';
+
     // Build combined message chunks for all squads in this LINE group
     let chunks: string[];
 

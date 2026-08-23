@@ -246,6 +246,41 @@ export async function buildEodChunks(squadId: string, squadName: string): Promis
   return chunks;
 }
 
+// ─── Assignee helpers for mentions ───────────────────────────────────────────
+
+/** Distinct assigneeIds of tasks that appear in a standup (non-Done, on-board) */
+export async function fetchStandupAssigneeIds(squadIds: string[]): Promise<string[]> {
+  const tasks = await prisma.task.findMany({
+    where: {
+      squadId:           { in: squadIds },
+      deletedAt:         null,
+      pulledIntoBoardAt: { not: null },
+      laneId:            { not: null },
+    },
+    select: { assigneeId: true, hasIssue: true, laneId: true, lane: { select: { name: true } } },
+  });
+  const ids = new Set<string>();
+  for (const task of tasks) {
+    if (!task.assigneeId) continue;
+    if (computeSquadBoardStatus(task) !== 'Done') ids.add(task.assigneeId);
+  }
+  return Array.from(ids);
+}
+
+/** Distinct assigneeIds of tasks that appear in an EOD report */
+export async function fetchEodAssigneeIds(squadIds: string[]): Promise<string[]> {
+  const tasks = await prisma.task.findMany({
+    where: { squadId: { in: squadIds }, deletedAt: null },
+    select: { assigneeId: true, hasIssue: true, laneId: true, lane: { select: { name: true } } },
+  });
+  const ids = new Set<string>();
+  for (const task of tasks) {
+    if (!task.assigneeId) continue;
+    if (EOD_SHOW.has(computeSquadBoardStatus(task))) ids.add(task.assigneeId);
+  }
+  return Array.from(ids);
+}
+
 /** Send-all: squad EOD section with divider header — caller prepends the global date header */
 export async function buildEodBlock(squadId: string, squadName: string): Promise<string> {
   const { statusCount, totalRemaining, doneToday, byAssignee } = await fetchEodData(squadId);
