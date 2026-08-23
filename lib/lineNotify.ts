@@ -1,33 +1,30 @@
 // lib/lineNotify.ts
 //
 // ส่งแจ้งเตือนผ่าน LINE เข้ากลุ่มทีม — ใช้ LINE Messaging API (ไม่ใช่ LINE Notify ที่ปิดไปแล้ว
-// ตั้งแต่ 31 มีนาคม 2025) รองรับทั้งข้อความธรรมดา (standup/EOD) และข้อความพร้อม @mention (assign)
+// ตั้งแต่ 31 มีนาคม 2025)
+//
+// @mention ใช้ message type "textV2" + "substitution" map (format ใหม่ตั้งแต่ Oct 2024)
+// type "text" + "mention.mentionees" (index/length) ถูกเพิกเฉยโดย LINE API อย่างเงียบๆ
 
-const LINE_PUSH_ENDPOINT = 'https://api.line.me/v2/bot/message/push';
+const LINE_PUSH_ENDPOINT  = 'https://api.line.me/v2/bot/message/push';
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
 
-/**
- * ส่งข้อความธรรมดาเข้ากลุ่ม (หรือหา user/room ก็ได้ ใช้ endpoint เดียวกัน) — ใช้กับ
- * standup เช้า และ EOD summary ที่ไม่ต้อง mention ใคร
- */
 export async function sendLineTextMessage(
-  to: string,
-  text: string
+  to:   string,
+  text: string,
 ): Promise<{ success: boolean; reason?: string }> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { success: false, reason: 'LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า' };
   console.log(`[LINE text] sending to=${to} chars=${text.length}`);
   try {
     const res = await fetch(LINE_PUSH_ENDPOINT, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ to, messages: [{ type: 'text', text }] }),
+      body:    JSON.stringify({ to, messages: [{ type: 'text', text }] }),
     });
     const responseBody = await res.text();
     console.log('[LINE text] response:', res.status, responseBody);
-    if (!res.ok) {
-      return { success: false, reason: `LINE API error ${res.status}: ${responseBody}` };
-    }
+    if (!res.ok) return { success: false, reason: `LINE API error ${res.status}: ${responseBody}` };
     return { success: true };
   } catch (err) {
     console.error('[LINE text] fetch error:', err);
@@ -35,65 +32,77 @@ export async function sendLineTextMessage(
   }
 }
 
-export interface LineMentionee {
-  type: 'user';   // required โดย LINE API — ขาดไปทำให้ mention เป็นแค่ตัวหนังสือธรรมดา
-  index: number;  // ตำแหน่ง UTF-16 code unit (JavaScript string index = ค่าที่ถูกต้อง)
-  length: number;
-  userId: string;
+type SubstitutionMention = {
+  type: 'mention';
+  mentionee: { type: 'user'; userId: string };
+};
+
+/**
+ * ติดตาม {mN} placeholder → userId สำหรับ LINE textV2 substitution
+ * สร้าง 1 key ต่อ 1 ครั้งที่ mention — คนเดียวกันใน 2 squad = 2 key ต่างกัน
+ */
+export class MentionContext {
+  private counter = 0;
+  readonly substitution: Record<string, SubstitutionMention> = {};
+
+  /**
+   * ถ้า userId มี → คืน "{mN}" และบันทึก substitution entry
+   * ถ้าไม่มี → คืน "@displayName" เป็นข้อความธรรมดา
+   */
+  slot(displayName: string, userId: string | null | undefined): string {
+    if (!userId) return `@${displayName}`;
+    const key = `m${this.counter++}`;
+    this.substitution[key] = { type: 'mention', mentionee: { type: 'user', userId } };
+    return `{${key}}`;
+  }
+
+  get hasAny(): boolean { return this.counter > 0; }
+
+  /** กรองเฉพาะ key ที่ปรากฏจริงในข้อความ chunk เพื่อไม่ให้ substitution ข้ามก้อนข้อความ */
+  filterForChunk(chunkText: string): Record<string, SubstitutionMention> {
+    return Object.fromEntries(
+      Object.entries(this.substitution).filter(([key]) => chunkText.includes(`{${key}}`))
+    );
+  }
 }
 
 /**
- * ส่งข้อความเข้ากลุ่มพร้อม @mention — ใช้ตอน assign งาน และ standup/EOD
- * placeholderName ต้องเป็น substring ที่มีอยู่จริงใน text (เช่น "@Nong")
- * ฟังก์ชันนี้หาตำแหน่ง index/length ให้อัตโนมัติจาก text.indexOf()
+ * ส่ง LINE textV2 พร้อม @mention โดยใช้ MentionContext
+ * ถ้า chunk ไม่มี mention → fallback ไป sendLineTextMessage อัตโนมัติ
  *
- * สำคัญ: LINE mention ทำงานได้เฉพาะ userId ที่เป็นสมาชิกจริงของกลุ่มนั้น
+ * text ต้องมี {mN} placeholder ที่สร้างโดย ctx.slot()
+ * ไม่ต้องคำนวณ index/length อีกต่อไป (ต่างจาก type "text" เดิม)
  */
 export async function sendLineGroupMessageWithMention(
   groupId: string,
-  text: string,
-  mentions: { placeholderName: string; userId: string }[]
+  text:    string,
+  ctx:     MentionContext,
 ): Promise<{ success: boolean; reason?: string }> {
+  const substitution = ctx.filterForChunk(text);
+
+  if (Object.keys(substitution).length === 0) {
+    return sendLineTextMessage(groupId, text);
+  }
+
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { success: false, reason: 'LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า' };
 
-  // Find every occurrence of each placeholder in the text (not just the first)
-  // One mentionee entry per occurrence — required for mentions in multi-squad messages
-  const mentionees: LineMentionee[] = [];
-  for (const m of mentions) {
-    let fromIndex = 0;
-    while (true) {
-      const idx = text.indexOf(m.placeholderName, fromIndex);
-      if (idx === -1) break;
-      mentionees.push({ type: 'user' as const, index: idx, length: m.placeholderName.length, userId: m.userId });
-      fromIndex = idx + m.placeholderName.length;
-    }
-  }
-  // LINE API requires mentionees sorted by ascending index
-  mentionees.sort((a, b) => a.index - b.index);
-
   const payload = {
-    to: groupId,
-    messages: [{
-      type: 'text',
-      text,
-      ...(mentionees.length > 0 ? { mention: { mentionees } } : {}),
-    }],
+    to:       groupId,
+    messages: [{ type: 'textV2', text, substitution }],
   };
 
   console.log('LINE_PAYLOAD:', JSON.stringify(payload, null, 2));
 
   try {
     const res = await fetch(LINE_PUSH_ENDPOINT, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(payload),
+      body:    JSON.stringify(payload),
     });
     const responseBody = await res.text();
     console.log('[LINE mention] response:', res.status, responseBody);
-    if (!res.ok) {
-      return { success: false, reason: `LINE API error ${res.status}: ${responseBody}` };
-    }
+    if (!res.ok) return { success: false, reason: `LINE API error ${res.status}: ${responseBody}` };
     return { success: true };
   } catch (err) {
     console.error('[LINE mention] fetch error:', err);
@@ -106,15 +115,15 @@ export async function sendLineGroupMessageWithMention(
  */
 export async function replyLineMessage(
   replyToken: string,
-  text: string
+  text:       string,
 ): Promise<{ success: boolean; reason?: string }> {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return { success: false, reason: 'LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า' };
   try {
     const res = await fetch(LINE_REPLY_ENDPOINT, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ replyToken, messages: [{ type: 'text', text }] }),
+      body:    JSON.stringify({ replyToken, messages: [{ type: 'text', text }] }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
@@ -128,9 +137,9 @@ export async function replyLineMessage(
 
 /** แปลงวันที่เป็น dd/MM/พศ (พุทธศักราช) */
 export function thaiDate(d: Date): string {
-  const day = d.getDate().toString().padStart(2, '0');
+  const day   = d.getDate().toString().padStart(2, '0');
   const month = (d.getMonth() + 1).toString().padStart(2, '0');
-  const year = d.getFullYear() + 543;
+  const year  = d.getFullYear() + 543;
   return `${day}/${month}/${year}`;
 }
 

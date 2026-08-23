@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canPullIntoBoard, canAssignTaskTo } from '@/lib/importTasks';
 import { ensureSquadBoard } from '@/lib/squadBoard';
-import { sendLineTextMessage, sendLineGroupMessageWithMention, thaiDate } from '@/lib/lineNotify';
+import { sendLineGroupMessageWithMention, MentionContext, thaiDate } from '@/lib/lineNotify';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -118,28 +118,16 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
 
         const dueDateStr = updated.dueDate ? thaiDate(updated.dueDate) : 'ไม่ระบุ';
 
-        if (assignee.lineUserId) {
-          const placeholder = `@${assignee.lineDisplayName ?? assignee.name}`;
-          const text = [
-            `📌 ${placeholder} ได้รับมอบหมายงานใหม่`,
-            `งาน: ${updated.title}`,
-            `Squad: ${squad.name}`,
-            `มอบหมายโดย: ${user.name}`,
-            `กำหนดเสร็จ: ${dueDateStr}`,
-          ].join('\n');
-          await sendLineGroupMessageWithMention(squad.lineGroupId, text, [
-            { placeholderName: placeholder, userId: assignee.lineUserId },
-          ]);
-        } else {
-          const text = [
-            `📌 ${assignee.name} ได้รับมอบหมายงานใหม่`,
-            `งาน: ${updated.title}`,
-            `Squad: ${squad.name}`,
-            `มอบหมายโดย: ${user.name}`,
-            `กำหนดเสร็จ: ${dueDateStr}`,
-          ].join('\n');
-          await sendLineTextMessage(squad.lineGroupId, text);
-        }
+        const ctx = new MentionContext();
+        const mention = ctx.slot(assignee.lineDisplayName ?? assignee.name, assignee.lineUserId);
+        const text = [
+          `📌 ${mention} ได้รับมอบหมายงานใหม่`,
+          `งาน: ${updated.title}`,
+          `Squad: ${squad.name}`,
+          `มอบหมายโดย: ${user.name}`,
+          `กำหนดเสร็จ: ${dueDateStr}`,
+        ].join('\n');
+        await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
       } catch (err) {
         console.error('[pull-in] LINE notification error:', err);
       }

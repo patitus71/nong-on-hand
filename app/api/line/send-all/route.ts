@@ -10,13 +10,10 @@ import {
   buildStandupBlock,
   buildEodBlock,
   mergeIntoChunks,
-  HINT_RELINK,
-  fetchStandupAssigneeIds,
-  fetchEodAssigneeIds,
 } from '@/lib/squadLineMessages';
 import {
-  sendLineTextMessage,
   sendLineGroupMessageWithMention,
+  MentionContext,
   thaiDate,
 } from '@/lib/lineNotify';
 
@@ -57,37 +54,14 @@ export async function POST(req: Request) {
   let sentMessages = 0;
 
   for (const [groupId, groupSquads] of Array.from(byGroup)) {
-    const squadIds = groupSquads.map(s => s.id);
-
-    // Mentions = assignees of tasks in this group's squads who have LINE linked (any role)
-    const assigneeIds = type === 'standup'
-      ? await fetchStandupAssigneeIds(squadIds)
-      : await fetchEodAssigneeIds(squadIds);
-
-    const assigneeUsers = assigneeIds.length > 0
-      ? await prisma.user.findMany({
-          where:  { id: { in: assigneeIds }, lineUserId: { not: null }, active: true, deletedAt: null },
-          select: { name: true, lineUserId: true, lineDisplayName: true },
-        })
-      : [];
-
-    const mentions = assigneeUsers.map(u => ({
-      placeholderName: `@${u.lineDisplayName ?? u.name}`,
-      userId:          u.lineUserId!,
-    }));
-
-    console.log('MENTIONS_BUILT:', JSON.stringify(mentions));
-
-    const needsRelinkHint = assigneeUsers.some(u => !u.lineDisplayName);
-
-    // Build combined message chunks for all squads in this LINE group
+    const ctx = new MentionContext();
     let chunks: string[];
 
     if (type === 'standup') {
       const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
       const parts: string[] = [`☀️ Standup เช้านี้ — (${todayTH})`];
       for (const sq of groupSquads) {
-        parts.push(await buildStandupBlock(sq.id, sq.name));
+        parts.push(await buildStandupBlock(sq.id, sq.name, ctx));
       }
       chunks = mergeIntoChunks(parts);
     } else {
@@ -96,27 +70,19 @@ export async function POST(req: Request) {
       const todayTH   = thaiDate(todayICT);
       const parts: string[] = [`📊 สรุปสิ้นวัน — (${todayTH})`];
       for (const sq of groupSquads) {
-        parts.push(await buildEodBlock(sq.id, sq.name));
+        parts.push(await buildEodBlock(sq.id, sq.name, ctx));
       }
       chunks = mergeIntoChunks(parts);
     }
 
-    console.log(`[send-all/${type}] group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length}`);
-
-    if (needsRelinkHint) {
-      chunks[chunks.length - 1] += '\n\n' + HINT_RELINK;
-    }
+    console.log(`[send-all/${type}] group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length} mentions=${ctx.hasAny}`);
 
     for (let i = 0; i < chunks.length; i++) {
-      console.log(`SEND_PATH chunk=${i} mentionsCount=${mentions.length}`);
-      const r = mentions.length > 0
-        ? await sendLineGroupMessageWithMention(groupId, chunks[i], mentions)
-        : await sendLineTextMessage(groupId, chunks[i]);
-
+      const r = await sendLineGroupMessageWithMention(groupId, chunks[i], ctx);
       if (r.success) {
         sentMessages++;
       } else {
-        console.error(`[send-all/${type}] group=${groupId}:`, r.reason);
+        console.error(`[send-all/${type}] group=${groupId} chunk=${i}:`, r.reason);
       }
     }
   }

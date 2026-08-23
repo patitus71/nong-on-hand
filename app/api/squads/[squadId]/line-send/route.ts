@@ -8,13 +8,10 @@ import { canManageSprint, type SessionUser } from '@/lib/rbac';
 import {
   buildStandupText,
   buildEodChunks,
-  HINT_RELINK,
-  fetchStandupAssigneeIds,
-  fetchEodAssigneeIds,
 } from '@/lib/squadLineMessages';
 import {
-  sendLineTextMessage,
   sendLineGroupMessageWithMention,
+  MentionContext,
 } from '@/lib/lineNotify';
 
 export async function POST(
@@ -43,45 +40,17 @@ export async function POST(
     return Response.json({ ok: false, reason: 'Squad ยังไม่ได้ตั้งค่า lineGroupId' }, { status: 422 });
   }
 
-  // Mentions = task assignees of this squad who have LINE linked (any role)
-  const assigneeIds = type === 'standup'
-    ? await fetchStandupAssigneeIds([squad.id])
-    : await fetchEodAssigneeIds([squad.id]);
-
-  const assigneeUsers = assigneeIds.length > 0
-    ? await prisma.user.findMany({
-        where:  { id: { in: assigneeIds }, lineUserId: { not: null }, active: true, deletedAt: null },
-        select: { name: true, lineUserId: true, lineDisplayName: true },
-      })
-    : [];
-
-  const mentions = assigneeUsers.map(u => ({
-    placeholderName: `@${u.lineDisplayName ?? u.name}`,
-    userId:          u.lineUserId!,
-  }));
-
-  console.log(`[line-send/${type}] squad=${squad.name} assignees=${assigneeIds.length} mentions=${JSON.stringify(mentions)}`);
-
-  const needsRelinkHint = assigneeUsers.some(u => !u.lineDisplayName);
-
+  const ctx = new MentionContext();
   let result: { success: boolean; reason?: string };
 
   if (type === 'standup') {
-    let text = await buildStandupText(squad.id, squad.name);
-    if (needsRelinkHint) text += '\n\n' + HINT_RELINK;
-
-    result = mentions.length > 0
-      ? await sendLineGroupMessageWithMention(squad.lineGroupId, text, mentions)
-      : await sendLineTextMessage(squad.lineGroupId, text);
+    const text = await buildStandupText(squad.id, squad.name, ctx);
+    result = await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
   } else {
-    const chunks = await buildEodChunks(squad.id, squad.name);
-    if (needsRelinkHint) chunks[chunks.length - 1] += '\n\n' + HINT_RELINK;
-
+    const chunks = await buildEodChunks(squad.id, squad.name, ctx);
     result = { success: true };
     for (const chunk of chunks) {
-      const r = mentions.length > 0
-        ? await sendLineGroupMessageWithMention(squad.lineGroupId, chunk, mentions)
-        : await sendLineTextMessage(squad.lineGroupId, chunk);
+      const r = await sendLineGroupMessageWithMention(squad.lineGroupId, chunk, ctx);
       if (!r.success) { result = r; break; }
     }
   }
