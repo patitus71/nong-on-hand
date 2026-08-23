@@ -271,6 +271,47 @@ export async function buildEodChunks(
   return chunks;
 }
 
+/**
+ * Query QA_MANAGER users with LINE linked, embed them into ctx, and return the footer line.
+ * Returns '' if no managers have lineUserId — caller skips appending.
+ */
+async function buildQaMgrLine(ctx: MentionContext): Promise<string> {
+  const managers = await prisma.user.findMany({
+    where: {
+      role:       'QA_MANAGER',
+      lineUserId: { not: null },
+      active:     true,
+      deletedAt:  null,
+    },
+    select: { name: true, lineDisplayName: true, lineUserId: true },
+    orderBy: { name: 'asc' },
+  });
+  if (managers.length === 0) return '';
+  return managers.map(m => ctx.slot(m.lineDisplayName ?? m.name, m.lineUserId)).join(' ');
+}
+
+/**
+ * Append QA_MANAGER mention footer to the last chunk.
+ * If the footer would push the last chunk over LINE_CHAR_LIMIT, it becomes its own chunk.
+ * Returns the (possibly extended) chunks array — same reference if no managers are linked.
+ */
+export async function appendQaMgrFooter(
+  chunks: string[],
+  ctx:    MentionContext,
+): Promise<string[]> {
+  const footer = await buildQaMgrLine(ctx);
+  if (!footer) return chunks;
+
+  const last      = chunks[chunks.length - 1];
+  const candidate = last + '\n\n' + footer;
+  if (candidate.length <= LINE_CHAR_LIMIT) {
+    chunks[chunks.length - 1] = candidate;
+  } else {
+    chunks.push(footer);
+  }
+  return chunks;
+}
+
 /** Send-all: squad EOD section with divider header — caller prepends the global date header */
 export async function buildEodBlock(
   squadId:   string,

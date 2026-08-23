@@ -10,6 +10,7 @@ import {
   buildStandupBlock,
   buildEodBlock,
   mergeIntoChunks,
+  appendQaMgrFooter,
 } from '@/lib/squadLineMessages';
 import {
   sendLineGroupMessageWithMention,
@@ -74,6 +75,8 @@ export async function POST(req: Request) {
       }
       chunks = mergeIntoChunks(parts);
     }
+
+    chunks = await appendQaMgrFooter(chunks, ctx);
 
     console.log(`[send-all/${type}] group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length} mentions=${ctx.hasAny}`);
 

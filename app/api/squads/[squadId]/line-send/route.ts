@@ -8,6 +8,7 @@ import { canManageSprint, type SessionUser } from '@/lib/rbac';
 import {
   buildStandupText,
   buildEodChunks,
+  appendQaMgrFooter,
 } from '@/lib/squadLineMessages';
 import {
   sendLineGroupMessageWithMention,
@@ -41,18 +42,18 @@ export async function POST(
   }
 
   const ctx = new MentionContext();
-  let result: { success: boolean; reason?: string };
 
-  if (type === 'standup') {
-    const text = await buildStandupText(squad.id, squad.name, ctx);
-    result = await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
-  } else {
-    const chunks = await buildEodChunks(squad.id, squad.name, ctx);
-    result = { success: true };
-    for (const chunk of chunks) {
-      const r = await sendLineGroupMessageWithMention(squad.lineGroupId, chunk, ctx);
-      if (!r.success) { result = r; break; }
-    }
+  let chunks: string[] =
+    type === 'standup'
+      ? [await buildStandupText(squad.id, squad.name, ctx)]
+      : await buildEodChunks(squad.id, squad.name, ctx);
+
+  chunks = await appendQaMgrFooter(chunks, ctx);
+
+  let result: { success: boolean; reason?: string } = { success: true };
+  for (const chunk of chunks) {
+    const r = await sendLineGroupMessageWithMention(squad.lineGroupId, chunk, ctx);
+    if (!r.success) { result = r; break; }
   }
 
   if (!result.success) {
