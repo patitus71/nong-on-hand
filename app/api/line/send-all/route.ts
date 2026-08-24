@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
     if (type === 'standup') {
       const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-      const parts: string[] = [`☀️ Standup เช้านี้ — (${todayTH})`];
+      const parts: string[] = [`☀️ Standup เช้านี้ — (${todayTH})\n🔵 กำลังทำ · ⚪ คิว`];
       for (const sq of groupSquads) {
         parts.push(await buildStandupBlock(sq.id, sq.name, ctx));
       }
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       const ictOffset = 7 * 60 * 60 * 1000;
       const todayICT  = new Date(Date.now() + ictOffset);
       const todayTH   = thaiDate(todayICT);
-      const parts: string[] = [`📊 สรุปสิ้นวัน — (${todayTH})`];
+      const parts: string[] = [`📊 สรุปสิ้นวัน — (${todayTH})\n✅เสร็จ 🔵กำลังทำ 🟡review 🚩ปัญหา`];
       for (const sq of groupSquads) {
         parts.push(await buildEodBlock(sq.id, sq.name, ctx));
       }

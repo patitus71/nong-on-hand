@@ -3,20 +3,24 @@
 
 import { prisma } from '@/lib/prisma';
 import { computeSquadBoardStatus } from '@/lib/importTasks';
-import { thaiDate, formatMinutes, MentionContext } from '@/lib/lineNotify';
+import { thaiDate, MentionContext } from '@/lib/lineNotify';
 
 // LINE hard limit is 5,000 chars; leave buffer for mention prefix
 export const LINE_CHAR_LIMIT = 4800;
 
-const DIVIDER = '━━━━━━━━━━━━━━';
+function truncateNote(note: string, maxLen = 80): string {
+  return note.length > maxLen ? note.slice(0, maxLen) + '...' : note;
+}
 
 // ─── Standup ──────────────────────────────────────────────────────────────────
+
+type TaskItem = { title: string; hasIssue: boolean; issueNote: string | null };
 
 type StandupPerson = {
   displayName: string;
   lineUserId:  string | null;
-  doing:       string[];
-  queue:       string[];
+  doing:       TaskItem[];
+  queue:       TaskItem[];
 };
 
 async function fetchStandupPersons(squadId: string): Promise<Map<string, StandupPerson>> {
@@ -28,7 +32,7 @@ async function fetchStandupPersons(squadId: string): Promise<Map<string, Standup
       laneId:            { not: null },
     },
     select: {
-      id: true, title: true, hasIssue: true, assigneeId: true, laneId: true,
+      id: true, title: true, hasIssue: true, issueNote: true, assigneeId: true, laneId: true,
       assignee: { select: { name: true, lineDisplayName: true, lineUserId: true } },
       lane:     { select: { name: true } },
     },
@@ -48,71 +52,59 @@ async function fetchStandupPersons(squadId: string): Promise<Map<string, Standup
       });
     }
     const entry = byAssignee.get(task.assigneeId)!;
-    const label = task.title + (task.hasIssue ? ' 🚩 มีปัญหา' : '');
+    const item: TaskItem = { title: task.title, hasIssue: task.hasIssue, issueNote: task.issueNote };
     if (status === 'On-Board In Progress' || status === 'มีปัญหา') {
-      entry.doing.push(label);
+      entry.doing.push(item);
     } else {
-      entry.queue.push(label);
+      entry.queue.push(item);
     }
   }
   return byAssignee;
 }
 
-function formatStandupBody(
+function formatStandupSquadSection(
+  squadName:  string,
   byAssignee: Map<string, StandupPerson>,
-  ctx?: MentionContext,
-): { lines: string[]; totalOnBoard: number } {
-  const lines: string[] = [];
-  let totalOnBoard = 0;
+  ctx?:       MentionContext,
+): string {
+  const total = Array.from(byAssignee.values()).reduce(
+    (n, p) => n + p.doing.length + p.queue.length, 0,
+  );
+  if (total === 0) return `📍 ${squadName} — ไม่มีงาน`;
+
+  const lines: string[] = [`📍 ${squadName} — ${total} งาน`];
   for (const [, person] of Array.from(byAssignee)) {
-    lines.push('');
     const nameTag = ctx
       ? ctx.slot(person.displayName, person.lineUserId)
       : `@${person.displayName}`;
     lines.push(nameTag);
-    for (const t of person.doing) lines.push(`  • กำลังทำ: ${t}`);
-    for (const t of person.queue) lines.push(`  • คิวถัดไป: ${t}`);
-    totalOnBoard += person.doing.length + person.queue.length;
+    for (const item of person.doing) lines.push(`🔵 ${item.title}`);
+    for (const item of person.queue) lines.push(`⚪ ${item.title}`);
   }
-  return { lines, totalOnBoard };
+  return lines.join('\n');
 }
 
-/** Per-squad: full standup block with date header + squad divider section */
+/** Per-squad: full standup with date header + legend */
 export async function buildStandupText(
   squadId:   string,
   squadName: string,
   ctx?:      MentionContext,
 ): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
-  const { lines, totalOnBoard } = formatStandupBody(byAssignee, ctx);
-  const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-  return [
-    `☀️ Standup เช้านี้ — (${todayTH})`,
-    DIVIDER,
-    `📍 ${squadName}`,
-    DIVIDER,
-    ...lines,
-    '',
-    byAssignee.size === 0 ? 'ไม่มีงานในบอร์ดวันนี้' : `รวม ${totalOnBoard} งาน On-Board วันนี้`,
-  ].join('\n');
+  const todayTH    = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
+  const header     = `☀️ Standup เช้านี้ — (${todayTH})\n🔵 กำลังทำ · ⚪ คิว`;
+  const section    = formatStandupSquadSection(squadName, byAssignee, ctx);
+  return `${header}\n\n${section}`;
 }
 
-/** Send-all: squad section with divider header — caller prepends the global date header */
+/** Send-all: squad section only — caller prepends global date header */
 export async function buildStandupBlock(
   squadId:   string,
   squadName: string,
   ctx?:      MentionContext,
 ): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
-  const { lines, totalOnBoard } = formatStandupBody(byAssignee, ctx);
-  return [
-    DIVIDER,
-    `📍 ${squadName}`,
-    DIVIDER,
-    ...lines,
-    '',
-    byAssignee.size === 0 ? 'ไม่มีงานในบอร์ดวันนี้' : `รวม ${totalOnBoard} งาน On-Board วันนี้`,
-  ].join('\n');
+  return formatStandupSquadSection(squadName, byAssignee, ctx);
 }
 
 /**
@@ -138,12 +130,13 @@ export function mergeIntoChunks(parts: string[]): string[] {
 // ─── EOD ──────────────────────────────────────────────────────────────────────
 
 const EOD_SHOW = new Set<string>(['On-Board In Progress', 'Wait for review', 'มีปัญหา', 'Done']);
-const EOD_STATUS_LABELS: Record<string, string> = { 'มีปัญหา': '🚩มีปัญหา' };
 
-export function eodStatusLabel(status: string): string {
-  if (status === 'On-Board In Progress') return 'In Progress';
-  if (status === 'Wait for review')      return 'Review';
-  return EOD_STATUS_LABELS[status] ?? status;
+function eodEmoji(status: string): string {
+  if (status === 'มีปัญหา')             return '🚩';
+  if (status === 'Done')                 return '✅';
+  if (status === 'On-Board In Progress') return '🔵';
+  if (status === 'Wait for review')      return '🟡';
+  return '•';
 }
 
 async function fetchEodData(squadId: string) {
@@ -156,28 +149,27 @@ async function fetchEodData(squadId: string) {
   const tasks = await prisma.task.findMany({
     where:  { squadId, deletedAt: null },
     select: {
-      id: true, title: true, hasIssue: true, laneId: true,
+      id: true, title: true, hasIssue: true, issueNote: true, laneId: true,
       assigneeId: true, completedAt: true,
       assignee: { select: { name: true, lineDisplayName: true, lineUserId: true } },
       lane:     { select: { name: true } },
-      timeLogs: { where: { endAt: { not: null } }, select: { normalMinutes: true, otMinutes: true } },
     },
   });
 
-  const statusCount: Record<string, number> = {};
   let totalRemaining = 0;
   for (const task of tasks) {
-    const status = computeSquadBoardStatus(task);
-    if (status === 'Done') continue;
-    statusCount[status] = (statusCount[status] ?? 0) + 1;
-    totalRemaining++;
+    if (computeSquadBoardStatus(task) !== 'Done') totalRemaining++;
   }
 
-  const doneToday = tasks.filter(
-    t => t.completedAt && t.completedAt >= todayStart && t.completedAt <= todayEnd
-  );
+  const doneTodayCount = tasks.filter(
+    t => t.completedAt && t.completedAt >= todayStart && t.completedAt <= todayEnd,
+  ).length;
 
-  const byAssignee = new Map<string, { displayName: string; lineUserId: string | null; taskLines: string[] }>();
+  const byAssignee = new Map<string, {
+    displayName: string;
+    lineUserId:  string | null;
+    taskLines:   string[];
+  }>();
   for (const task of tasks) {
     if (!task.assigneeId || !task.assignee) continue;
     const status = computeSquadBoardStatus(task);
@@ -189,46 +181,39 @@ async function fetchEodData(squadId: string) {
         taskLines:   [],
       });
     }
-    byAssignee.get(task.assigneeId)!.taskLines.push(`  • ${task.title} (${eodStatusLabel(status)})`);
-  }
-
-  return { statusCount, totalRemaining, doneToday, byAssignee };
-}
-
-function buildEodFooterLines(
-  statusCount:    Record<string, number>,
-  totalRemaining: number,
-  doneToday:      Array<{
-    title: string;
-    assignee: { name: string } | null;
-    timeLogs: Array<{ normalMinutes: number | null; otMinutes: number | null }>;
-  }>
-): string[] {
-  const statusOrder  = ['To do list', 'On-Board', 'On-Board In Progress', 'Wait for review', 'มีปัญหา'];
-  const summaryParts = statusOrder
-    .filter(s => statusCount[s])
-    .map(s => `${EOD_STATUS_LABELS[s] ?? s}: ${statusCount[s]}`);
-
-  const lines = [
-    `งานที่เหลือ (ยังไม่ Done): ${totalRemaining} งาน`,
-    ...(summaryParts.length > 0 ? [`  ${summaryParts.join(' · ')}`] : []),
-    '',
-    `งานที่เสร็จวันนี้: ${doneToday.length} งาน`,
-  ];
-
-  if (doneToday.length === 0) {
-    lines.push('  ไม่มีงานที่เสร็จวันนี้');
-  } else {
-    for (const t of doneToday) {
-      const totalMin = t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0) + (l.otMinutes ?? 0), 0);
-      const timeStr  = totalMin > 0 ? ` (${formatMinutes(totalMin)})` : '';
-      lines.push(`  • ${t.assignee?.name ?? 'ไม่ระบุ'}: ${t.title}${timeStr}`);
+    const entry    = byAssignee.get(task.assigneeId)!;
+    entry.taskLines.push(`${eodEmoji(status)} ${task.title}`);
+    const noteText = task.issueNote?.trim();
+    if (task.hasIssue && noteText) {
+      entry.taskLines.push(`   🚨 ${truncateNote(noteText)}`);
     }
   }
-  return lines;
+
+  return { totalRemaining, doneTodayCount, byAssignee };
 }
 
-/** Per-squad: chunked EOD output with date header + squad divider section */
+function formatEodSquadSection(
+  squadName:      string,
+  totalRemaining: number,
+  doneTodayCount: number,
+  byAssignee:     Map<string, { displayName: string; lineUserId: string | null; taskLines: string[] }>,
+  ctx?:           MentionContext,
+): string {
+  const header = `📍 ${squadName} — เหลือ ${totalRemaining} · เสร็จ ${doneTodayCount}`;
+  if (byAssignee.size === 0) return header;
+
+  const lines: string[] = [header];
+  for (const [, person] of Array.from(byAssignee)) {
+    const nameTag = ctx
+      ? ctx.slot(person.displayName, person.lineUserId)
+      : `@${person.displayName}`;
+    lines.push(nameTag);
+    lines.push(...person.taskLines);
+  }
+  return lines.join('\n');
+}
+
+/** Per-squad: chunked EOD output with date header + legend */
 export async function buildEodChunks(
   squadId:   string,
   squadName: string,
@@ -238,12 +223,14 @@ export async function buildEodChunks(
   const todayICT  = new Date(Date.now() + ictOffset);
   const todayTH   = thaiDate(todayICT);
 
-  const { statusCount, totalRemaining, doneToday, byAssignee } = await fetchEodData(squadId);
+  const { totalRemaining, doneTodayCount, byAssignee } = await fetchEodData(squadId);
 
-  const dateHeader   = `📊 สรุปสิ้นวัน — (${todayTH})`;
-  const squadSection = `${DIVIDER}\n📍 ${squadName}\n${DIVIDER}`;
-  const header       = `${dateHeader}\n${squadSection}`;
-  const footer       = buildEodFooterLines(statusCount, totalRemaining, doneToday).join('\n');
+  const globalHeader = `📊 สรุปสิ้นวัน — (${todayTH})\n✅เสร็จ 🔵กำลังทำ 🟡review 🚩ปัญหา`;
+  const squadHeader  = `📍 ${squadName} — เหลือ ${totalRemaining} · เสร็จ ${doneTodayCount}`;
+
+  if (byAssignee.size === 0) {
+    return [`${globalHeader}\n\n${squadHeader}`];
+  }
 
   const personBlocks: string[] = [];
   for (const [, person] of Array.from(byAssignee)) {
@@ -253,21 +240,23 @@ export async function buildEodChunks(
     personBlocks.push([nameTag, ...person.taskLines].join('\n'));
   }
 
+  const firstBody = `${globalHeader}\n\n${squadHeader}\n`;
+  const contBase  = `📊 สรุปสิ้นวัน — (${todayTH}) (ต่อ)\n\n${squadHeader}\n`;
+
   const chunks: string[] = [];
-  let body = header + '\n';
+  let body = firstBody;
 
   for (const block of personBlocks) {
-    const candidate  = body + '\n' + block + '\n';
-    const withFooter = candidate + '\n' + footer;
-    if (withFooter.length > LINE_CHAR_LIMIT && body !== header + '\n') {
+    const candidate = body + block + '\n';
+    if (candidate.length > LINE_CHAR_LIMIT && body !== firstBody) {
       chunks.push(body.trimEnd());
-      body = `${dateHeader} (ต่อ)\n${squadSection}\n\n${block}\n`;
+      body = contBase + block + '\n';
     } else {
       body = candidate;
     }
   }
 
-  chunks.push(body.trimEnd() + '\n\n' + footer);
+  chunks.push(body.trimEnd());
   return chunks;
 }
 
@@ -309,25 +298,12 @@ export async function appendQaMgrFooter(
   return chunks;
 }
 
-/** Send-all: squad EOD section with divider header — caller prepends the global date header */
+/** Send-all: squad EOD section — caller prepends the global date header */
 export async function buildEodBlock(
   squadId:   string,
   squadName: string,
   ctx?:      MentionContext,
 ): Promise<string> {
-  const { statusCount, totalRemaining, doneToday, byAssignee } = await fetchEodData(squadId);
-  const footerLines = buildEodFooterLines(statusCount, totalRemaining, doneToday);
-
-  const lines: string[] = [DIVIDER, `📍 ${squadName}`, DIVIDER];
-  for (const [, person] of Array.from(byAssignee)) {
-    lines.push('');
-    const nameTag = ctx
-      ? ctx.slot(person.displayName, person.lineUserId)
-      : `@${person.displayName}`;
-    lines.push(nameTag);
-    lines.push(...person.taskLines);
-  }
-  lines.push('');
-  lines.push(...footerLines);
-  return lines.join('\n');
+  const { totalRemaining, doneTodayCount, byAssignee } = await fetchEodData(squadId);
+  return formatEodSquadSection(squadName, totalRemaining, doneTodayCount, byAssignee, ctx);
 }
