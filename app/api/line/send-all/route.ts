@@ -60,7 +60,7 @@ export async function POST(req: Request) {
 
     if (type === 'standup') {
       const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-      const parts: string[] = [`☀️ Standup — (${todayTH})\n🔵 In Progress · ⚪ Next up`];
+      const parts: string[] = [`Standup — (${todayTH})\nIn Progress · Next up`];
       for (const sq of groupSquads) {
         parts.push(await buildStandupBlock(sq.id, sq.name, ctx));
       }
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       const ictOffset = 7 * 60 * 60 * 1000;
       const todayICT  = new Date(Date.now() + ictOffset);
       const todayTH   = thaiDate(todayICT);
-      const parts: string[] = [`📊 EOD Summary — (${todayTH})\n✅ Done · 🔵 In Progress · 🟡 Review · 🚩 Issue`];
+      const parts: string[] = [`EOD Summary — (${todayTH})\nDone · In Progress · In Review · 🚩 Issue`];
       for (const sq of groupSquads) {
         parts.push(await buildEodBlock(sq.id, sq.name, ctx));
       }

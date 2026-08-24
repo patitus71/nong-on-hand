@@ -78,8 +78,8 @@ function formatStandupSquadSection(
       ? ctx.slot(person.displayName, person.lineUserId)
       : `@${person.displayName}`;
     lines.push(nameTag);
-    for (const item of person.doing) lines.push(`🔵 ${item.title}`);
-    for (const item of person.queue) lines.push(`⚪ ${item.title}`);
+    for (const item of person.doing) lines.push(`In Progress: ${item.title}`);
+    for (const item of person.queue) lines.push(`Next up: ${item.title}`);
   }
   return lines.join('\n');
 }
@@ -92,7 +92,7 @@ export async function buildStandupText(
 ): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const todayTH    = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-  const header     = `☀️ Standup — (${todayTH})\n🔵 In Progress · ⚪ Next up`;
+  const header     = `Standup — (${todayTH})\nIn Progress · Next up`;
   const section    = formatStandupSquadSection(squadName, byAssignee, ctx);
   return `${header}\n\n${section}`;
 }
@@ -131,12 +131,12 @@ export function mergeIntoChunks(parts: string[]): string[] {
 
 const EOD_SHOW = new Set<string>(['On-Board In Progress', 'Wait for review', 'มีปัญหา', 'Done']);
 
-function eodEmoji(status: string): string {
-  if (status === 'มีปัญหา')             return '🚩';
-  if (status === 'Done')                 return '✅';
-  if (status === 'On-Board In Progress') return '🔵';
-  if (status === 'Wait for review')      return '🟡';
-  return '•';
+function eodLabel(status: string): string {
+  if (status === 'มีปัญหา')             return '🚩 Issue:';
+  if (status === 'Done')                 return 'Done:';
+  if (status === 'On-Board In Progress') return 'In Progress:';
+  if (status === 'Wait for review')      return 'In Review:';
+  return '';
 }
 
 async function fetchEodData(squadId: string) {
@@ -182,7 +182,7 @@ async function fetchEodData(squadId: string) {
       });
     }
     const entry    = byAssignee.get(task.assigneeId)!;
-    entry.taskLines.push(`${eodEmoji(status)} ${task.title}`);
+    entry.taskLines.push(`${eodLabel(status)} ${task.title}`);
     const noteText = task.issueNote?.trim();
     if (task.hasIssue && noteText) {
       entry.taskLines.push(`   🚨 ${truncateNote(noteText)}`);
@@ -225,7 +225,7 @@ export async function buildEodChunks(
 
   const { totalRemaining, doneTodayCount, byAssignee } = await fetchEodData(squadId);
 
-  const globalHeader = `📊 EOD Summary — (${todayTH})\n✅ Done · 🔵 In Progress · 🟡 Review · 🚩 Issue`;
+  const globalHeader = `EOD Summary — (${todayTH})\nDone · In Progress · In Review · 🚩 Issue`;
   const squadHeader  = `📍 ${squadName} — Remaining ${totalRemaining} · Done ${doneTodayCount}`;
 
   if (byAssignee.size === 0) {
@@ -241,7 +241,7 @@ export async function buildEodChunks(
   }
 
   const firstBody = `${globalHeader}\n\n${squadHeader}\n`;
-  const contBase  = `📊 EOD Summary — (${todayTH}) (cont.)\n\n${squadHeader}\n`;
+  const contBase  = `EOD Summary — (${todayTH}) (cont.)\n\n${squadHeader}\n`;
 
   const chunks: string[] = [];
   let body = firstBody;
