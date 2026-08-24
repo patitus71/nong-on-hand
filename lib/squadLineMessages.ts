@@ -70,9 +70,9 @@ function formatStandupSquadSection(
   const total = Array.from(byAssignee.values()).reduce(
     (n, p) => n + p.doing.length + p.queue.length, 0,
   );
-  if (total === 0) return `📍 ${squadName} — ไม่มีงาน`;
+  if (total === 0) return `📍 ${squadName} — No tasks today`;
 
-  const lines: string[] = [`📍 ${squadName} — ${total} งาน`];
+  const lines: string[] = [`📍 ${squadName} — ${total} ${total === 1 ? 'task' : 'tasks'}`];
   for (const [, person] of Array.from(byAssignee)) {
     const nameTag = ctx
       ? ctx.slot(person.displayName, person.lineUserId)
@@ -92,7 +92,7 @@ export async function buildStandupText(
 ): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const todayTH    = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-  const header     = `☀️ Standup เช้านี้ — (${todayTH})\n🔵 กำลังทำ · ⚪ คิว`;
+  const header     = `☀️ Standup — (${todayTH})\n🔵 In Progress · ⚪ Next up`;
   const section    = formatStandupSquadSection(squadName, byAssignee, ctx);
   return `${header}\n\n${section}`;
 }
@@ -199,7 +199,7 @@ function formatEodSquadSection(
   byAssignee:     Map<string, { displayName: string; lineUserId: string | null; taskLines: string[] }>,
   ctx?:           MentionContext,
 ): string {
-  const header = `📍 ${squadName} — เหลือ ${totalRemaining} · เสร็จ ${doneTodayCount}`;
+  const header = `📍 ${squadName} — Remaining ${totalRemaining} · Done ${doneTodayCount}`;
   if (byAssignee.size === 0) return header;
 
   const lines: string[] = [header];
@@ -225,8 +225,8 @@ export async function buildEodChunks(
 
   const { totalRemaining, doneTodayCount, byAssignee } = await fetchEodData(squadId);
 
-  const globalHeader = `📊 สรุปสิ้นวัน — (${todayTH})\n✅เสร็จ 🔵กำลังทำ 🟡review 🚩ปัญหา`;
-  const squadHeader  = `📍 ${squadName} — เหลือ ${totalRemaining} · เสร็จ ${doneTodayCount}`;
+  const globalHeader = `📊 EOD Summary — (${todayTH})\n✅ Done · 🔵 In Progress · 🟡 Review · 🚩 Issue`;
+  const squadHeader  = `📍 ${squadName} — Remaining ${totalRemaining} · Done ${doneTodayCount}`;
 
   if (byAssignee.size === 0) {
     return [`${globalHeader}\n\n${squadHeader}`];
@@ -241,7 +241,7 @@ export async function buildEodChunks(
   }
 
   const firstBody = `${globalHeader}\n\n${squadHeader}\n`;
-  const contBase  = `📊 สรุปสิ้นวัน — (${todayTH}) (ต่อ)\n\n${squadHeader}\n`;
+  const contBase  = `📊 EOD Summary — (${todayTH}) (cont.)\n\n${squadHeader}\n`;
 
   const chunks: string[] = [];
   let body = firstBody;
