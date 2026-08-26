@@ -887,7 +887,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
             </div>
 
             <p className="text-[11px] text-txt-muted mt-3 leading-relaxed">
-              ตั้งค่าได้ผ่านคำสั่ง LINE กลุ่มด้วย: <span className="font-mono">/standup on HH:MM</span> / <span className="font-mono">/eod on HH:MM</span>
+              หมายเหตุ: คำสั่ง LINE (<span className="font-mono">/standup all on HH:MM</span>, <span className="font-mono">/eod all on HH:MM</span>) ตั้งให้ทุก squad พร้อมกันเท่านั้น — ตั้งเฉพาะ squad นี้ squad เดียวได้ที่นี่เท่านั้น
             </p>
 
             <button
