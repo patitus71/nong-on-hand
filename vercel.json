@@ -1,12 +1,2 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/standup",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/cron/eod",
-      "schedule": "0 * * * *"
-    }
-  ]
 }
