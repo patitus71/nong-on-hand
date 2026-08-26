@@ -1,0 +1,27 @@
+name: LINE standup/EOD cron
+
+# Vercel Hobby plan only allows daily cron jobs, so this workflow replaces
+# Vercel Cron for the standup/EOD auto-send feature. It just pings the two
+# endpoints — all the scheduling/dedup logic lives server-side in
+# app/api/cron/standup and app/api/cron/eod (see lib/cronWindow.ts).
+#
+# GitHub Actions cron schedules always run in UTC. We don't need to convert
+# to Asia/Bangkok here — running every 10 minutes is timezone-agnostic; the
+# ICT conversion happens inside the endpoints themselves.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call standup cron endpoint
+        run: |
+          curl -sf -X GET "https://nong-on-hand.vercel.app/api/cron/standup" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+      - name: Call EOD cron endpoint
+        run: |
+          curl -sf -X GET "https://nong-on-hand.vercel.app/api/cron/eod" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

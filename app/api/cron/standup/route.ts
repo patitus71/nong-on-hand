@@ -1,10 +1,15 @@
 // app/api/cron/standup/route.ts
 //
-// Vercel cron job: ส่ง standup ไปยัง squad ที่ตั้ง standupAutoSendEnabled=true
-// และ standupSendTime ตรงกับเวลา ICT ปัจจุบัน (HH:MM)
+// ยิงจาก GitHub Actions (.github/workflows/notify-cron.yml) ทุก ~10 นาที
+// — Vercel Hobby plan ไม่รองรับ cron ถี่กว่ารายวัน จึงย้ายมาให้ GitHub Actions
+// เป็นตัวยิง request เข้ามาแทน endpoint นี้ไม่เปลี่ยน security model ใดๆ
 //
-// Security: CRON_SECRET fail-closed — ถ้าไม่ได้ตั้งค่า → 401 ทันที
-// Dedup: ข้าม squad ที่เคยส่งภายใน 2 นาทีที่แล้ว (ป้องกัน Vercel retry ยิงซ้ำ)
+// ส่ง standup ไปยัง squad ที่ตั้ง standupAutoSendEnabled=true และเวลาปัจจุบัน (ICT)
+// อยู่ในช่วง [standupSendTime, standupSendTime + WINDOW_MINUTES) — ดู lib/cronWindow.ts
+// สำหรับเหตุผลที่เทียบเป็นช่วงแทนตรงเป๊ะ (scheduler ไม่การันตีความแม่นยำระดับนาที)
+//
+// Security: CRON_SECRET fail-closed — ถ้าไม่ได้ตั้งค่า หรือ header ไม่ตรง → 401 ทันที
+// Dedup: lastStandupSentAt ต้องเก่ากว่า WINDOW_MINUTES ที่แล้ว ไม่งั้นข้าม (กัน cron รันซ้อน)
 
 import { prisma } from '@/lib/prisma';
 import {
@@ -17,13 +22,7 @@ import {
   MentionContext,
   thaiDate,
 } from '@/lib/lineNotify';
-
-function currentIctHHMM(): string {
-  const ict = new Date(Date.now() + 7 * 60 * 60 * 1000);
-  const h   = ict.getUTCHours().toString().padStart(2, '0');
-  const m   = ict.getUTCMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
-}
+import { currentIctMinutes, inSendWindow, alreadySentThisWindow } from '@/lib/cronWindow';
 
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;
@@ -31,26 +30,32 @@ export async function GET(req: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const nowICT    = currentIctHHMM();
-  const dedupCutoff = new Date(Date.now() - 2 * 60 * 1000); // 2 min ago
+  const nowMinutes = currentIctMinutes();
 
-  const squads = await prisma.squad.findMany({
+  const candidates = await prisma.squad.findMany({
     where: {
       lineGroupId: { not: null },
       notificationSettings: {
         standupAutoSendEnabled: true,
-        standupSendTime:        nowICT,
-        OR: [
-          { lastStandupSentAt: null },
-          { lastStandupSentAt: { lt: dedupCutoff } },
-        ],
+        standupSendTime:        { not: null },
       },
     },
-    select: { id: true, name: true, lineGroupId: true },
+    select: {
+      id: true, name: true, lineGroupId: true,
+      notificationSettings: { select: { standupSendTime: true, lastStandupSentAt: true } },
+    },
+  });
+
+  const squads = candidates.filter(s => {
+    const ns = s.notificationSettings;
+    if (!ns?.standupSendTime) return false;
+    if (!inSendWindow(ns.standupSendTime, nowMinutes)) return false;
+    if (alreadySentThisWindow(ns.lastStandupSentAt)) return false;
+    return true;
   });
 
   if (squads.length === 0) {
-    return Response.json({ ok: true, fired: 0, time: nowICT });
+    return Response.json({ ok: true, fired: 0, nowMinutes });
   }
 
   // Group squads sharing the same LINE group → one combined message per group
@@ -75,7 +80,7 @@ export async function GET(req: Request) {
     let chunks = mergeIntoChunks(parts);
     chunks     = await appendQaMgrFooter(chunks, ctx);
 
-    console.log(`[cron/standup] time=${nowICT} group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length}`);
+    console.log(`[cron/standup] nowMinutes=${nowMinutes} group=${groupId} squads=${groupSquads.map(s => s.name).join(',')} chunks=${chunks.length}`);
 
     let groupSent = false;
     for (let i = 0; i < chunks.length; i++) {
@@ -97,5 +102,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return Response.json({ ok: true, fired, time: nowICT, groupCount: byGroup.size });
+  return Response.json({ ok: true, fired, nowMinutes, groupCount: byGroup.size });
 }
