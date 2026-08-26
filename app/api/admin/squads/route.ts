@@ -8,7 +8,16 @@ export async function GET() {
   requireAdmin(session?.user as SessionUser | undefined);
 
   const squads = await prisma.squad.findMany({
-    select: { id: true, name: true, _count: { select: { users: true } } },
+    select: {
+      id: true, name: true, isFloatingPool: true,
+      _count: { select: { users: true } },
+      notificationSettings: {
+        select: {
+          standupAutoSendEnabled: true, standupSendTime: true,
+          eodAutoSendEnabled: true,     eodSendTime: true,
+        },
+      },
+    },
     orderBy: { name: 'asc' },
   });
 

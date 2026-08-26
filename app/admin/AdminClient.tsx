@@ -10,10 +10,19 @@ type UserRow = {
   isLastAdmin: boolean;
 };
 
+type NotifSettings = {
+  standupAutoSendEnabled: boolean;
+  standupSendTime: string | null;
+  eodAutoSendEnabled: boolean;
+  eodSendTime: string | null;
+};
+
 type SquadRow = {
   id: string;
   name: string;
+  isFloatingPool: boolean;
   _count: { users: number };
+  notificationSettings: NotifSettings | null;
 };
 
 const ALL_ROLES = ['ADMIN', 'QA_LEAD', 'QA_MANAGER', 'QA_ENGINEER'] as const;
@@ -229,6 +238,68 @@ export default function AdminClient({ actorRole, actorId }: Props) {
     setSquadSaving(false);
   }
 
+  async function toggleFloatingPool(squadId: string, current: boolean) {
+    const res = await fetch(`/api/admin/squads/${squadId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isFloatingPool: !current }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setSquads(sq => sq.map(s => s.id === squadId ? { ...s, isFloatingPool: updated.isFloatingPool } : s));
+    }
+  }
+
+  // ── Notification settings modal ──────────────────────────────
+  const [notifTarget, setNotifTarget] = useState<SquadRow | null>(null);
+  const [notifForm, setNotifForm] = useState<NotifSettings & { standupSendTime: string; eodSendTime: string }>({
+    standupAutoSendEnabled: false, standupSendTime: '',
+    eodAutoSendEnabled:     false, eodSendTime: '',
+  });
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [notifError,  setNotifError]  = useState('');
+
+  function openNotif(sq: SquadRow) {
+    const ns = sq.notificationSettings;
+    setNotifForm({
+      standupAutoSendEnabled: ns?.standupAutoSendEnabled ?? false,
+      standupSendTime:        ns?.standupSendTime ?? '',
+      eodAutoSendEnabled:     ns?.eodAutoSendEnabled ?? false,
+      eodSendTime:            ns?.eodSendTime ?? '',
+    });
+    setNotifError('');
+    setNotifTarget(sq);
+  }
+
+  async function saveNotif() {
+    if (!notifTarget) return;
+    if (notifForm.standupAutoSendEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(notifForm.standupSendTime)) {
+      setNotifError('Standup: รูปแบบเวลาไม่ถูกต้อง (HH:MM 24h)'); return;
+    }
+    if (notifForm.eodAutoSendEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(notifForm.eodSendTime)) {
+      setNotifError('EOD: รูปแบบเวลาไม่ถูกต้อง (HH:MM 24h)'); return;
+    }
+    setNotifSaving(true); setNotifError('');
+    const res = await fetch(`/api/admin/squads/${notifTarget.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        notificationSettings: {
+          standupAutoSendEnabled: notifForm.standupAutoSendEnabled,
+          standupSendTime:        notifForm.standupAutoSendEnabled ? notifForm.standupSendTime : null,
+          eodAutoSendEnabled:     notifForm.eodAutoSendEnabled,
+          eodSendTime:            notifForm.eodAutoSendEnabled ? notifForm.eodSendTime : null,
+        },
+      }),
+    });
+    if (res.ok) {
+      const updated = await res.json() as SquadRow;
+      setSquads(prev => prev.map(s => s.id === notifTarget.id ? updated : s));
+      setNotifTarget(null);
+    } else {
+      setNotifError(await res.text());
+    }
+    setNotifSaving(false);
+  }
+
   async function addSquad() {
     if (!newSquadName.trim()) return;
     setAddingSquad(true); setAddSquadError('');
@@ -255,7 +326,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
   const selCls = 'bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-md focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
-    <div className="max-w-[1200px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
       <h1 className="text-[19px] font-semibold text-txt-primary mb-1">Admin Panel</h1>
       <p className="text-[13px] text-txt-secondary mb-5">จัดการผู้ใช้ role และ squad</p>
 
@@ -454,7 +525,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <table className="w-full border-collapse bg-surface-1">
                 <thead>
                   <tr className="border-b border-app-border">
-                    {['ชื่อ Squad', 'สมาชิก', ''].map(h => (
+                    {['ชื่อ Squad', 'Floating Pool', 'สมาชิก', 'LINE Auto-Send', ''].map(h => (
                       <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3.5 py-2.5">{h}</th>
                     ))}
                   </tr>
@@ -477,7 +548,36 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                           <span className="text-[13px] text-txt-primary font-medium">{sq.name}</span>
                         )}
                       </td>
+                      <td className="px-3.5 py-2.5 whitespace-nowrap">
+                        <button
+                          onClick={() => toggleFloatingPool(sq.id, sq.isFloatingPool)}
+                          title={sq.isFloatingPool ? 'คลิกเพื่อปิด Floating Pool' : 'คลิกเพื่อเปิด Floating Pool'}
+                          className={`text-[11.5px] px-2.5 py-1 rounded-full border transition-colors ${
+                            sq.isFloatingPool
+                              ? 'bg-accent/15 border-accent/40 text-accent font-medium'
+                              : 'bg-surface-2 border-app-border text-txt-muted hover:border-accent/40 hover:text-accent'
+                          }`}
+                        >
+                          {sq.isFloatingPool ? 'เปิดอยู่' : 'ปิดอยู่'}
+                        </button>
+                      </td>
                       <td className="px-3.5 py-2.5 text-[13px] text-txt-secondary whitespace-nowrap">{sq._count.users} คน</td>
+                      <td className="px-3.5 py-2.5 whitespace-nowrap">
+                        <button
+                          onClick={() => openNotif(sq)}
+                          className="text-[11.5px] px-2.5 py-1 rounded-full border transition-colors bg-surface-2 border-app-border text-txt-muted hover:border-accent/40 hover:text-accent"
+                          title="ตั้งค่า LINE auto-send"
+                        >
+                          {sq.notificationSettings
+                            ? (() => {
+                                const ns = sq.notificationSettings;
+                                const sd = ns.standupAutoSendEnabled ? `SD ${ns.standupSendTime}` : null;
+                                const ed = ns.eodAutoSendEnabled     ? `EOD ${ns.eodSendTime}`    : null;
+                                return [sd, ed].filter(Boolean).join(' · ') || '—';
+                              })()
+                            : '—'}
+                        </button>
+                      </td>
                       <td className="px-3.5 py-2.5 whitespace-nowrap">
                         {editingSquadId === sq.id ? (
                           <div className="flex gap-2">
@@ -689,6 +789,87 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <button onClick={submitAddUser} disabled={addingUser || !newUser.name.trim() || !newUser.username.trim() || newUser.password.length < 6}
                 className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${addingUser ? 'btn-loading' : ''}`}>
                 สร้าง User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: LINE Notification Settings ────────────────── */}
+      {notifTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">LINE Auto-Send</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-4">{notifTarget.name}</p>
+
+            <div className="space-y-4">
+              {/* Standup */}
+              <div className="bg-surface-2 rounded-lg px-3.5 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[12.5px] font-medium text-txt-primary">Standup</span>
+                  <button
+                    onClick={() => setNotifForm(f => ({ ...f, standupAutoSendEnabled: !f.standupAutoSendEnabled }))}
+                    className={`w-[34px] h-[18px] rounded-full relative transition-colors ${notifForm.standupAutoSendEnabled ? 'bg-success' : 'bg-surface-3'}`}
+                  >
+                    <span className={`w-[14px] h-[14px] rounded-full bg-white absolute top-[2px] transition-all ${notifForm.standupAutoSendEnabled ? 'left-[18px]' : 'left-[2px]'}`} />
+                  </button>
+                </div>
+                {notifForm.standupAutoSendEnabled && (
+                  <div>
+                    <label className="block text-[11px] text-txt-muted mb-1">เวลาส่ง (ICT, รูปแบบ HH:MM)</label>
+                    <input
+                      type="text"
+                      value={notifForm.standupSendTime}
+                      onChange={e => setNotifForm(f => ({ ...f, standupSendTime: e.target.value }))}
+                      placeholder="09:00"
+                      maxLength={5}
+                      className="w-full bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-md focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* EOD */}
+              <div className="bg-surface-2 rounded-lg px-3.5 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[12.5px] font-medium text-txt-primary">EOD Summary</span>
+                  <button
+                    onClick={() => setNotifForm(f => ({ ...f, eodAutoSendEnabled: !f.eodAutoSendEnabled }))}
+                    className={`w-[34px] h-[18px] rounded-full relative transition-colors ${notifForm.eodAutoSendEnabled ? 'bg-success' : 'bg-surface-3'}`}
+                  >
+                    <span className={`w-[14px] h-[14px] rounded-full bg-white absolute top-[2px] transition-all ${notifForm.eodAutoSendEnabled ? 'left-[18px]' : 'left-[2px]'}`} />
+                  </button>
+                </div>
+                {notifForm.eodAutoSendEnabled && (
+                  <div>
+                    <label className="block text-[11px] text-txt-muted mb-1">เวลาส่ง (ICT, รูปแบบ HH:MM)</label>
+                    <input
+                      type="text"
+                      value={notifForm.eodSendTime}
+                      onChange={e => setNotifForm(f => ({ ...f, eodSendTime: e.target.value }))}
+                      placeholder="18:00"
+                      maxLength={5}
+                      className="w-full bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-md focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-txt-muted mt-3 leading-relaxed">
+              ตั้งค่าได้ผ่านคำสั่ง LINE กลุ่มด้วย: <span className="font-mono">/standup on HH:MM</span> / <span className="font-mono">/eod on HH:MM</span>
+            </p>
+
+            {notifError && <p className="text-[12px] text-danger mt-2">{notifError}</p>}
+
+            <div className="flex gap-2 justify-end mt-4">
+              <button onClick={() => setNotifTarget(null)} disabled={notifSaving}
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors">
+                ยกเลิก
+              </button>
+              <button onClick={saveNotif} disabled={notifSaving}
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${notifSaving ? 'btn-loading' : ''}`}>
+                บันทึก
               </button>
             </div>
           </div>

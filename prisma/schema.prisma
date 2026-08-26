@@ -62,6 +62,7 @@ model Squad {
   importBatches            ImportBatch[]
   weeklyReports            WeeklyReport[]
   sprints                  Sprint[]
+  notificationSettings     NotificationSettings?
   createdAt                DateTime      @default(now())
 
   @@index([isFloatingPool])
@@ -92,6 +93,7 @@ model User {
   taskLogs          TaskLog[]
   flaggedTasksForDeletion Task[]         @relation("TaskDeletionFlaggedBy")
   reviewedTasks           Task[]         @relation("TaskReviewApprovedBy")
+  reviewsAssigned         Task[]         @relation("TaskReviewer")
   deletedTasks            Task[]         @relation("TaskDeletedBy")
   notifications           Notification[]
   weeklyReports           WeeklyReport[] @relation("WeeklyReportGeneratedBy")
@@ -155,6 +157,9 @@ model Task {
   reviewApprovedAt      DateTime? // เวลาที่ QA_LEAD อนุมัติ review (null = ยังไม่ผ่าน)
   reviewApprovedById    String?
   reviewApprovedBy      User?     @relation("TaskReviewApprovedBy", fields: [reviewApprovedById], references: [id])
+  reviewerId            String?   // ผู้รับผิดชอบ review — reset ทุกครั้งที่ task เข้าเลน Review ใหม่
+  reviewer              User?     @relation("TaskReviewer", fields: [reviewerId], references: [id])
+  prLink                String?   // PR/MR link (http/https only) — validate ทั้ง client และ server
   completedAt           DateTime? // set ตอนย้ายเข้าเลน Done (update ถ้าเข้า Done ซ้ำ)
   sprintId              String?   // Sprint ที่ task นี้อยู่ — null ถ้ายังไม่ถูก pull-in หรือ pull-in ก่อนมี Sprint
   sprint                Sprint?   @relation(fields: [sprintId], references: [id])
@@ -172,6 +177,7 @@ model Task {
   @@index([laneId])
   @@index([flaggedForDeletion])
   @@index([sprintId])
+  @@index([reviewerId])
 }
 
 model TaskIssueLog {
@@ -305,6 +311,22 @@ model TaskLog {
   createdAt DateTime @default(now())
 
   @@index([taskId])
+}
+
+// การตั้งเวลา auto-send standup/EOD ต่อ squad (1:1 กับ Squad)
+// ตั้งผ่านคำสั่งในกลุ่ม LINE: /standup on HH:MM, /eod on HH:MM, /standup off, /eod off
+model NotificationSettings {
+  id                     String    @id @default(cuid())
+  squadId                String    @unique
+  squad                  Squad     @relation(fields: [squadId], references: [id], onDelete: Cascade)
+  standupAutoSendEnabled Boolean   @default(false)
+  standupSendTime        String?   // "HH:MM" 24h format (ICT) — null ถ้ายังไม่ได้ตั้ง
+  eodAutoSendEnabled     Boolean   @default(false)
+  eodSendTime            String?   // "HH:MM" 24h format (ICT)
+  lastStandupSentAt      DateTime? // dedup: timestamp ของการส่ง standup ล่าสุด
+  lastEodSentAt          DateTime? // dedup: timestamp ของการส่ง EOD ล่าสุด
+  updatedAt              DateTime  @updatedAt
+  createdAt              DateTime  @default(now())
 }
 
 // บันทึกเวลาทำงานแต่ละช่วง (หยิบมาทำ -> จบ)
