@@ -257,6 +257,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
   });
   const [notifSaving, setNotifSaving] = useState(false);
   const [notifError,  setNotifError]  = useState('');
+  const [applyingAll, setApplyingAll] = useState(false);
 
   function openNotif(sq: SquadRow) {
     const ns = sq.notificationSettings;
@@ -298,6 +299,35 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       setNotifError(await res.text());
     }
     setNotifSaving(false);
+  }
+
+  // ใช้เวลา standup/EOD ในฟอร์มปัจจุบัน กับทุก squad พร้อมกัน (bulk apply)
+  async function applyNotifToAllSquads() {
+    if (!confirm('ตั้งค่านี้จะ overwrite เวลา standup/EOD ของทุก squad ทันที (รวมค่าที่เคยตั้งไว้แยกต่างหาก) ยืนยันไหม?')) return;
+    if (notifForm.standupAutoSendEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(notifForm.standupSendTime)) {
+      setNotifError('Standup: รูปแบบเวลาไม่ถูกต้อง (HH:MM 24h)'); return;
+    }
+    if (notifForm.eodAutoSendEnabled && !/^([01]\d|2[0-3]):[0-5]\d$/.test(notifForm.eodSendTime)) {
+      setNotifError('EOD: รูปแบบเวลาไม่ถูกต้อง (HH:MM 24h)'); return;
+    }
+    setApplyingAll(true); setNotifError('');
+    const applied: NotifSettings = {
+      standupAutoSendEnabled: notifForm.standupAutoSendEnabled,
+      standupSendTime:        notifForm.standupAutoSendEnabled ? notifForm.standupSendTime : null,
+      eodAutoSendEnabled:     notifForm.eodAutoSendEnabled,
+      eodSendTime:            notifForm.eodAutoSendEnabled ? notifForm.eodSendTime : null,
+    };
+    const res = await fetch('/api/admin/squads/notification-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(applied),
+    });
+    if (res.ok) {
+      setSquads(prev => prev.map(s => ({ ...s, notificationSettings: applied })));
+      setNotifTarget(null);
+    } else {
+      setNotifError(await res.text());
+    }
+    setApplyingAll(false);
   }
 
   async function addSquad() {
@@ -860,16 +890,27 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               ตั้งค่าได้ผ่านคำสั่ง LINE กลุ่มด้วย: <span className="font-mono">/standup on HH:MM</span> / <span className="font-mono">/eod on HH:MM</span>
             </p>
 
+            <button
+              onClick={applyNotifToAllSquads}
+              disabled={notifSaving || applyingAll}
+              className={`w-full mt-3 text-[12px] text-accent border border-accent/30 rounded-lg py-1.5 hover:bg-accent/10 disabled:opacity-50 transition-colors ${applyingAll ? 'btn-loading' : ''}`}
+            >
+              ใช้เวลานี้กับทุก Squad
+            </button>
+            <p className="text-[10.5px] text-txt-muted mt-1 leading-relaxed">
+              overwrite การตั้งค่า standup/EOD ของทุก squad ด้วยค่าในฟอร์มนี้ทันที
+            </p>
+
             {notifError && <p className="text-[12px] text-danger mt-2">{notifError}</p>}
 
             <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => setNotifTarget(null)} disabled={notifSaving}
+              <button onClick={() => setNotifTarget(null)} disabled={notifSaving || applyingAll}
                 className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors">
                 ยกเลิก
               </button>
-              <button onClick={saveNotif} disabled={notifSaving}
+              <button onClick={saveNotif} disabled={notifSaving || applyingAll}
                 className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${notifSaving ? 'btn-loading' : ''}`}>
-                บันทึก
+                บันทึก (squad นี้เท่านั้น)
               </button>
             </div>
           </div>
