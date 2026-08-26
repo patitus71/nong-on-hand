@@ -1,6 +1,6 @@
 export default function TasksLoading() {
   return (
-    <div className="max-w-[1180px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
       {/* Header skeleton */}
       <div className="flex items-end justify-between mb-5">
         <div>

@@ -48,7 +48,8 @@ export default async function MyBoardPage() {
             orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
             include: {
               squad:    { select: { name: true } },
-              assignee: { select: { name: true } },
+              assignee: { select: { id: true, name: true } },
+              reviewer: { select: { name: true } },
               timeLogs: { select: { normalMinutes: true, otMinutes: true } },
               sprint:   { select: { plannedEndDate: true } },
             },
@@ -93,11 +94,58 @@ export default async function MyBoardPage() {
     include: {
       lane:     { select: { name: true } },
       squad:    { select: { name: true } },
+      reviewer: { select: { name: true } },
       timeLogs: { select: { normalMinutes: true, otMinutes: true } },
       sprint:   { select: { plannedEndDate: true } },
     },
     orderBy: { createdAt: 'asc' },
   });
+
+  // Build reviewer list per squad (QA_LEADs of that squad + floating pool + ADMIN)
+  const boardTaskSquadIds = board.lanes.flatMap(l => l.tasks).map(t => t.squadId).filter(Boolean) as string[];
+  const rawTaskSquadIds   = rawSquadTasks.map(t => t.squadId).filter(Boolean) as string[];
+  const allSquadIds       = Array.from(new Set([...boardTaskSquadIds, ...rawTaskSquadIds]));
+
+  const reviewersBySquad: Record<string, { id: string; name: string }[]> = {};
+  if (allSquadIds.length > 0) {
+    const reviewerCandidates = await prisma.user.findMany({
+      where: {
+        active: true, deletedAt: null,
+        OR: [
+          { role: 'ADMIN' },
+          { role: 'QA_LEAD', squadId: { in: allSquadIds } },
+          { squad: { isFloatingPool: true } },
+        ],
+      },
+      select: { id: true, name: true, squadId: true, role: true, squad: { select: { isFloatingPool: true } } },
+    });
+    const floatingAndAdmin = reviewerCandidates.filter(u => u.role === 'ADMIN' || u.squad?.isFloatingPool);
+    for (const sid of allSquadIds) {
+      const squadLeads = reviewerCandidates.filter(u => u.squadId === sid && !u.squad?.isFloatingPool && u.role !== 'ADMIN');
+      reviewersBySquad[sid] = [
+        ...squadLeads.map(u => ({ id: u.id, name: u.name })),
+        ...floatingAndAdmin.map(u => ({ id: u.id, name: u.name })),
+      ];
+    }
+  }
+
+  // Tasks where I'm the assigned reviewer, still in Review lane, not yet approved
+  const rawPendingReviews = await prisma.task.findMany({
+    where: { reviewerId: user.id, deletedAt: null, reviewApprovedAt: null, lane: { name: 'Review' } },
+    select: {
+      id: true, title: true, prLink: true,
+      squad:    { select: { id: true, name: true } },
+      assignee: { select: { name: true } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+  const pendingReviews = rawPendingReviews.map(r => ({
+    id:       r.id,
+    title:    r.title,
+    prLink:   r.prLink,
+    squad:    r.squad,
+    assignee: r.assignee ? { name: r.assignee.name } : null,
+  }));
 
   const sqByPersonalLane = new Map<string, typeof rawSquadTasks>();
   const sqProblemTasks: {
@@ -143,7 +191,12 @@ export default async function MyBoardPage() {
           hasIssue:         t.hasIssue,
           order:            t.order,
           reviewApprovedAt: t.reviewApprovedAt?.toISOString() ?? null,
+          reviewerId:       t.reviewerId ?? null,
+          reviewerName:     t.reviewer?.name ?? null,
+          prLink:           t.prLink ?? null,
+          squadId:          t.squadId ?? null,
           squad:            t.squad ? { name: t.squad.name } : null,
+          assigneeId:       t.assignee?.id ?? null,
           assignee:         t.assignee ? { name: t.assignee.name } : null,
           totalNormalMin,
           totalOtMin,
@@ -166,7 +219,12 @@ export default async function MyBoardPage() {
           hasIssue:         t.hasIssue,
           order:            9999,
           reviewApprovedAt: null,
+          reviewerId:       t.reviewerId ?? null,
+          reviewerName:     t.reviewer?.name ?? null,
+          prLink:           t.prLink ?? null,
+          squadId:          t.squadId ?? null,
           squad:            t.squad ? { name: t.squad.name } : null,
+          assigneeId:       user.id,
           assignee:         null,
           totalNormalMin,
           totalOtMin,
@@ -188,6 +246,8 @@ export default async function MyBoardPage() {
         squadTasks={sqProblemTasks}
         canEditLanes={user.role === 'ADMIN' || user.role === 'QA_LEAD'}
         canCreateTask={canCreateTask(user)}
+        reviewersBySquad={reviewersBySquad}
+        pendingReviews={pendingReviews}
       />
     </>
   );

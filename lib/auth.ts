@@ -48,8 +48,8 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     // ฝัง role + squadId ลง JWT ตอน sign in
-    // ข้อควรระวัง (จาก reference): role ใน token จะไม่อัปเดตจนกว่า token จะ refresh
-    // ถ้า admin เปลี่ยน role ของ user คนหนึ่งกลางคัน user คนนั้นต้อง login ใหม่ถึงจะเห็นผล
+    // refresh จาก DB ทุก 5 นาที เพื่อให้ isFloatingPoolMember / squadId / role เป็นปัจจุบัน
+    // กรณีที่ admin เปลี่ยน squad ของ user กลางคัน ไม่ต้อง re-login
     async jwt({ token, user }) {
       if (user) {
         token.id = (user as any).id;
@@ -57,6 +57,22 @@ export const authOptions: NextAuthOptions = {
         token.role = (user as any).role;
         token.squadId = (user as any).squadId;
         token.isFloatingPoolMember = (user as any).isFloatingPoolMember ?? false;
+        token.lastRefreshed = Date.now();
+      } else if (token.id) {
+        const now = Date.now();
+        const lastRefreshed = (token.lastRefreshed as number | undefined) ?? 0;
+        if (now - lastRefreshed > 5 * 60 * 1000) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { role: true, squadId: true, squad: { select: { isFloatingPool: true } } },
+          });
+          if (dbUser) {
+            token.role = dbUser.role;
+            token.squadId = dbUser.squadId;
+            token.isFloatingPoolMember = dbUser.squad?.isFloatingPool ?? false;
+          }
+          token.lastRefreshed = now;
+        }
       }
       return token;
     },

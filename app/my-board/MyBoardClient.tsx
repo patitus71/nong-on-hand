@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent,
@@ -17,8 +17,13 @@ import { fmt, initials, avatarColor, renderReportMarkdown, markdownToPlainText }
 type TaskData = {
   id: string; title: string; hasIssue: boolean; order: number;
   reviewApprovedAt: string | null;
+  reviewerId: string | null;
+  reviewerName: string | null;
+  prLink: string | null;
   squad: { name: string } | null;
+  squadId: string | null;
   assignee: { name: string } | null;
+  assigneeId: string | null;
   totalNormalMin: number; totalOtMin: number;
   isAtRisk: boolean; riskReason: string;
 };
@@ -29,14 +34,123 @@ type ProblemTask = {
   squadName: string; totalNormalMin: number; totalOtMin: number;
 };
 
+type PendingReview = {
+  id: string; title: string; prLink: string | null;
+  squad: { id: string; name: string } | null;
+  assignee: { name: string } | null;
+};
+
+type Reviewer = { id: string; name: string };
+
+/* ─── Pending review section ─────────────────────────── */
+function PendingReviewSection({
+  reviews, onApprove,
+}: { reviews: PendingReview[]; onApprove: (taskId: string) => Promise<void> }) {
+  const [approving, setApproving] = useState<string | null>(null);
+  if (reviews.length === 0) return null;
+  return (
+    <div className="bg-[#111d2e] border border-accent/30 rounded-xl p-3 mb-5">
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="text-[12.5px] font-semibold text-accent">🔍 รอฉัน Review</span>
+        <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{reviews.length}</span>
+      </div>
+      <div className="flex flex-wrap gap-2.5">
+        {reviews.map(r => (
+          <div key={r.id} className="bg-surface-2 border border-accent/20 rounded-lg p-2.5 w-[240px] flex-shrink-0">
+            <Link href={`/tasks/${r.id}`}
+              className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug">
+              {r.title}
+            </Link>
+            {r.squad && <p className="text-[10.5px] text-txt-muted mb-0.5">{r.squad.name}</p>}
+            {r.assignee && <p className="text-[10.5px] text-txt-secondary mb-2">ผู้ทำ: {r.assignee.name}</p>}
+            {r.prLink ? (
+              <a href={r.prLink} target="_blank" rel="noopener noreferrer"
+                className="block text-[10.5px] text-accent underline truncate mb-2" title={r.prLink}>
+                {r.prLink}
+              </a>
+            ) : (
+              <p className="text-[10.5px] text-txt-muted italic mb-2">ไม่มี PR link แนบมา</p>
+            )}
+            <button
+              disabled={approving === r.id}
+              onClick={async () => {
+                setApproving(r.id);
+                await onApprove(r.id);
+                setApproving(null);
+              }}
+              className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-md hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
+            >
+              {approving === r.id ? '...' : '✓ Approve Review'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Sortable card (normal lane) ────────────────────── */
-function SortableCard({ task, overlay = false }: { task: TaskData; overlay?: boolean }) {
+function SortableCard({
+  task, overlay = false, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave,
+}: {
+  task: TaskData; overlay?: boolean; laneName?: string;
+  reviewersBySquad?: Record<string, Reviewer[]>;
+  onReviewerChange?: (taskId: string, reviewerId: string | null) => Promise<void>;
+  onPrLinkSave?: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
 
   const av = task.assignee ? avatarColor(task.assignee.name) : null;
   const normalFmt = fmt(task.totalNormalMin);
   const otFmt     = fmt(task.totalOtMin);
+
+  const isReviewLane = laneName === 'Review' && !overlay;
+  const reviewerOptions = isReviewLane && task.squadId
+    ? (reviewersBySquad?.[task.squadId] ?? []).filter(r => r.id !== task.assigneeId)
+    : [];
+
+  const [prLinkDraft,   setPrLinkDraft]   = useState(task.prLink ?? '');
+  const [prLinkError,   setPrLinkError]   = useState('');
+  const [prLinkSaving,  setPrLinkSaving]  = useState(false);
+  const [reviewerSaving, setReviewerSaving] = useState(false);
+
+  useEffect(() => { setPrLinkDraft(task.prLink ?? ''); }, [task.prLink]);
+
+  async function handlePrLinkBlur() {
+    const val     = prLinkDraft.trim();
+    const current = task.prLink ?? '';
+    if (val === current) return;
+    if (val) {
+      try {
+        const parsed = new URL(val);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          setPrLinkError('URL ต้องขึ้นต้นด้วย http:// หรือ https://');
+          setPrLinkDraft(current);
+          return;
+        }
+      } catch {
+        setPrLinkError('URL ไม่ถูกต้อง');
+        setPrLinkDraft(current);
+        return;
+      }
+    }
+    setPrLinkError('');
+    setPrLinkSaving(true);
+    const result = await onPrLinkSave?.(task.id, val || null);
+    if (result?.error) {
+      setPrLinkError(result.error);
+      setPrLinkDraft(current);
+    }
+    setPrLinkSaving(false);
+  }
+
+  async function handleReviewerSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const val = e.target.value;
+    setReviewerSaving(true);
+    await onReviewerChange?.(task.id, val || null);
+    setReviewerSaving(false);
+  }
 
   return (
     <div
@@ -51,10 +165,7 @@ function SortableCard({ task, overlay = false }: { task: TaskData; overlay?: boo
       `}
     >
       {task.isAtRisk && (
-        <span
-          className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10"
-          title={task.riskReason}
-        >🔥</span>
+        <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10" title={task.riskReason}>🔥</span>
       )}
       <Link
         href={`/tasks/${task.id}`}
@@ -81,6 +192,60 @@ function SortableCard({ task, overlay = false }: { task: TaskData; overlay?: boo
         <div className={`text-[11px] mt-1.5 flex items-center gap-1 ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
           {normalFmt && <span>รวม {normalFmt}</span>}
           {otFmt     && <span>· OT {otFmt}</span>}
+        </div>
+      )}
+
+      {/* Review lane: reviewer selector + PR link */}
+      {isReviewLane && (
+        <div
+          className="mt-2 pt-2 border-t border-app-border/40"
+          onClick={e => e.stopPropagation()}
+          onPointerDown={e => e.stopPropagation()}
+        >
+          {/* Reviewer */}
+          {task.squadId && reviewerOptions.length > 0 ? (
+            <div className="mb-1.5">
+              <label className="block text-[10px] text-txt-muted mb-0.5">ผู้ review</label>
+              <select
+                value={task.reviewerId ?? ''}
+                onChange={handleReviewerSelectChange}
+                disabled={reviewerSaving}
+                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-md focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
+              >
+                <option value="">— ยังไม่เลือก —</option>
+                {reviewerOptions.map(r => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : task.reviewerName ? (
+            <p className="text-[10.5px] text-txt-secondary mb-1.5">👤 {task.reviewerName}</p>
+          ) : null}
+
+          {/* PR link */}
+          <div>
+            <label className="block text-[10px] text-txt-muted mb-0.5">PR link</label>
+            {prLinkSaving ? (
+              <span className="text-[10.5px] text-txt-muted">กำลังบันทึก...</span>
+            ) : (
+              <input
+                type="url"
+                value={prLinkDraft}
+                onChange={e => { setPrLinkDraft(e.target.value); setPrLinkError(''); }}
+                onBlur={handlePrLinkBlur}
+                placeholder="https://github.com/..."
+                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-md focus:outline-none focus:border-accent placeholder-txt-muted"
+              />
+            )}
+            {prLinkError && <p className="text-[10px] text-danger mt-0.5">{prLinkError}</p>}
+            {!prLinkError && task.prLink && (
+              <a href={task.prLink} target="_blank" rel="noopener noreferrer"
+                className="block text-[10px] text-accent hover:underline truncate mt-0.5"
+                title={task.prLink}
+                onClick={e => e.stopPropagation()}
+              >↗ เปิด PR</a>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -125,7 +290,14 @@ function SortableFlaggedCard({
 }
 
 /* ─── Droppable lane card area ──────────────────────── */
-function DroppableLaneCards({ laneId, tasks }: { laneId: string; tasks: TaskData[] }) {
+function DroppableLaneCards({
+  laneId, tasks, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave,
+}: {
+  laneId: string; tasks: TaskData[]; laneName: string;
+  reviewersBySquad: Record<string, Reviewer[]>;
+  onReviewerChange: (taskId: string, reviewerId: string | null) => Promise<void>;
+  onPrLinkSave: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: laneId });
   return (
     <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
@@ -135,7 +307,14 @@ function DroppableLaneCards({ laneId, tasks }: { laneId: string; tasks: TaskData
           isOver ? 'bg-accent/5' : ''
         }`}
       >
-        {tasks.map(task => <SortableCard key={task.id} task={task} />)}
+        {tasks.map(task => (
+          <SortableCard
+            key={task.id} task={task} laneName={laneName}
+            reviewersBySquad={reviewersBySquad}
+            onReviewerChange={onReviewerChange}
+            onPrLinkSave={onPrLinkSave}
+          />
+        ))}
       </div>
     </SortableContext>
   );
@@ -198,9 +377,9 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
       const task = await res.json();
       onCreated({
         id: task.id, title: task.title, hasIssue: false, order: task.order,
-        reviewApprovedAt: null,
-        squad: task.squad, assignee: task.assignee, totalNormalMin: 0, totalOtMin: 0,
-        isAtRisk: false, riskReason: '',
+        reviewApprovedAt: null, reviewerId: null, reviewerName: null, prLink: null,
+        squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
+        totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
       setTitle(''); setOpen(false);
     }
@@ -241,10 +420,13 @@ type Props = {
   squadTasks: ProblemTask[];
   canEditLanes: boolean;
   canCreateTask: boolean;
+  reviewersBySquad: Record<string, Reviewer[]>;
+  pendingReviews: PendingReview[];
 };
 
 export default function MyBoardClient({
   boardId, initialLanes, userSquadId, canEditLanes, canCreateTask,
+  reviewersBySquad, pendingReviews: initialPendingReviews,
 }: Props) {
   const [, setLanesState] = useState<LaneData[]>(initialLanes);
   const lanesRef   = useRef<LaneData[]>(initialLanes);
@@ -268,10 +450,11 @@ export default function MyBoardClient({
   const normalLanes  = lanes.map(l => ({ ...l, tasks: l.tasks.filter(t => !t.hasIssue) }));
 
   /* ── Resolve modal state ── */
-  const [resolveTarget,  setResolveTarget]  = useState<TaskData | null>(null);
-  const [resolutionNote, setResolutionNote] = useState('');
-  const [resolveError,   setResolveError]   = useState('');
-  const [resolving,      setResolving]      = useState(false);
+  const [resolveTarget,      setResolveTarget]      = useState<TaskData | null>(null);
+  const [resolveDestination, setResolveDestination] = useState<'todo' | 'done'>('todo');
+  const [resolutionNote,     setResolutionNote]     = useState('');
+  const [resolveError,       setResolveError]       = useState('');
+  const [resolving,          setResolving]          = useState(false);
 
   /* ── Flag modal state ── */
   const [flagTarget, setFlagTarget] = useState<TaskData | null>(null);
@@ -283,6 +466,12 @@ export default function MyBoardClient({
   type StartTimerModal = { taskId: string; taskTitle: string; pendingLanes: LaneData[] };
   const [startTimerModal,   setStartTimerModal]   = useState<StartTimerModal | null>(null);
   const [startTimerSaving,  setStartTimerSaving]  = useState(false);
+
+  /* ── Reviewer modal (any → Review) ── */
+  type ReviewerModalData = { taskId: string; taskTitle: string; taskSquadId: string; pendingLanes: LaneData[] };
+  const [reviewerModal,      setReviewerModal]      = useState<ReviewerModalData | null>(null);
+  const [selectedReviewerId, setSelectedReviewerId] = useState<string>('');
+  const pendingReviewerRef = useRef<{ taskId: string; reviewerId: string | null } | null>(null);
 
   /* ── Review-time modal (any → Review) ── */
   type ReviewTimeModalData = {
@@ -297,6 +486,9 @@ export default function MyBoardClient({
   const [reviewTimeAdded,   setReviewTimeAdded]   = useState(false);
   const [reviewTimeSaving,  setReviewTimeSaving]  = useState(false);
   const [reviewTimeError,   setReviewTimeError]   = useState('');
+
+  /* ── Pending reviews (I'm the reviewer) ── */
+  const [pendingReviewsList, setPendingReviewsList] = useState<PendingReview[]>(initialPendingReviews);
 
   /* ── Personal export ── */
   const [showExport,     setShowExport]     = useState(false);
@@ -354,7 +546,6 @@ export default function MyBoardClient({
   const [newLaneName, setNewLaneName] = useState('');
   const [savingLane,  setSavingLane]  = useState(false);
 
-
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   /* ─── DND handlers ──────────────────────────────────── */
@@ -392,8 +583,16 @@ export default function MyBoardClient({
     setLanes(next);
   }
 
-  function saveOrder(ls: LaneData[]) {
-    const items = ls.flatMap(l => l.tasks.map((t, idx) => ({ id: t.id, laneId: l.id, order: idx })));
+  function saveOrder(ls: LaneData[], reviewerOverrides?: Record<string, string | null>) {
+    const items = ls.flatMap(l => l.tasks.map((t, idx) => {
+      const item: { id: string; laneId: string; order: number; reviewerId?: string | null } = {
+        id: t.id, laneId: l.id, order: idx,
+      };
+      if (reviewerOverrides && t.id in reviewerOverrides) {
+        item.reviewerId = reviewerOverrides[t.id];
+      }
+      return item;
+    }));
     if (!items.length) return;
     fetch('/api/tasks/reorder', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -458,6 +657,20 @@ export default function MyBoardClient({
 
         if (dstName === 'Review') {
           const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
+
+          // Squad tasks: show reviewer modal first (chained before time modal)
+          if (t.squadId) {
+            setReviewerModal({
+              taskId: activeId,
+              taskTitle: t.title,
+              taskSquadId: t.squadId,
+              pendingLanes: current,
+            });
+            setSelectedReviewerId('');
+            return;
+          }
+
+          // Personal task (no squad): go straight to time modal
           setReviewTimeModal({
             taskId: activeId, taskTitle: t.title, pendingLanes: current,
             hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
@@ -526,19 +739,29 @@ export default function MyBoardClient({
     setResolving(true);
     const res = await fetch(`/api/tasks/${resolveTarget.id}/flag`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hasIssue: false, resolutionNote: resolutionNote.trim() }),
+      body: JSON.stringify({ hasIssue: false, resolutionNote: resolutionNote.trim(), destination: resolveDestination }),
     });
     if (res.ok) {
+      const doneLane  = lanesRef.current.find(l => l.name === 'Done');
       const firstLane = lanesRef.current[0];
+      const targetLane = resolveDestination === 'done' ? (doneLane ?? firstLane) : firstLane;
+      const resolvedTask = { ...resolveTarget, hasIssue: false };
       const next = lanesRef.current.map(l => {
         const cleaned = l.tasks.filter(t => t.id !== resolveTarget.id);
-        if (firstLane && l.id === firstLane.id) {
-          return { ...l, tasks: [{ ...resolveTarget, hasIssue: false }, ...cleaned] };
+        if (targetLane && l.id === targetLane.id) {
+          return {
+            ...l,
+            tasks: resolveDestination === 'done'
+              ? [...cleaned, resolvedTask]   // append ท้าย Done
+              : [resolvedTask, ...cleaned],  // prepend หัว To Do
+          };
         }
         return { ...l, tasks: cleaned };
       });
       setLanes(next);
       setResolveTarget(null);
+      setResolutionNote('');
+      setResolveDestination('todo');
     } else {
       setResolveError(await res.text());
     }
@@ -589,6 +812,32 @@ export default function MyBoardClient({
     if (!startTimerModal) return;
     saveOrder(startTimerModal.pendingLanes);
     setStartTimerModal(null);
+  }
+
+  /* ─── Reviewer modal handlers ─── */
+  function openReviewTimeModal(taskId: string, taskTitle: string, pendingLanes: LaneData[]) {
+    const t = pendingLanes.flatMap(l => l.tasks).find(t => t.id === taskId)!;
+    setReviewTimeModal({
+      taskId, taskTitle, pendingLanes,
+      hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
+      totalNormalMin: t.totalNormalMin, totalOtMin: t.totalOtMin,
+    });
+    setReviewMode(null); setReviewNormalHrs(''); setReviewOtHrs('');
+    setReviewReplace(false); setReviewTimeAdded(false); setReviewTimeError('');
+  }
+
+  function confirmReviewerModal(reviewerId: string | null) {
+    if (!reviewerModal) return;
+    pendingReviewerRef.current = { taskId: reviewerModal.taskId, reviewerId };
+    openReviewTimeModal(reviewerModal.taskId, reviewerModal.taskTitle, reviewerModal.pendingLanes);
+    setReviewerModal(null);
+    setSelectedReviewerId('');
+  }
+
+  function cancelReviewerModal() {
+    setLanes(preDragRef.current);
+    setReviewerModal(null);
+    setSelectedReviewerId('');
   }
 
   /* ─── Review-time modal handlers ─── */
@@ -647,19 +896,86 @@ export default function MyBoardClient({
   }
 
   function proceedToReview() {
-    saveOrder(lanesRef.current);
-    setReviewTimeModal(null);
-    setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
-  }
-  function cancelReviewModal() {
-    setLanes(preDragRef.current);
+    const pending = pendingReviewerRef.current;
+    if (pending) {
+      const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === pending.taskId);
+      const squadId = task?.squadId;
+      const reviewerName = pending.reviewerId && squadId
+        ? (reviewersBySquad[squadId] ?? []).find(r => r.id === pending.reviewerId)?.name ?? null
+        : null;
+      saveOrder(lanesRef.current, { [pending.taskId]: pending.reviewerId });
+      setLanes(lanesRef.current.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === pending.taskId ? { ...t, reviewerId: pending.reviewerId, reviewerName } : t
+        ),
+      })));
+      pendingReviewerRef.current = null;
+    } else {
+      saveOrder(lanesRef.current);
+    }
     setReviewTimeModal(null);
     setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
   }
 
+  function cancelReviewModal() {
+    setLanes(preDragRef.current);
+    pendingReviewerRef.current = null;
+    setReviewTimeModal(null);
+    setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
+  }
+
+  /* ─── Inline reviewer / PR link handlers (on Review lane cards) ─── */
+  async function handleReviewerChange(taskId: string, reviewerId: string | null) {
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewerId }),
+    });
+    if (res.ok) {
+      const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === taskId);
+      const squadId = task?.squadId;
+      const reviewerName = reviewerId && squadId
+        ? (reviewersBySquad[squadId] ?? []).find(r => r.id === reviewerId)?.name ?? null
+        : null;
+      setLanes(lanesRef.current.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === taskId ? { ...t, reviewerId, reviewerName } : t
+        ),
+      })));
+    }
+  }
+
+  async function handlePrLinkSave(taskId: string, prLink: string | null): Promise<{ error: string | null }> {
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prLink }),
+    });
+    if (res.ok) {
+      setLanes(lanesRef.current.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === taskId ? { ...t, prLink } : t
+        ),
+      })));
+      return { error: null };
+    }
+    return { error: await res.text() };
+  }
+
+  /* ─── Approve review (from pending review section) ─── */
+  async function approveReview(taskId: string) {
+    const res = await fetch(`/api/tasks/${taskId}/approve-review`, { method: 'PATCH' });
+    if (res.ok) {
+      setPendingReviewsList(list => list.filter(r => r.id !== taskId));
+      setLanes(lanesRef.current.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === taskId ? { ...t, reviewApprovedAt: new Date().toISOString() } : t
+        ),
+      })));
+    }
+  }
+
   /* ─── Render ─────────────────────────────────────────── */
   return (
-    <div className="max-w-[1280px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
       {/* Header */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2.5">
         <h1 className="text-[19px] font-semibold text-txt-primary">บอร์ดของฉัน</h1>
@@ -694,15 +1010,21 @@ export default function MyBoardClient({
       <DndContext sensors={sensors} collisionDetection={closestCorners}
         onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
 
+        {/* Pending reviews section (tasks where I'm the reviewer) */}
+        <PendingReviewSection reviews={pendingReviewsList} onApprove={approveReview} />
+
         <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
-        <div className={`flex gap-3.5 items-start overflow-x-auto pb-5 ${editMode ? 'edit-mode-on' : ''}`}>
+        <div
+          className={`grid gap-3.5 pb-5 items-start ${editMode ? 'edit-mode-on' : ''}`}
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
+        >
           {normalLanes.map(lane => (
             <div key={lane.id}
-              className={`bg-surface-1 border rounded-[12px] w-[270px] flex-shrink-0 p-2.5 flex flex-col transition-colors ${
+              className={`bg-surface-1 border rounded-[12px] p-2.5 flex flex-col transition-colors ${
                 editMode ? 'border-accent' : 'border-app-border'
               }`}
-              style={{ maxHeight: 'calc(100vh - 220px)' }}
+              style={{ height: 'calc(100vh - 220px)' }}
             >
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <div className="flex items-center gap-1.5">
@@ -722,7 +1044,14 @@ export default function MyBoardClient({
                   );
                 })()}
               </div>
-              <DroppableLaneCards laneId={lane.id} tasks={lane.tasks} />
+              <DroppableLaneCards
+                laneId={lane.id}
+                tasks={lane.tasks}
+                laneName={lane.name}
+                reviewersBySquad={reviewersBySquad}
+                onReviewerChange={handleReviewerChange}
+                onPrLinkSave={handlePrLinkSave}
+              />
               <AddTaskForm laneId={lane.id} squadId={userSquadId} onCreated={t => onTaskCreated(lane.id, t)} />
             </div>
           ))}
@@ -730,7 +1059,7 @@ export default function MyBoardClient({
           {editMode && (
             addingLane ? (
               <form onSubmit={submitLane}
-                className="bg-surface-1 border border-accent rounded-[12px] w-[230px] flex-shrink-0 p-3">
+                className="bg-surface-1 border border-accent rounded-[12px] p-3">
                 <input autoFocus value={newLaneName} onChange={e => setNewLaneName(e.target.value)}
                   placeholder="ชื่อเลนใหม่..."
                   className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent mb-2" />
@@ -741,7 +1070,7 @@ export default function MyBoardClient({
               </form>
             ) : (
               <button onClick={() => setAddingLane(true)}
-                className="w-[230px] flex-shrink-0 border-[1.5px] border-dashed border-accent rounded-[12px] flex items-center justify-center gap-1.5 text-[13px] text-accent h-11 hover:bg-accent/5 transition-colors">
+                className="border-[1.5px] border-dashed border-accent rounded-[12px] flex items-center justify-center gap-1.5 text-[13px] text-accent h-11 hover:bg-accent/5 transition-colors">
                 + เพิ่มเลน
               </button>
             )
@@ -749,7 +1078,7 @@ export default function MyBoardClient({
 
           {!editMode && (
             <button onClick={() => setEditMode(true)}
-              className="w-[230px] flex-shrink-0 border-[1.5px] border-dashed border-app-border rounded-[12px] flex items-center justify-center gap-1.5 text-[13px] text-txt-muted hover:border-accent hover:text-accent transition-colors h-11">
+              className="border-[1.5px] border-dashed border-app-border rounded-[12px] flex items-center justify-center gap-1.5 text-[13px] text-txt-muted hover:border-accent hover:text-accent transition-colors h-11">
               + เพิ่มเลน
             </button>
           )}
@@ -847,6 +1176,71 @@ export default function MyBoardClient({
         </div>
       )}
 
+      {/* ── Modal: Select reviewer (before Review lane) ──── */}
+      {reviewerModal && (() => {
+        const options = (reviewersBySquad[reviewerModal.taskSquadId] ?? []).filter(r => {
+          const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === reviewerModal.taskId);
+          return r.id !== task?.assigneeId;
+        });
+        const hasOptions = options.length > 0;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
+            <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
+              {hasOptions ? (
+                <>
+                  <h3 className="text-[15px] font-semibold text-txt-primary mb-1">🔍 เลือกผู้รับ Review</h3>
+                  <p className="text-[12.5px] text-txt-secondary mb-4">
+                    งาน <span className="font-medium text-txt-primary">"{reviewerModal.taskTitle}"</span>{' '}
+                    กำลังเข้าเลน Review — เลือกผู้ที่จะ review งานนี้
+                  </p>
+                  <label className="block text-[12px] text-txt-secondary mb-1.5">ผู้ review</label>
+                  <select
+                    value={selectedReviewerId}
+                    onChange={e => setSelectedReviewerId(e.target.value)}
+                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent mb-4"
+                  >
+                    <option value="">— เลือกผู้ review —</option>
+                    {options.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={cancelReviewerModal}
+                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                      ยกเลิก
+                    </button>
+                    <button
+                      onClick={() => confirmReviewerModal(selectedReviewerId || null)}
+                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg transition-colors"
+                    >
+                      ยืนยัน →
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-[15px] font-semibold text-txt-primary mb-1">🔍 ไม่มี reviewer ในทีม</h3>
+                  <p className="text-[12.5px] text-txt-secondary mb-4">
+                    ไม่พบ QA Lead หรือสมาชิก Floating Pool ที่สามารถ review งานนี้ได้<br />
+                    ต้องการเข้า Review โดยไม่กำหนด reviewer?
+                  </p>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={cancelReviewerModal}
+                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                      ยกเลิก
+                    </button>
+                    <button onClick={() => confirmReviewerModal(null)}
+                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg transition-colors">
+                      เข้า Review โดยไม่เลือก reviewer
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Modal: Record time before Review ────────────── */}
       {reviewTimeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
@@ -879,7 +1273,6 @@ export default function MyBoardClient({
                   {reviewTimeModal.hasTime ? 'เพิ่มเวลาเพิ่มเติม (ไม่บังคับ):' : <>กรุณาเลือกวิธีบันทึกเวลา <span className="text-danger">(จำเป็น)</span></>}
                 </p>
 
-                {/* Mode selector */}
                 <div className="flex flex-col gap-2 mb-3">
                   <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
                     reviewMode === 'auto' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
@@ -900,7 +1293,6 @@ export default function MyBoardClient({
                   </label>
                 </div>
 
-                {/* Auto confirm */}
                 {reviewMode === 'auto' && (
                   <button onClick={submitReviewAuto} disabled={reviewTimeSaving}
                     className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50">
@@ -908,7 +1300,6 @@ export default function MyBoardClient({
                   </button>
                 )}
 
-                {/* Manual inputs */}
                 {reviewMode === 'manual' && (
                   <div className="flex flex-col gap-2">
                     {reviewTimeModal.hasTime && (
@@ -976,11 +1367,37 @@ export default function MyBoardClient({
       {/* ── Modal: Resolve issue ───────────────────────── */}
       {resolveTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-success mb-1">✓ ยืนยันว่าแก้ไขปัญหาแล้ว</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">
-              งานนี้จะกลับไปอยู่เลน "To Do" และปลด flag ปัญหาออก
+              {resolveDestination === 'done'
+                ? 'งานนี้จะย้ายตรงไป "Done" และปลด flag ปัญหาออก'
+                : 'งานนี้จะกลับไปอยู่เลน "To Do" และปลด flag ปัญหาออก'}
             </p>
+
+            {/* Destination radio */}
+            <label className="block text-[12px] text-txt-secondary mb-2">ย้ายกลับไปที่</label>
+            <div className="flex gap-3 mb-4">
+              {(['todo', 'done'] as const).map(opt => (
+                <label key={opt} className={`flex-1 flex items-center gap-2.5 border rounded-lg px-3 py-2.5 cursor-pointer transition-colors ${
+                  resolveDestination === opt
+                    ? 'border-accent bg-accent/10 text-txt-primary'
+                    : 'border-app-border bg-surface-2 text-txt-secondary hover:border-[#3a3f4d]'
+                }`}>
+                  <input
+                    type="radio"
+                    name="resolveDestination"
+                    value={opt}
+                    checked={resolveDestination === opt}
+                    onChange={() => setResolveDestination(opt)}
+                    className="accent-accent"
+                  />
+                  <span className="text-[13px]">{opt === 'todo' ? 'To Do' : 'Done'}</span>
+                  {opt === 'todo' && <span className="text-[11px] text-txt-muted ml-auto">(ค่าเริ่มต้น)</span>}
+                </label>
+              ))}
+            </div>
+
             <label className="block text-[12px] text-txt-secondary mb-1.5">
               อธิบายว่าแก้ไขปัญหานี้ยังไง <span className="text-danger">(จำเป็นต้องกรอก)</span>
             </label>
@@ -992,13 +1409,15 @@ export default function MyBoardClient({
             />
             {resolveError && <p className="text-[11.5px] text-danger mt-2">{resolveError}</p>}
             <div className="flex gap-2 justify-end mt-4">
-              <button onClick={() => setResolveTarget(null)} disabled={resolving}
+              <button
+                onClick={() => { setResolveTarget(null); setResolutionNote(''); setResolveDestination('todo'); }}
+                disabled={resolving}
                 className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
                 ยกเลิก
               </button>
               <button onClick={submitResolve} disabled={resolving || !resolutionNote.trim()}
                 className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${resolving ? 'btn-loading' : ''}`}>
-                ยืนยันและกลับไป To Do
+                {resolveDestination === 'done' ? 'ยืนยันและย้ายไป Done' : 'ยืนยันและกลับไป To Do'}
               </button>
             </div>
           </div>

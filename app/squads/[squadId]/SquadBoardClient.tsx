@@ -380,7 +380,7 @@ export default function SquadBoardClient({
   }
 
   return (
-    <div className="max-w-[1400px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2.5">
@@ -505,14 +505,18 @@ export default function SquadBoardClient({
       )}
 
       {/* Board */}
-      <div className={`flex gap-3.5 overflow-x-auto pb-5 ${isReadonly ? 'opacity-70 pointer-events-none select-none' : ''}`}>
+      <div
+        className={`grid gap-3.5 pb-5 ${isReadonly ? 'opacity-70 pointer-events-none select-none' : ''}`}
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
+      >
         {visibleLanes.map(lane => (
           <div
             key={lane.name}
-            className="bg-surface-1 border border-app-border rounded-[12px] w-[260px] flex-shrink-0 p-2.5"
+            className="bg-surface-1 border border-app-border rounded-[12px] p-2.5 flex flex-col"
+            style={{ height: 'calc(100vh - 240px)' }}
           >
             {/* Lane header */}
-            <div className="flex items-center gap-1.5 px-1 pb-2.5">
+            <div className="flex items-center gap-1.5 px-1 pb-2.5 flex-shrink-0">
               <span className={`text-[13px] font-semibold ${
                 lane.name === 'มีปัญหา'             ? 'text-danger'   :
                 lane.name === 'Done'                 ? 'text-success'  :
@@ -527,6 +531,8 @@ export default function SquadBoardClient({
               </span>
             </div>
 
+            {/* Scrollable cards area */}
+            <div className="flex-1 overflow-y-auto min-h-0">
             {lane.tasks.length === 0 && (
               <div className="text-center text-[12px] text-txt-muted py-6 px-2">
                 {lane.name === 'To do list' ? 'ดึงงานเข้าบอร์ดเพื่อเริ่มต้น' : 'ว่างอยู่'}
@@ -672,7 +678,7 @@ export default function SquadBoardClient({
             })}
 
             {lane.name === 'To do list' && canCreateTask && hasOpenSprint && (
-              <div className="mt-2">
+              <div className="mt-2 mb-1">
                 {showCreate ? (
                   <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
                     <input
@@ -710,6 +716,7 @@ export default function SquadBoardClient({
                 )}
               </div>
             )}
+            </div>{/* end scrollable cards area */}
           </div>
         ))}
       </div>

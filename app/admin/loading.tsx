@@ -1,6 +1,6 @@
 export default function AdminLoading() {
   return (
-    <div className="max-w-[1200px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
       {/* Page title */}
       <div className="h-6 w-28 bg-surface-2 rounded-md animate-pulse mb-1" />
       <div className="h-4 w-44 bg-surface-2 rounded-md animate-pulse mb-5" />

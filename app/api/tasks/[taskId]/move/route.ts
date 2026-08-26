@@ -10,7 +10,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser;
 
-  const { laneId, order } = await req.json();
+  const { laneId, order, reviewerId } = await req.json() as { laneId: string; order?: number; reviewerId?: string | null };
   if (!laneId) return new Response('laneId required', { status: 400 });
 
   const [task, targetLane] = await Promise.all([
@@ -43,7 +43,11 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     data: {
       laneId,
       order: order ?? 0,
-      ...(resetApproval ? { reviewApprovedAt: null, reviewApprovedById: null } : {}),
+      ...(resetApproval ? {
+        reviewApprovedAt:   null,
+        reviewApprovedById: null,
+        reviewerId:         reviewerId !== undefined ? reviewerId : null,
+      } : {}),
       ...(enteringDone   ? { completedAt: new Date() } : {}),
     },
   });

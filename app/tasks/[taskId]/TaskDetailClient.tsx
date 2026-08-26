@@ -48,9 +48,84 @@ function catLabel(cat: string) {
   return cat;
 }
 
-export default function TaskDetailClient({ task: init, userId }: { task: Task; userId: string }) {
+export default function TaskDetailClient({
+  task: init,
+  userId,
+  userRole,
+  userSquadId,
+  isFloatingPoolMember,
+}: {
+  task: Task;
+  userId: string;
+  userRole: string;
+  userSquadId: string | null;
+  isFloatingPoolMember: boolean;
+}) {
   const router = useRouter();
   const [task, setTask] = useState(init);
+
+  // Permission: assignee, ADMIN, QA_LEAD/QA_ENGINEER of same squad, or floating pool member
+  const canEdit =
+    userRole === 'ADMIN' ||
+    isFloatingPoolMember ||
+    task.assignee?.id === userId ||
+    ((userRole === 'QA_LEAD' || userRole === 'QA_ENGINEER') && !!task.squad?.id && userSquadId === task.squad.id);
+
+  // Title edit state
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft,   setTitleDraft]   = useState('');
+  const [titleError,   setTitleError]   = useState('');
+  const [titleSaving,  setTitleSaving]  = useState(false);
+
+  // Description edit state
+  const [editingDesc,  setEditingDesc]  = useState(false);
+  const [descDraft,    setDescDraft]    = useState('');
+  const [descSaving,   setDescSaving]   = useState(false);
+
+  // Toast
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  async function saveTitle() {
+    const trimmed = titleDraft.trim();
+    if (!trimmed) { setTitleError('ชื่องานต้องมีอย่างน้อย 1 ตัวอักษร'); return; }
+    setTitleSaving(true);
+    setTitleError('');
+    const res = await fetch(`/api/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: trimmed }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setTask(t => ({ ...t, title: data.title }));
+      setEditingTitle(false);
+      showToast('บันทึกชื่องานแล้ว');
+    } else {
+      setTitleError(await res.text());
+    }
+    setTitleSaving(false);
+  }
+
+  async function saveDesc() {
+    setDescSaving(true);
+    const res = await fetch(`/api/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: descDraft }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setTask(t => ({ ...t, description: data.description }));
+      setEditingDesc(false);
+      showToast('บันทึก description แล้ว');
+    }
+    setDescSaving(false);
+  }
 
   // Flag state
   const [flagging,     setFlagging]     = useState(false);
@@ -165,7 +240,6 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
 
   async function toggleFlag() {
     if (task.hasIssue) {
-      // Unflag requires modal with resolution note
       setResolveOpen(true);
       setResolutionNote('');
       setResolveError('');
@@ -233,12 +307,24 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
 
   return (
     <div className="max-w-[900px] mx-auto px-7 py-6 pb-16">
-      <button
-        onClick={() => router.back()}
-        className="text-[12.5px] text-txt-secondary hover:text-txt-primary inline-block mb-3.5"
-      >
-        ← กลับ
-      </button>
+
+      {/* Header row: back button + title edit button */}
+      <div className="flex items-center justify-between mb-3.5">
+        <button
+          onClick={() => router.back()}
+          className="text-[12.5px] text-txt-secondary hover:text-txt-primary"
+        >
+          ← กลับ
+        </button>
+        {canEdit && !editingTitle && (
+          <button
+            onClick={() => { setTitleDraft(task.title); setTitleError(''); setEditingTitle(true); }}
+            className="text-[12px] text-txt-secondary hover:text-txt-primary flex items-center gap-1"
+          >
+            ✎ แก้ไขชื่องาน
+          </button>
+        )}
+      </div>
 
       {/* Issue banner */}
       {task.hasIssue && (
@@ -258,7 +344,38 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
       <div className="grid gap-6" style={{ gridTemplateColumns: '1.6fr 1fr' }}>
         {/* ─── Left ─── */}
         <div>
-          <h1 className="text-xl font-semibold text-txt-primary mb-1.5">{task.title}</h1>
+          {/* Title — read or edit mode */}
+          {editingTitle ? (
+            <div className="mb-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={titleDraft}
+                  onChange={e => { setTitleDraft(e.target.value); if (titleError) setTitleError(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') { setEditingTitle(false); setTitleError(''); } }}
+                  className="flex-1 text-xl font-semibold bg-surface-2 border border-accent text-txt-primary px-2.5 py-1 rounded-lg focus:outline-none"
+                />
+                <button
+                  onClick={saveTitle}
+                  disabled={titleSaving}
+                  className="text-[12px] bg-accent text-white px-3 py-1.5 rounded-md disabled:opacity-50 whitespace-nowrap"
+                >
+                  {titleSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+                <button
+                  onClick={() => { setEditingTitle(false); setTitleError(''); }}
+                  className="text-[12px] text-txt-muted px-2 py-1.5 hover:text-txt-secondary"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+              {titleError && <p className="text-[11.5px] text-danger mt-1">{titleError}</p>}
+            </div>
+          ) : (
+            <h1 className="text-xl font-semibold text-txt-primary mb-1.5">{task.title}</h1>
+          )}
+
           <div className="flex items-center gap-2 mb-5 flex-wrap">
             {task.squad && <span className="text-[11.5px] bg-surface-2 text-txt-secondary px-2.5 py-1 rounded-full">{task.squad.name}</span>}
             {task.laneName && <span className="text-[11.5px] bg-warning-bg text-warning px-2.5 py-1 rounded-full">{task.laneName}</span>}
@@ -266,10 +383,55 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
           </div>
 
           {/* Description */}
-          <p className="text-[11px] uppercase tracking-wider text-txt-muted font-medium mb-2">รายละเอียด</p>
-          <p className="text-[13.5px] text-txt-secondary leading-relaxed">
-            {task.description || <span className="text-txt-muted italic">ยังไม่มีรายละเอียด</span>}
-          </p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-[11px] uppercase tracking-wider text-txt-muted font-medium">รายละเอียด</p>
+            {canEdit && !editingDesc && (
+              <button
+                onClick={() => { setDescDraft(task.description ?? ''); setEditingDesc(true); }}
+                className="text-[11.5px] text-txt-secondary hover:text-txt-primary"
+              >
+                ✎ แก้ไข
+              </button>
+            )}
+          </div>
+          {editingDesc ? (
+            <div>
+              <textarea
+                autoFocus
+                rows={4}
+                value={descDraft}
+                onChange={e => setDescDraft(e.target.value)}
+                placeholder="รายละเอียดงาน..."
+                className="w-full bg-surface-2 border border-accent text-txt-primary text-[13.5px] px-2.5 py-2 rounded-lg focus:outline-none leading-relaxed resize-y"
+              />
+              <div className="flex gap-1.5 mt-1.5">
+                <button
+                  onClick={saveDesc}
+                  disabled={descSaving}
+                  className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50"
+                >
+                  {descSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+                </button>
+                <button
+                  onClick={() => setEditingDesc(false)}
+                  className="text-txt-muted text-[12px] px-2 py-1.5 hover:text-txt-secondary"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13.5px] text-txt-secondary leading-relaxed">
+              {task.description
+                ? task.description
+                : <span className="text-txt-muted italic">
+                    {canEdit
+                      ? 'ยังไม่มีรายละเอียด — กด ✎ แก้ไข เพื่อเพิ่ม'
+                      : 'ยังไม่มีรายละเอียด'}
+                  </span>
+              }
+            </p>
+          )}
 
           {/* Retro history */}
           {task.retroItems.length > 0 && (
@@ -581,6 +743,13 @@ export default function TaskDetailClient({ task: init, userId }: { task: Task; u
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1e7d4a] text-white text-[13px] px-5 py-2.5 rounded-full shadow-lg pointer-events-none">
+          ✓ {toast}
         </div>
       )}
     </div>

@@ -22,7 +22,7 @@ export async function PATCH(req: Request) {
   const user = session.user as SessionUser;
 
   const { items } = await req.json() as {
-    items: { id: string; laneId: string; order: number }[];
+    items: { id: string; laneId: string; order: number; reviewerId?: string | null }[];
   };
   if (!Array.isArray(items) || items.length === 0) {
     return new Response('items required', { status: 400 });
@@ -82,7 +82,7 @@ export async function PATCH(req: Request) {
   // Resolve final laneId for each item and validate
   const approvalResets = new Set<string>(); // task IDs that need reviewApprovedAt cleared
 
-  const resolved = items.map(({ id, laneId, order }) => {
+  const resolved = items.map(({ id, laneId, order, reviewerId: itemReviewerId }) => {
     const task        = taskById.get(id);
     const targetLane  = laneById.get(laneId);
     const currentLane = task?.laneId ? laneById.get(task.laneId) : null;
@@ -95,17 +95,17 @@ export async function PATCH(req: Request) {
     }
 
     if (!task?.squadId || targetLane?.board.type !== 'PERSONAL') {
-      return { id, laneId, order };
+      return { id, laneId, order, itemReviewerId };
     }
 
     const sqName = PERSONAL_TO_SQUAD[newLaneName];
     if (!sqName) {
       // No squad translation (e.g. 'Review' lane) — keep personal laneId
-      return { id, laneId, order };
+      return { id, laneId, order, itemReviewerId };
     }
 
     const sqLaneId = squadLaneMap.get(`${task.squadId}:${sqName}`);
-    return { id, laneId: sqLaneId ?? laneId, order };
+    return { id, laneId: sqLaneId ?? laneId, order, itemReviewerId };
   });
 
   // Guard: QA_ENGINEER moving squad task to Done without review approval
@@ -122,13 +122,17 @@ export async function PATCH(req: Request) {
   }
 
   await prisma.$transaction(
-    resolved.map(({ id, laneId, order }) =>
+    resolved.map(({ id, laneId, order, itemReviewerId }) =>
       prisma.task.update({
         where: { id },
         data:  {
           laneId,
           order,
-          ...(approvalResets.has(id) ? { reviewApprovedAt: null, reviewApprovedById: null } : {}),
+          ...(approvalResets.has(id) ? {
+            reviewApprovedAt:   null,
+            reviewApprovedById: null,
+            reviewerId:         itemReviewerId !== undefined ? itemReviewerId : null,
+          } : {}),
         },
       }),
     ),

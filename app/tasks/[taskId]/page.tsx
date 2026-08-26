@@ -82,7 +82,13 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
   return (
     <>
       <Topbar />
-      <TaskDetailClient task={taskData} userId={user.id} />
+      <TaskDetailClient
+        task={taskData}
+        userId={user.id}
+        userRole={user.role}
+        userSquadId={user.squadId ?? null}
+        isFloatingPoolMember={user.isFloatingPoolMember ?? false}
+      />
     </>
   );
 }

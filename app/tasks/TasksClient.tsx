@@ -276,7 +276,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   const btnCls = 'bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 transition-colors hover:bg-[#2a2e3a]';
 
   return (
-    <div className="max-w-[1180px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
 
       {/* Page header */}
       <div className="flex items-end justify-between mb-5 flex-wrap gap-3">

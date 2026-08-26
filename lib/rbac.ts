@@ -259,6 +259,26 @@ export function isReviewApproved(task: { reviewApprovedAt: Date | null }): boole
   return task.reviewApprovedAt !== null;
 }
 
+// ─── Task Content Edit ────────────────────────────────────────────────────────
+
+export type EditableTask = {
+  assigneeId: string | null;
+  squadId: string | null;
+};
+
+/**
+ * แก้ไข title/description ของ task: assignee เจ้าของงาน, ADMIN, QA_LEAD ของ squad นั้น,
+ * floating pool member, หรือ QA_ENGINEER ใน squad เดียวกัน
+ */
+export function canEditTaskContent(user: SessionUser, task: EditableTask): boolean {
+  if (user.role === 'ADMIN') return true;
+  if (user.isFloatingPoolMember) return true;
+  if (task.assigneeId === user.id) return true;
+  if (user.role === 'QA_LEAD' && !!task.squadId && user.squadId === task.squadId) return true;
+  if (user.role === 'QA_ENGINEER' && !!task.squadId && user.squadId === task.squadId) return true;
+  return false;
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 /** QA_LEAD และ QA_ENGINEER บังคับผูก squad, ADMIN และ QA_MANAGER ไม่บังคับ */

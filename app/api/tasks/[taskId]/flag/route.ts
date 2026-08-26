@@ -8,7 +8,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as any;
 
-  const { hasIssue, issueNote, resolutionNote } = await req.json();
+  const { hasIssue, issueNote, resolutionNote, destination } = await req.json();
 
   const task = await prisma.task.findUnique({
     where: { id: params.taskId },
@@ -38,26 +38,45 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     revalidatePath('/squads/[squadId]', 'page');
     return Response.json(updated);
   } else {
-    // Resolving: find latest open log and close it; move task to personal "To Do"
+    // Resolving: find latest open log and close it; move task to target lane.
+    // destination='todo' (default) → To Do lane (normal flow)
+    // destination='done' → Done lane directly, bypass review requirement intentionally
+    const resolveDestination: 'todo' | 'done' = destination === 'done' ? 'done' : 'todo';
+
     const openLog = await prisma.taskIssueLog.findFirst({
       where: { taskId: params.taskId, resolvedAt: null },
       orderBy: { flaggedAt: 'desc' },
     });
 
-    // For squad tasks → return to squad "To do" lane so My Board still sees it.
-    // For personal tasks → return to the assignee's personal "To Do" lane.
-    let toDoLane: { id: string } | null = null;
-    if (task.squadId) {
-      toDoLane = await prisma.lane.findFirst({
-        where: { name: 'To do', board: { type: 'SQUAD', owner: { squadId: task.squadId } } },
-        select: { id: true },
-      });
+    let targetLane: { id: string } | null = null;
+    if (resolveDestination === 'done') {
+      // Done lane: bypass review check — resolutionNote serves as evidence
+      if (task.squadId) {
+        targetLane = await prisma.lane.findFirst({
+          where: { name: 'Done', board: { type: 'SQUAD', owner: { squadId: task.squadId } } },
+          select: { id: true },
+        });
+      } else {
+        const ownerId = task.assigneeId ?? user.id;
+        targetLane = await prisma.lane.findFirst({
+          where: { name: 'Done', board: { type: 'PERSONAL', ownerId } },
+          select: { id: true },
+        });
+      }
     } else {
-      const ownerId = task.assigneeId ?? user.id;
-      toDoLane = await prisma.lane.findFirst({
-        where: { name: 'To Do', board: { type: 'PERSONAL', ownerId } },
-        select: { id: true },
-      });
+      // Default: return to To Do lane
+      if (task.squadId) {
+        targetLane = await prisma.lane.findFirst({
+          where: { name: 'To do', board: { type: 'SQUAD', owner: { squadId: task.squadId } } },
+          select: { id: true },
+        });
+      } else {
+        const ownerId = task.assigneeId ?? user.id;
+        targetLane = await prisma.lane.findFirst({
+          where: { name: 'To Do', board: { type: 'PERSONAL', ownerId } },
+          select: { id: true },
+        });
+      }
     }
 
     const ops: any[] = [
@@ -66,7 +85,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
         data: {
           hasIssue:  false,
           issueNote: null,
-          ...(toDoLane ? { laneId: toDoLane.id } : {}),
+          ...(targetLane ? { laneId: targetLane.id } : {}),
         },
       }),
     ];

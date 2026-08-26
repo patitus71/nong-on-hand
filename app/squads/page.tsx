@@ -41,7 +41,7 @@ export default async function SquadsPage() {
   return (
     <>
       <Topbar />
-      <div className="max-w-[1180px] mx-auto px-7 py-6">
+      <div className="px-7 py-6">
         <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
           <div>
             <h1 className="text-xl font-semibold text-txt-primary mb-1">เลือก Squad</h1>

@@ -262,7 +262,7 @@ export default function RetroBoardClient({
   }
 
   return (
-    <div className="max-w-[1320px] mx-auto px-7 py-[22px] pb-16 flex gap-5">
+    <div className="px-7 py-[22px] pb-16 flex gap-5">
 
       {/* ── Sidebar: retro list ── */}
       <div className="w-52 flex-none">

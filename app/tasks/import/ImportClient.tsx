@@ -98,7 +98,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
   const allErrors  = rows.flatMap(r => r.errors);
 
   return (
-    <div className="max-w-[960px] mx-auto px-7 py-6 pb-16">
+    <div className="px-7 py-6 pb-16">
       <p className="text-[19px] font-semibold text-txt-primary mb-1">Import งานจากไฟล์</p>
       <p className="text-[13px] text-txt-secondary mb-5">
         อัปโหลด CSV หรือ Excel เพื่อสร้างงานหลายรายการพร้อมกัน — งานจะไปอยู่ใน "งานทั้งหมด" รอดึงเข้าบอร์ดทีหลัง

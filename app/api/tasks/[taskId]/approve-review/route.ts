@@ -14,7 +14,7 @@ export async function PATCH(
 
   const task = await prisma.task.findUnique({
     where:  { id: params.taskId, deletedAt: null },
-    select: { id: true, squadId: true, reviewApprovedAt: true },
+    select: { id: true, squadId: true, reviewApprovedAt: true, reviewerId: true },
   });
 
   if (!task) return new Response('Not Found', { status: 404 });
@@ -23,7 +23,8 @@ export async function PATCH(
     return new Response('งานนี้ไม่ผูกกับ squad ใด', { status: 400 });
   }
 
-  if (!canApproveReview(user, task.squadId)) {
+  const isAssignedReviewer = task.reviewerId === user.id;
+  if (!canApproveReview(user, task.squadId) && !isAssignedReviewer) {
     return new Response('Forbidden — เฉพาะ ADMIN และ QA_LEAD ของ squad นี้เท่านั้น', { status: 403 });
   }
 
