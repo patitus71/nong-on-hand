@@ -480,10 +480,13 @@ export default function MyBoardClient({
   /* ── Review-block alert state ── */
   const [reviewBlockMsg, setReviewBlockMsg] = useState<string | null>(null);
 
-  /* ── Derived views ── */
-  const flaggedTasks = lanes.flatMap(l => l.tasks.filter(t => t.hasIssue));
+  /* ── Derived views ──
+     งานที่ isCancelled ยังคง hasIssue=true ไว้ (ให้ Squad Board จัดอยู่บัคเก็ต "มีปัญหา" ตามเดิม
+     — ดู flag/route.ts) แต่ฝั่ง my-board เองต้องไม่ถือว่ามันเป็น "การ์ดที่มีปัญหา" ที่ยังรอ resolve
+     อีกต่อไป — มันจบแล้ว ต้องอยู่ในเลน Cancel ตามปกติ ไม่ใช่ค้างอยู่แถว issue section */
+  const flaggedTasks = lanes.flatMap(l => l.tasks.filter(t => t.hasIssue && !t.isCancelled));
   const flaggedIds   = new Set(flaggedTasks.map(t => t.id));
-  const normalLanes  = lanes.map(l => ({ ...l, tasks: l.tasks.filter(t => !t.hasIssue) }));
+  const normalLanes  = lanes.map(l => ({ ...l, tasks: l.tasks.filter(t => !t.hasIssue || t.isCancelled) }));
 
   /* ── Resolve modal state ── */
   const [resolveTarget,      setResolveTarget]      = useState<TaskData | null>(null);
