@@ -1,8 +1,10 @@
 // app/api/cron/standup/route.ts
 //
-// ยิงจาก GitHub Actions (.github/workflows/notify-cron.yml) ทุก ~10 นาที
-// — Vercel Hobby plan ไม่รองรับ cron ถี่กว่ารายวัน จึงย้ายมาให้ GitHub Actions
-// เป็นตัวยิง request เข้ามาแทน endpoint นี้ไม่เปลี่ยน security model ใดๆ
+// ยิงจาก external scheduler (cron-job.org) ทุก ~5-10 นาที — Vercel Hobby plan
+// ไม่รองรับ cron ถี่กว่ารายวัน และ GitHub Actions schedule trigger ไม่น่าเชื่อถือ
+// พอสำหรับ interval ระดับนาที (ทดลองแล้วดีเลย์ได้เป็นชั่วโมง) จึงย้ายมาใช้
+// external cron service เป็นตัวยิง request เข้ามาแทน endpoint นี้ไม่เปลี่ยน
+// security model ใดๆ
 //
 // ส่ง standup ไปยัง squad ที่ตั้ง standupAutoSendEnabled=true และเวลาปัจจุบัน (ICT)
 // อยู่ในช่วง [standupSendTime, standupSendTime + WINDOW_MINUTES) — ดู lib/cronWindow.ts

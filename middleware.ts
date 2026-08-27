@@ -37,6 +37,6 @@ export default withAuth(
 export const config = {
   // ปรับ path ตามหน้าที่ต้องการ login ก่อนเข้า (เว้น /login, /api/auth, static assets)
   // /api/line/webhook — public (LINE server ยิง POST โดยตรง verify ด้วย x-line-signature แทน)
-  // /api/cron/* — public (GitHub Actions ยิง GET โดยตรง ไม่มี session cookie, verify ด้วย CRON_SECRET แทน)
+  // /api/cron/* — public (external scheduler ยิง GET โดยตรง ไม่มี session cookie, verify ด้วย CRON_SECRET แทน)
   matcher: ["/((?!login|api/auth|api/line/webhook|api/cron|_next/static|_next/image|favicon.ico).*)"],
 };
