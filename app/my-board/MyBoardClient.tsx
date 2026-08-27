@@ -17,6 +17,7 @@ import { fmt, initials, avatarColor, renderReportMarkdown, markdownToPlainText }
 type TaskData = {
   id: string; title: string; hasIssue: boolean; order: number;
   reviewApprovedAt: string | null;
+  requiresReview: boolean;
   reviewerId: string | null;
   reviewerName: string | null;
   prLink: string | null;
@@ -387,7 +388,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
       const task = await res.json();
       onCreated({
         id: task.id, title: task.title, hasIssue: false, order: task.order,
-        reviewApprovedAt: null, reviewerId: null, reviewerName: null, prLink: null,
+        reviewApprovedAt: null, requiresReview: true, reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
@@ -690,7 +691,7 @@ export default function MyBoardClient({
     const landedLane = current.find(l => l.tasks.some(t => t.id === activeId));
     if (landedLane?.name === 'Done') {
       const task = landedLane.tasks.find(t => t.id === activeId);
-      if (task?.squad && !task.reviewApprovedAt) {
+      if (task?.squad && task.requiresReview && !task.reviewApprovedAt) {
         setReviewBlockMsg('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้');
         setLanes(preDragRef.current);
         return;
