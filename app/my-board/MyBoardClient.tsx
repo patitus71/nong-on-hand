@@ -1141,7 +1141,13 @@ export default function MyBoardClient({
             >
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[13px] font-semibold ${lane.name === 'Review' ? 'text-warning' : 'text-txt-primary'}`}>
+                  <span className={`text-[13px] font-semibold ${
+                    lane.name === 'Cancel'      ? 'text-danger'  :
+                    lane.name === 'Done'        ? 'text-success' :
+                    lane.name === 'Review'      ? 'text-warning' :
+                    lane.name === 'In Progress' ? 'text-accent'  :
+                    'text-txt-primary'
+                  }`}>
                     {lane.name}
                   </span>
                   <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
