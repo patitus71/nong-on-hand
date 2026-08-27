@@ -82,6 +82,13 @@ export async function PATCH(req: Request) {
   // Resolve final laneId for each item and validate
   const approvalResets = new Set<string>(); // task IDs that need reviewApprovedAt cleared
 
+  // หมายเหตุสำคัญ: saveOrder() ฝั่ง client ส่ง item ของ "ทุก task ทุกเลนบนบอร์ด" มาทุกครั้ง
+  // (ต้องคำนวณ order ใหม่ให้ sibling ทั้งหมด) ไม่ใช่แค่ตัวที่ถูกลาก และสำหรับ squad task
+  // ตัว client ส่ง personal-lane-id เสมอ (Task.laneId ที่ persist ไว้จริงอาจเป็น squad-lane-id
+  // ถ้าอยู่ To Do/In Progress/Done — ดูคอมเมนต์ PERSONAL_TO_SQUAD ด้านบน) ดังนั้นต้องเทียบ
+  // "laneId สุดท้ายหลัง resolve" กับ "laneId ที่ persist ไว้" เพื่อรู้ว่า task นี้ "ย้ายจริง"
+  // ในรอบนี้ไหม — ห้ามใช้ newLaneName/oldLaneName string เทียบเฉยๆ เพราะ case ต่างกัน
+  // (เช่น "In Progress" vs "In progress") จะทำให้เข้าใจผิดว่า "ย้าย" ทุกครั้งทั้งที่อยู่ตำแหน่งเดิม
   const resolved = items.map(({ id, laneId, order, reviewerId: itemReviewerId }) => {
     const task        = taskById.get(id);
     const targetLane  = laneById.get(laneId);
@@ -90,30 +97,34 @@ export async function PATCH(req: Request) {
     const oldLaneName = currentLane?.name ?? '';
     const newLaneName = targetLane?.name ?? '';
 
-    if (shouldResetReviewApproval(oldLaneName, newLaneName)) {
+    let finalLaneId = laneId;
+    if (task?.squadId && targetLane?.board.type === 'PERSONAL') {
+      const sqName = PERSONAL_TO_SQUAD[newLaneName];
+      if (sqName) {
+        finalLaneId = squadLaneMap.get(`${task.squadId}:${sqName}`) ?? laneId;
+      }
+      // ไม่มี sqName (เช่น 'Review') — ไม่มี squad lane ให้ translate เก็บ personal laneId ไว้
+    }
+
+    const moved = finalLaneId !== task?.laneId;
+
+    // เช็ค reset approval เฉพาะตอนย้ายจริง — ไม่งั้น task ที่ "ค้างอยู่ใน Review" (newLaneName
+    // === 'Review' เสมอไม่ว่าจะย้ายจริงหรือไม่) จะโดน reset ทุกครั้งที่มีการลากการ์ดอื่นบนบอร์ด
+    if (moved && shouldResetReviewApproval(oldLaneName, newLaneName)) {
       approvalResets.add(id);
     }
 
-    if (!task?.squadId || targetLane?.board.type !== 'PERSONAL') {
-      return { id, laneId, order, itemReviewerId };
-    }
-
-    const sqName = PERSONAL_TO_SQUAD[newLaneName];
-    if (!sqName) {
-      // No squad translation (e.g. 'Review' lane) — keep personal laneId
-      return { id, laneId, order, itemReviewerId };
-    }
-
-    const sqLaneId = squadLaneMap.get(`${task.squadId}:${sqName}`);
-    return { id, laneId: sqLaneId ?? laneId, order, itemReviewerId };
+    return { id, laneId: finalLaneId, order, itemReviewerId, moved };
   });
 
-  // Guard: QA_ENGINEER moving squad task to Done without review approval
+  // Guard: QA_ENGINEER moving squad task to Done without review approval —
+  // เช็คเฉพาะ task ที่ "กำลังจะย้ายเข้า Done ในรอบนี้จริงๆ" (moved === true) เท่านั้น ไม่งั้น
+  // task เก่าที่ค้างอยู่ใน Done โดยไม่มี approval (เช่น ถูก QA_LEAD/ADMIN ย้ายเข้าตรงๆ) จะ
+  // ทำให้ลากการ์ดอื่นบนบอร์ดไม่ได้เลยสักใบ เพราะ item ของมันติดมาด้วยทุกครั้ง
   if (user.role === 'QA_ENGINEER') {
-    for (const { id, laneId: resolvedLaneId } of resolved) {
+    for (const { id, laneId: resolvedLaneId, moved } of resolved) {
       const task = taskById.get(id);
-      if (!task?.squadId || task.reviewApprovedAt) continue;
-      // Check if resolved laneId is the squad's 'Done' lane
+      if (!task?.squadId || task.reviewApprovedAt || !moved) continue;
       const squadDoneLaneId = squadLaneMap.get(`${task.squadId}:Done`);
       if (squadDoneLaneId && squadDoneLaneId === resolvedLaneId) {
         return new Response('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้', { status: 403 });
