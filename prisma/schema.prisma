@@ -157,6 +157,7 @@ model Task {
   reviewApprovedAt      DateTime? // เวลาที่ QA_LEAD อนุมัติ review (null = ยังไม่ผ่าน)
   reviewApprovedById    String?
   reviewApprovedBy      User?     @relation("TaskReviewApprovedBy", fields: [reviewApprovedById], references: [id])
+  requiresReview        Boolean   @default(true) // false = อนุญาตย้าย In Progress → Done ตรงได้เลยโดยไม่ต้องผ่าน Review approval (งานแยกที่ไม่จำเป็นต้อง review) — ไม่กระทบ logic ถ้าลากเข้า Review lane เอง
   reviewerId            String?   // ผู้รับผิดชอบ review — reset ทุกครั้งที่ task เข้าเลน Review ใหม่
   reviewer              User?     @relation("TaskReviewer", fields: [reviewerId], references: [id])
   prLink                String?   // PR/MR link (http/https only) — validate ทั้ง client และ server

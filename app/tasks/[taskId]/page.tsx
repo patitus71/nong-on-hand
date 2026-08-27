@@ -44,6 +44,7 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
     hasIssue:    task.hasIssue,
     issueNote:   task.issueNote,
     source:      task.source as string,
+    requiresReview: task.requiresReview,
     squad:       task.squad,
     assignee:    task.assignee,
     laneName:    task.lane?.name ?? null,

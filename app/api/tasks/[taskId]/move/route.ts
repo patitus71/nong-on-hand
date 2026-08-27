@@ -16,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
   const [task, targetLane] = await Promise.all([
     prisma.task.findUnique({
       where:  { id: params.taskId },
-      select: { id: true, squadId: true, reviewApprovedAt: true, lane: { select: { name: true } } },
+      select: { id: true, squadId: true, reviewApprovedAt: true, requiresReview: true, lane: { select: { name: true } } },
     }),
     prisma.lane.findUnique({
       where:  { id: laneId },
@@ -30,8 +30,9 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
   const oldLaneName = task.lane?.name ?? '';
   const newLaneName = targetLane.name;
 
-  // QA_ENGINEER moving squad task to Done requires review approval
-  if (task.squadId && user.role === 'QA_ENGINEER' && newLaneName === 'Done' && !task.reviewApprovedAt) {
+  // QA_ENGINEER moving squad task to Done requires review approval — ยกเว้นงานที่ตั้ง
+  // requiresReview: false ไว้ (งานแยกที่ไม่จำเป็นต้อง review)
+  if (task.squadId && task.requiresReview && user.role === 'QA_ENGINEER' && newLaneName === 'Done' && !task.reviewApprovedAt) {
     return new Response('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้', { status: 403 });
   }
 

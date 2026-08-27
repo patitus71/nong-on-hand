@@ -14,10 +14,16 @@ export async function PATCH(
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser;
 
-  const body = await req.json() as { title?: string; description?: string; reviewerId?: string | null; prLink?: string | null };
-  const { title, description, reviewerId, prLink } = body;
+  const body = await req.json() as {
+    title?: string; description?: string; reviewerId?: string | null; prLink?: string | null;
+    requiresReview?: boolean;
+  };
+  const { title, description, reviewerId, prLink, requiresReview } = body;
 
-  if (title === undefined && description === undefined && reviewerId === undefined && prLink === undefined) {
+  if (
+    title === undefined && description === undefined && reviewerId === undefined &&
+    prLink === undefined && requiresReview === undefined
+  ) {
     return new Response('Bad Request', { status: 400 });
   }
   if (title !== undefined && !title.trim()) {
@@ -46,11 +52,12 @@ export async function PATCH(
   if (description !== undefined) data.description = description.trim() || null;
   if (reviewerId !== undefined) data.reviewerId = reviewerId;
   if (prLink !== undefined) data.prLink = prLink ? prLink.trim() : null;
+  if (requiresReview !== undefined) data.requiresReview = requiresReview;
 
   const updated = await prisma.task.update({
     where: { id: task.id },
     data,
-    select: { id: true, title: true, description: true, reviewerId: true, prLink: true },
+    select: { id: true, title: true, description: true, reviewerId: true, prLink: true, requiresReview: true },
   });
 
   revalidatePath('/tasks');

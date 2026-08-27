@@ -34,7 +34,7 @@ export async function PATCH(req: Request) {
   // Fetch tasks — include current laneId and reviewApprovedAt for guards
   const tasksRaw = await prisma.task.findMany({
     where:  { id: { in: taskIds } },
-    select: { id: true, squadId: true, laneId: true, reviewApprovedAt: true },
+    select: { id: true, squadId: true, laneId: true, reviewApprovedAt: true, requiresReview: true },
   });
   const taskById = new Map(tasksRaw.map(t => [t.id, t]));
 
@@ -121,10 +121,15 @@ export async function PATCH(req: Request) {
   // เช็คเฉพาะ task ที่ "กำลังจะย้ายเข้า Done ในรอบนี้จริงๆ" (moved === true) เท่านั้น ไม่งั้น
   // task เก่าที่ค้างอยู่ใน Done โดยไม่มี approval (เช่น ถูก QA_LEAD/ADMIN ย้ายเข้าตรงๆ) จะ
   // ทำให้ลากการ์ดอื่นบนบอร์ดไม่ได้เลยสักใบ เพราะ item ของมันติดมาด้วยทุกครั้ง
+  //
+  // requiresReview === false: งานแยกที่ไม่จำเป็นต้อง review — อนุญาตย้าย In Progress → Done
+  // ตรงได้เลยโดยไม่ต้องผ่าน approval แต่ถ้าใครลากงานนี้เข้า Review lane เองก็ยังใช้ logic เดิม
+  // ทุกอย่าง (approval reset, ต้อง QA_LEAD approve ก่อนออกจาก Review ตามปกติ) — flag นี้แค่ปลด
+  // เงื่อนไข "ต้องผ่าน Review ก่อนถึงจะเข้า Done ได้" สำหรับงานที่ไม่จำเป็นต้อง review เท่านั้น
   if (user.role === 'QA_ENGINEER') {
     for (const { id, laneId: resolvedLaneId, moved } of resolved) {
       const task = taskById.get(id);
-      if (!task?.squadId || task.reviewApprovedAt || !moved) continue;
+      if (!task?.squadId || !task.requiresReview || task.reviewApprovedAt || !moved) continue;
       const squadDoneLaneId = squadLaneMap.get(`${task.squadId}:Done`);
       if (squadDoneLaneId && squadDoneLaneId === resolvedLaneId) {
         return new Response('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้', { status: 403 });
