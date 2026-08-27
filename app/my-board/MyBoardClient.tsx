@@ -374,7 +374,7 @@ function DroppableIssueSection({
         <div
           ref={setNodeRef}
           className={`flex gap-2.5 flex-wrap min-h-[52px] rounded-lg p-1 transition-colors ${
-            isOver ? 'bg-danger/8' : ''
+            isOver ? 'bg-danger/25 ring-2 ring-danger' : ''
           } ${flaggedTasks.length === 0 ? 'items-center' : ''}`}
         >
           {flaggedTasks.length === 0 && (
