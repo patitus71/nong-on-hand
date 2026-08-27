@@ -4,7 +4,8 @@ import { useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent,
-  PointerSensor, closestCorners, useSensor, useSensors, useDroppable,
+  PointerSensor, closestCorners, pointerWithin, useSensor, useSensors, useDroppable,
+  type CollisionDetection,
 } from '@dnd-kit/core';
 import {
   SortableContext, arrayMove, useSortable,
@@ -341,6 +342,19 @@ function DroppableLaneCards({
 
 /* ─── Droppable issue section ───────────────────────── */
 const ISSUE_DROP_ID = '__issue_section__';
+
+/* closestCorners อย่างเดียวใช้ไม่ได้ — droppable ของแต่ละเลนสูงเกือบเต็มจอ
+   (height: calc(100vh - 220px)) ในขณะที่กล่อง "การ์ดที่มีปัญหา" เตี้ยแค่ ~52px
+   มุมของเลนที่สูงกว่าจะใกล้เคอร์เซอร์กว่ากล่องเตี้ยๆ นี้เสมอ ทำให้ลากไปวางที่กล่อง
+   การ์ดที่มีปัญหาไม่เคยติดเลยไม่ว่าจะเล็งตรงแค่ไหน — เช็คตำแหน่งเคอร์เซอร์จริง
+   (pointerWithin) ก่อนเสมอ ถ้าไม่เจอ droppable ไหนตรงๆ ค่อย fallback ไป
+   closestCorners (กันเคส sortable ระหว่างการ์ดในเลนเดียวกันที่เคอร์เซอร์อาจ
+   หลุดจากทุก rect ชั่วขณะระหว่างลาก) */
+const collisionDetectionStrategy: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) return pointerCollisions;
+  return closestCorners(args);
+};
 function DroppableIssueSection({
   flaggedTasks, onResolve,
 }: { flaggedTasks: TaskData[]; onResolve: (t: TaskData) => void }) {
@@ -1106,7 +1120,7 @@ export default function MyBoardClient({
         </div>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCorners}
+      <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
         onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
 
         {/* Pending reviews section (tasks where I'm the reviewer) */}
