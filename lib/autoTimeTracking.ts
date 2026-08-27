@@ -1,6 +1,10 @@
 // lib/autoTimeTracking.ts
-// จัดการ auto time tracking จากการลากการ์ดระหว่างเลนใน my-board
-// เรียกจาก API route (move/route.ts) เท่านั้น — ไม่ใช้ฝั่ง client
+// จัดการ auto time tracking (source: 'AUTO' ใน TimeLog) — เรียกจาก API route
+// เท่านั้น ไม่ใช้ฝั่ง client โดยตรง ปัจจุบันถูกเรียกจาก:
+//   - app/api/tasks/[taskId]/timelog/start, /timelog/stop (ปุ่ม start/stop timer manual)
+//   - app/api/tasks/[taskId]/move (unused — ไม่มี client เรียก route นี้แล้ว)
+// การลากการ์ดใน my-board (MyBoardClient) ไม่เรียกฟังก์ชันนี้โดยตรงแล้ว ตั้งแต่
+// AUTO_TIMER_ON_DRAG ถูกปิด (ดูคอมเมนต์ที่ MyBoardClient.tsx) — เก็บไว้เผื่อใช้อนาคต
 
 import { prisma } from '@/lib/prisma';
 import { calcWorkedTime } from '@/lib/timeCalc';

@@ -91,15 +91,16 @@ function PendingReviewSection({
 
 /* ─── Sortable card (normal lane) ────────────────────── */
 function SortableCard({
-  task, overlay = false, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave,
+  task, overlay = false, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave, saving = false,
 }: {
   task: TaskData; overlay?: boolean; laneName?: string;
   reviewersBySquad?: Record<string, Reviewer[]>;
   onReviewerChange?: (taskId: string, reviewerId: string | null) => Promise<void>;
   onPrLinkSave?: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
+  saving?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: task.id });
+    useSortable({ id: task.id, disabled: saving });
 
   const av = task.assignee ? avatarColor(task.assignee.name) : null;
   const normalFmt = fmt(task.totalNormalMin);
@@ -162,9 +163,16 @@ function SortableCard({
         ${isDragging && !overlay ? 'opacity-40' : ''}
         ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#3a3f4d]'}
         ${task.isAtRisk && !isDragging && !overlay ? 'card-at-risk' : ''}
+        ${saving ? 'opacity-60 pointer-events-none cursor-wait' : ''}
       `}
     >
-      {task.isAtRisk && (
+      {saving && (
+        <span
+          className="absolute top-1.5 right-1.5 z-10 animate-spin inline-block w-3.5 h-3.5 border-2 border-accent border-t-transparent rounded-full"
+          title="กำลังบันทึก..."
+        />
+      )}
+      {task.isAtRisk && !saving && (
         <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10" title={task.riskReason}>🔥</span>
       )}
       <Link
@@ -291,12 +299,13 @@ function SortableFlaggedCard({
 
 /* ─── Droppable lane card area ──────────────────────── */
 function DroppableLaneCards({
-  laneId, tasks, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave,
+  laneId, tasks, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave, savingTaskIds,
 }: {
   laneId: string; tasks: TaskData[]; laneName: string;
   reviewersBySquad: Record<string, Reviewer[]>;
   onReviewerChange: (taskId: string, reviewerId: string | null) => Promise<void>;
   onPrLinkSave: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
+  savingTaskIds: Set<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: laneId });
   return (
@@ -313,6 +322,7 @@ function DroppableLaneCards({
             reviewersBySquad={reviewersBySquad}
             onReviewerChange={onReviewerChange}
             onPrLinkSave={onPrLinkSave}
+            saving={savingTaskIds.has(task.id)}
           />
         ))}
       </div>
@@ -411,6 +421,12 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Review', 'Done']);
 const PROTECTED_TOOLTIP = 'เลนนี้ผูกกับ Squad Board — แก้ไข/ลบไม่ได้';
 
+/* ปิดไว้ชั่วคราว — auto-start timer ตอนลากเข้า In Progress เรียก 2 endpoint
+   แยกกัน (timelog/start + reorder) โดยไม่มี transaction ร่วม ถ้า reorder fail
+   แต่ timer start สำเร็จ จะเห็น timer เดินแต่การ์ดไม่ขยับ (เจอจริงกับ SR-25877)
+   ปิดไว้ก่อนจนกว่าจะรวมเป็น transaction เดียวได้จริง — โค้ดยังเก็บไว้ครบเผื่อใช้อนาคต */
+const AUTO_TIMER_ON_DRAG = false;
+
 /* ─── Main board client ─────────────────────────────── */
 type Props = {
   boardId: string;
@@ -440,6 +456,16 @@ export default function MyBoardClient({
 
   const [activeTask, setActiveTask] = useState<TaskData | null>(null);
   const [editMode,   setEditMode]   = useState(false);
+
+  /* ── Drag-and-drop save state: per-card "saving" overlay + error/success toast ── */
+  const [savingTaskIds, setSavingTaskIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function showToast(type: 'error' | 'success', message: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ type, message });
+    toastTimerRef.current = setTimeout(() => setToast(null), type === 'error' ? 4000 : 2200);
+  }
 
   /* ── Review-block alert state ── */
   const [reviewBlockMsg, setReviewBlockMsg] = useState<string | null>(null);
@@ -583,7 +609,11 @@ export default function MyBoardClient({
     setLanes(next);
   }
 
-  function saveOrder(ls: LaneData[], reviewerOverrides?: Record<string, string | null>) {
+  /** ย้ายเลน/reorder จริง — await ผลเสมอ, เช็ค res.ok, rollback + toast ถ้า fail */
+  async function saveOrder(
+    ls: LaneData[],
+    reviewerOverrides?: Record<string, string | null>,
+  ): Promise<boolean> {
     const items = ls.flatMap(l => l.tasks.map((t, idx) => {
       const item: { id: string; laneId: string; order: number; reviewerId?: string | null } = {
         id: t.id, laneId: l.id, order: idx,
@@ -593,14 +623,40 @@ export default function MyBoardClient({
       }
       return item;
     }));
-    if (!items.length) return;
-    fetch('/api/tasks/reorder', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    }).catch(console.error);
+    if (!items.length) return true;
+
+    const movedIds = items.map(i => i.id);
+    setSavingTaskIds(prev => {
+      const next = new Set(prev);
+      movedIds.forEach(id => next.add(id));
+      return next;
+    });
+    try {
+      const res = await fetch('/api/tasks/reorder', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => '');
+        setLanes(preDragRef.current);
+        showToast('error', msg || 'ย้ายไม่สำเร็จ — ลองใหม่อีกครั้ง');
+        return false;
+      }
+      return true;
+    } catch {
+      setLanes(preDragRef.current);
+      showToast('error', 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ลองใหม่อีกครั้ง');
+      return false;
+    } finally {
+      setSavingTaskIds(prev => {
+        const next = new Set(prev);
+        movedIds.forEach(id => next.delete(id));
+        return next;
+      });
+    }
   }
 
-  function onDragEnd({ active, over }: DragEndEvent) {
+  async function onDragEnd({ active, over }: DragEndEvent) {
     setActiveTask(null);
     const activeId = String(active.id);
 
@@ -649,7 +705,7 @@ export default function MyBoardClient({
         const srcName = preDragSrc.name;
         const dstName = currentDst.name;
 
-        if (srcName === 'To Do' && dstName === 'In Progress') {
+        if (AUTO_TIMER_ON_DRAG && srcName === 'To Do' && dstName === 'In Progress') {
           const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
           setStartTimerModal({ taskId: activeId, taskTitle: t.title, pendingLanes: current });
           return;
@@ -694,9 +750,9 @@ export default function MyBoardClient({
         l.id === lane.id ? { ...l, tasks: arrayMove(l.tasks, oldIdx, newIdx) } : l,
       );
       setLanes(reordered);
-      saveOrder(reordered);
+      await saveOrder(reordered);
     } else {
-      saveOrder(current);
+      await saveOrder(current);
     }
   }
 
@@ -799,18 +855,31 @@ export default function MyBoardClient({
     setLanes(lanesRef.current.map(l => l.id === laneId ? { ...l, tasks: [...l.tasks, task] } : l));
   }
 
-  /* ─── Start-timer modal handlers ─── */
+  /* ─── Start-timer modal handlers (dead while AUTO_TIMER_ON_DRAG=false, kept for future re-enable) ─── */
   async function confirmStartTimer() {
     if (!startTimerModal) return;
     setStartTimerSaving(true);
-    await fetch(`/api/tasks/${startTimerModal.taskId}/timelog/start`, { method: 'POST' });
-    saveOrder(startTimerModal.pendingLanes);
-    setStartTimerModal(null);
-    setStartTimerSaving(false);
+    try {
+      const res = await fetch(`/api/tasks/${startTimerModal.taskId}/timelog/start`, { method: 'POST' });
+      if (!res.ok) {
+        setLanes(preDragRef.current);
+        showToast('error', 'เริ่มจับเวลาไม่สำเร็จ — ลองใหม่อีกครั้ง');
+        return;
+      }
+      const ok = await saveOrder(startTimerModal.pendingLanes);
+      if (!ok) {
+        // รู้ข้อจำกัด: ถ้า reorder fail ตรงนี้ timer ฝั่ง server เริ่มไปแล้ว (คนละ transaction กัน)
+        // ต้องรวม transaction ก่อนเปิด AUTO_TIMER_ON_DRAG กลับ — ดูคอมเมนต์ที่ประกาศ flag ด้านบน
+        showToast('error', 'ย้ายเลนไม่สำเร็จ (แต่เริ่มจับเวลาไปแล้ว) — ลองลากใหม่อีกครั้ง');
+      }
+    } finally {
+      setStartTimerModal(null);
+      setStartTimerSaving(false);
+    }
   }
-  function skipStartTimer() {
+  async function skipStartTimer() {
     if (!startTimerModal) return;
-    saveOrder(startTimerModal.pendingLanes);
+    await saveOrder(startTimerModal.pendingLanes);
     setStartTimerModal(null);
   }
 
@@ -895,7 +964,7 @@ export default function MyBoardClient({
     setReviewTimeSaving(false);
   }
 
-  function proceedToReview() {
+  async function proceedToReview() {
     const pending = pendingReviewerRef.current;
     if (pending) {
       const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === pending.taskId);
@@ -903,15 +972,17 @@ export default function MyBoardClient({
       const reviewerName = pending.reviewerId && squadId
         ? (reviewersBySquad[squadId] ?? []).find(r => r.id === pending.reviewerId)?.name ?? null
         : null;
-      saveOrder(lanesRef.current, { [pending.taskId]: pending.reviewerId });
-      setLanes(lanesRef.current.map(l => ({
-        ...l, tasks: l.tasks.map(t =>
-          t.id === pending.taskId ? { ...t, reviewerId: pending.reviewerId, reviewerName } : t
-        ),
-      })));
+      const ok = await saveOrder(lanesRef.current, { [pending.taskId]: pending.reviewerId });
+      if (ok) {
+        setLanes(lanesRef.current.map(l => ({
+          ...l, tasks: l.tasks.map(t =>
+            t.id === pending.taskId ? { ...t, reviewerId: pending.reviewerId, reviewerName } : t
+          ),
+        })));
+      }
       pendingReviewerRef.current = null;
     } else {
-      saveOrder(lanesRef.current);
+      await saveOrder(lanesRef.current);
     }
     setReviewTimeModal(null);
     setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
@@ -1051,6 +1122,7 @@ export default function MyBoardClient({
                 reviewersBySquad={reviewersBySquad}
                 onReviewerChange={handleReviewerChange}
                 onPrLinkSave={handlePrLinkSave}
+                savingTaskIds={savingTaskIds}
               />
               <AddTaskForm laneId={lane.id} squadId={userSquadId} onCreated={t => onTaskCreated(lane.id, t)} />
             </div>
@@ -1470,6 +1542,17 @@ export default function MyBoardClient({
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Drag-and-drop save toast ── */}
+      {toast && (
+        <div
+          className={`fixed bottom-5 right-5 z-[60] px-4 py-2.5 rounded-lg shadow-xl text-[12.5px] font-medium text-white ${
+            toast.type === 'error' ? 'bg-danger' : 'bg-success'
+          }`}
+        >
+          {toast.type === 'error' ? '⚠ ' : '✓ '}{toast.message}
         </div>
       )}
 
