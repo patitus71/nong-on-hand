@@ -2,6 +2,7 @@ import { getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { canCreateTask, type SessionUser } from '@/lib/rbac';
+import { PERSONAL_LANE_DEFAULTS } from '@/lib/personalBoard';
 import Topbar from '@/components/Topbar';
 import MyBoardClient from './MyBoardClient';
 
@@ -33,6 +34,19 @@ const SQ_TO_PERSONAL_LANE: Record<string, string> = {
   'Review':     'In Progress',  // personal board (other user) — treat as In Progress
 };
 
+function personalBoardTasksInclude() {
+  return {
+    orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
+    include: {
+      squad:    { select: { name: true } },
+      assignee: { select: { id: true, name: true } },
+      reviewer: { select: { name: true } },
+      timeLogs: { select: { normalMinutes: true, otMinutes: true } },
+      sprint:   { select: { plannedEndDate: true } },
+    },
+  };
+}
+
 export default async function MyBoardPage() {
   const session = await getSession();
   if (!session) redirect('/login');
@@ -43,18 +57,7 @@ export default async function MyBoardPage() {
     include: {
       lanes: {
         orderBy: { order: 'asc' },
-        include: {
-          tasks: {
-            orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
-            include: {
-              squad:    { select: { name: true } },
-              assignee: { select: { id: true, name: true } },
-              reviewer: { select: { name: true } },
-              timeLogs: { select: { normalMinutes: true, otMinutes: true } },
-              sprint:   { select: { plannedEndDate: true } },
-            },
-          },
-        },
+        include: { tasks: personalBoardTasksInclude() },
       },
     },
   });
@@ -65,23 +68,36 @@ export default async function MyBoardPage() {
         name:    'My Board',
         type:    'PERSONAL',
         ownerId: user.id,
-        lanes: {
-          create: [
-            { name: 'To Do',       order: 0 },
-            { name: 'In Progress', order: 1 },
-            { name: 'Review',      order: 2 },
-            { name: 'Done',        order: 3 },
-          ],
-        },
+        lanes:   { create: PERSONAL_LANE_DEFAULTS },
       },
       include: {
         lanes: {
           orderBy: { order: 'asc' },
-          include: { tasks: { include: { squad: true, assignee: true, timeLogs: true, sprint: { select: { plannedEndDate: true } } } } },
+          include: { tasks: personalBoardTasksInclude() },
         },
       },
     });
+  } else {
+    // Backfill: user เก่าที่สร้าง personal board ไว้ก่อนฟีเจอร์ใหม่ๆ (เช่นเลน Cancel)
+    // จะยังไม่มีเลนที่เพิ่งเพิ่มมาทีหลัง — เติมให้อัตโนมัติตอนโหลดหน้า (เหมือน ensureSquadBoard())
+    const existingLaneNames = new Set(board.lanes.map(l => l.name));
+    const missingLanes = PERSONAL_LANE_DEFAULTS.filter(l => !existingLaneNames.has(l.name));
+    if (missingLanes.length > 0) {
+      await prisma.lane.createMany({
+        data: missingLanes.map(l => ({ ...l, boardId: board!.id })),
+      });
+      board = await prisma.board.findUnique({
+        where:   { id: board.id },
+        include: {
+          lanes: {
+            orderBy: { order: 'asc' },
+            include: { tasks: personalBoardTasksInclude() },
+          },
+        },
+      });
+    }
   }
+  if (!board) throw new Error('Failed to load or create personal board');
 
   // Squad tasks assigned to me that are NOT in my own personal board.
   const rawSquadTasks = await prisma.task.findMany({
@@ -192,6 +208,8 @@ export default async function MyBoardPage() {
           order:            t.order,
           reviewApprovedAt: t.reviewApprovedAt?.toISOString() ?? null,
           requiresReview:   t.requiresReview,
+          isCancelled:      t.isCancelled,
+          cancelNote:       t.cancelNote ?? null,
           reviewerId:       t.reviewerId ?? null,
           reviewerName:     t.reviewer?.name ?? null,
           prLink:           t.prLink ?? null,
@@ -221,6 +239,8 @@ export default async function MyBoardPage() {
           order:            9999,
           reviewApprovedAt: null,
           requiresReview:   t.requiresReview,
+          isCancelled:      t.isCancelled,
+          cancelNote:       t.cancelNote ?? null,
           reviewerId:       t.reviewerId ?? null,
           reviewerName:     t.reviewer?.name ?? null,
           prLink:           t.prLink ?? null,

@@ -14,6 +14,9 @@ type TaskCard = {
   assignee:           { id: string; name: string } | null;
   laneName:           string | null;
   reviewApprovedAt:   string | null;
+  isCancelled:        boolean;
+  cancelNote:         string | null;
+  cancelledByName:    string | null;
   totalNormalMin:     number;
   totalOtMin:         number;
   isAtRisk:           boolean;
@@ -555,7 +558,8 @@ export default function SquadBoardClient({
                     >🔥</span>
                   )}
                   <div className={`bg-surface-2 border rounded-lg p-2.5 ${
-                    t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
+                    t.isCancelled ? 'grayscale-[0.4] opacity-80 border-app-border'
+                    : t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
                   }`}>
 
                     {/* Title row */}
@@ -564,7 +568,13 @@ export default function SquadBoardClient({
                         href={`/tasks/${t.id}`}
                         className="flex-1 text-[13px] text-txt-primary flex items-start gap-1.5 hover:text-accent transition-colors"
                       >
-                        {t.hasIssue && <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />}
+                        {t.isCancelled ? (
+                          <span className="text-[9.5px] font-semibold bg-surface-3 text-txt-secondary px-1.5 py-0.5 rounded-full flex-shrink-0 mt-[1px]">
+                            🚫 ยกเลิก
+                          </span>
+                        ) : t.hasIssue && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />
+                        )}
                         {t.reviewApprovedAt && lane.name === 'Wait for review' && (
                           <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0 mt-[5px]" title="Review ผ่านแล้ว" />
                         )}
@@ -593,6 +603,13 @@ export default function SquadBoardClient({
                           🚩 Flag ให้ลบ{t.deletionFlagNote ? ` — "${t.deletionFlagNote}"` : ''}
                         </span>
                       </div>
+                    )}
+
+                    {/* Cancelled note */}
+                    {t.isCancelled && (
+                      <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
+                        ยกเลิกโดย {t.cancelledByName ?? '—'}{t.cancelNote ? ` — ${t.cancelNote}` : ''}
+                      </p>
                     )}
 
                     {/* On-Board / On-Board In Progress: show personal lane */}

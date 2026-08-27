@@ -22,6 +22,9 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
   if (task.pulledIntoBoardAt) {
     return new Response('Task already pulled into board', { status: 400 });
   }
+  if (task.isCancelled) {
+    return new Response('งานนี้ถูกยกเลิกแล้ว ดึงเข้าบอร์ดต่อไม่ได้อีก', { status: 403 });
+  }
 
   if (user.squadId && !canPullIntoBoard(task, user.squadId)) {
     return new Response('Forbidden: task belongs to another squad', { status: 403 });

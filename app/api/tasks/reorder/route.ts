@@ -34,7 +34,7 @@ export async function PATCH(req: Request) {
   // Fetch tasks — include current laneId and reviewApprovedAt for guards
   const tasksRaw = await prisma.task.findMany({
     where:  { id: { in: taskIds } },
-    select: { id: true, squadId: true, laneId: true, reviewApprovedAt: true, requiresReview: true },
+    select: { id: true, squadId: true, laneId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true },
   });
   const taskById = new Map(tasksRaw.map(t => [t.id, t]));
 
@@ -116,6 +116,20 @@ export async function PATCH(req: Request) {
 
     return { id, laneId: finalLaneId, order, itemReviewerId, moved };
   });
+
+  // Guard: เลน "Cancel" เข้าได้ทางเดียวผ่าน /api/tasks/[taskId]/flag (resolve-to-cancel)
+  // เท่านั้น ห้ามลากเข้าตรงๆ ผ่าน endpoint นี้ และเป็น terminal state — task ที่ isCancelled
+  // แล้วห้ามเปลี่ยน laneId อีกไม่ว่ากรณีใด ใช้กับทุก role ไม่ใช่แค่ QA_ENGINEER
+  for (const { id, laneId: resolvedLaneId, moved } of resolved) {
+    if (!moved) continue;
+    const task = taskById.get(id);
+    if (task?.isCancelled) {
+      return new Response('งานนี้ถูกยกเลิกแล้ว ย้ายเลนต่อไม่ได้อีก', { status: 403 });
+    }
+    if (laneById.get(resolvedLaneId)?.name === 'Cancel') {
+      return new Response('ย้ายเข้าเลน Cancel โดยตรงไม่ได้ — ต้องกด "จัดการปัญหานี้" แล้วเลือกปลายทาง Cancel เท่านั้น', { status: 403 });
+    }
+  }
 
   // Guard: QA_ENGINEER moving squad task to Done without review approval —
   // เช็คเฉพาะ task ที่ "กำลังจะย้ายเข้า Done ในรอบนี้จริงๆ" (moved === true) เท่านั้น ไม่งั้น

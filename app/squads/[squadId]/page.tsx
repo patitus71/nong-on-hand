@@ -61,6 +61,14 @@ export default async function SquadPage({
           lane:     { select: { name: true } },
           assignee: { select: { id: true, name: true } },
           timeLogs: { select: { normalMinutes: true, otMinutes: true } },
+          // เฉพาะ task ที่ isCancelled=true ถึงจะใช้ log นี้ (โชว์ "ยกเลิกโดย <ชื่อ>") —
+          // ดึงมาเผื่อไว้เสมอเพราะ query แยกต่อ task จะแพงกว่า
+          issueLogs: {
+            where:   { resolvedAt: { not: null } },
+            orderBy: { resolvedAt: 'desc' },
+            take:    1,
+            select:  { resolvedBy: { select: { name: true } } },
+          },
         },
         orderBy: { createdAt: 'asc' },
       })
@@ -109,6 +117,9 @@ export default async function SquadPage({
         assignee:           t.assignee,
         laneName:           t.lane?.name ?? null,
         reviewApprovedAt:   t.reviewApprovedAt?.toISOString() ?? null,
+        isCancelled:        t.isCancelled,
+        cancelNote:         t.cancelNote ?? null,
+        cancelledByName:    t.isCancelled ? (t.issueLogs[0]?.resolvedBy?.name ?? null) : null,
         totalNormalMin,
         totalOtMin,
         isAtRisk:           reasons.length > 0,

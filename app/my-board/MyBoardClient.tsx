@@ -18,6 +18,8 @@ type TaskData = {
   id: string; title: string; hasIssue: boolean; order: number;
   reviewApprovedAt: string | null;
   requiresReview: boolean;
+  isCancelled: boolean;
+  cancelNote: string | null;
   reviewerId: string | null;
   reviewerName: string | null;
   prLink: string | null;
@@ -101,7 +103,7 @@ function SortableCard({
   saving?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: task.id, disabled: saving });
+    useSortable({ id: task.id, disabled: saving || task.isCancelled });
 
   const av = task.assignee ? avatarColor(task.assignee.name) : null;
   const normalFmt = fmt(task.totalNormalMin);
@@ -159,8 +161,9 @@ function SortableCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes} {...listeners}
-      className={`bg-surface-2 border rounded-lg p-2.5 cursor-grab active:cursor-grabbing transition-colors select-none relative
-        ${task.hasIssue ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
+      className={`bg-surface-2 border rounded-lg p-2.5 transition-colors select-none relative
+        ${task.isCancelled ? 'grayscale-[0.4] opacity-75 cursor-default' : 'cursor-grab active:cursor-grabbing'}
+        ${task.hasIssue && !task.isCancelled ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
         ${isDragging && !overlay ? 'opacity-40' : ''}
         ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#3a3f4d]'}
         ${task.isAtRisk && !isDragging && !overlay ? 'card-at-risk' : ''}
@@ -182,7 +185,7 @@ function SortableCard({
         onPointerDown={e => e.stopPropagation()}
         className="block text-[13px] text-txt-primary leading-snug mb-2 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
-        {task.hasIssue && <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />}
+        {task.hasIssue && !task.isCancelled && <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />}
         {task.reviewApprovedAt && <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0 mt-[5px]" title="Review ผ่านแล้ว — ย้ายไป Done ได้" />}
         {task.title}
       </Link>
@@ -201,6 +204,11 @@ function SortableCard({
         <div className={`text-[11px] mt-1.5 flex items-center gap-1 ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
           {normalFmt && <span>รวม {normalFmt}</span>}
           {otFmt     && <span>· OT {otFmt}</span>}
+        </div>
+      )}
+      {task.isCancelled && task.cancelNote && (
+        <div className="text-[10.5px] text-danger mt-1.5 leading-relaxed">
+          🚫 ยกเลิก: {task.cancelNote}
         </div>
       )}
 
@@ -292,7 +300,7 @@ function SortableFlaggedCard({
         onPointerDown={e => e.stopPropagation()}
         className="w-full bg-surface-3 text-success text-[11px] py-1.5 rounded-md hover:bg-success-bg font-medium transition-colors"
       >
-        ✓ แก้ไขแล้ว — กลับไป To Do
+        ✓ จัดการปัญหานี้
       </button>
     </div>
   );
@@ -388,7 +396,8 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
       const task = await res.json();
       onCreated({
         id: task.id, title: task.title, hasIssue: false, order: task.order,
-        reviewApprovedAt: null, requiresReview: true, reviewerId: null, reviewerName: null, prLink: null,
+        reviewApprovedAt: null, requiresReview: true, isCancelled: false, cancelNote: null,
+        reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
@@ -419,7 +428,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 }
 
 /* ─── Protected lane names ───────────────────────────── */
-const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Review', 'Done']);
+const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Review', 'Done', 'Cancel']);
 const PROTECTED_TOOLTIP = 'เลนนี้ผูกกับ Squad Board — แก้ไข/ลบไม่ได้';
 
 /* ปิดไว้ชั่วคราว — auto-start timer ตอนลากเข้า In Progress เรียก 2 endpoint
@@ -478,7 +487,7 @@ export default function MyBoardClient({
 
   /* ── Resolve modal state ── */
   const [resolveTarget,      setResolveTarget]      = useState<TaskData | null>(null);
-  const [resolveDestination, setResolveDestination] = useState<'todo' | 'done'>('todo');
+  const [resolveDestination, setResolveDestination] = useState<'todo' | 'done' | 'cancel'>('todo');
   const [resolutionNote,     setResolutionNote]     = useState('');
   const [resolveError,       setResolveError]       = useState('');
   const [resolving,          setResolving]          = useState(false);
@@ -698,6 +707,15 @@ export default function MyBoardClient({
       }
     }
 
+    /* เลน Cancel เข้าได้ทางเดียวผ่าน resolve modal (จาก "การ์ดที่มีปัญหา") เท่านั้น —
+       ห้ามลากการ์ดจากเลนอื่นเข้ามาตรงๆ เด็ดขาด เด้งกลับที่เดิมเสมอถ้าใครลอง (server-side
+       ก็ validate ซ้ำอีกชั้นใน /api/tasks/reorder กันเคสยิง API ตรงๆ ข้าม UI) */
+    if (landedLane?.name === 'Cancel') {
+      showToast('error', 'ย้ายเข้าเลน Cancel ตรงๆ ไม่ได้ — ต้องกด "จัดการปัญหานี้" แล้วเลือกปลายทาง Cancel เท่านั้น');
+      setLanes(preDragRef.current);
+      return;
+    }
+
     /* ── Time tracking intercepts for cross-lane moves ── */
     {
       const preDragSrc = preDragRef.current.find(l => l.tasks.some(t => t.id === activeId));
@@ -789,7 +807,7 @@ export default function MyBoardClient({
 
   async function submitResolve() {
     if (!resolutionNote.trim()) {
-      setResolveError('กรุณาอธิบายวิธีแก้ไขก่อนยืนยัน — ต้องมีเหตุผลเสมอ ห้ามเว้นว่าง');
+      setResolveError('กรุณากรอกเหตุผลก่อนยืนยัน — ต้องมีเหตุผลเสมอ ห้ามเว้นว่าง');
       return;
     }
     if (!resolveTarget) return;
@@ -799,18 +817,24 @@ export default function MyBoardClient({
       body: JSON.stringify({ hasIssue: false, resolutionNote: resolutionNote.trim(), destination: resolveDestination }),
     });
     if (res.ok) {
-      const doneLane  = lanesRef.current.find(l => l.name === 'Done');
-      const firstLane = lanesRef.current[0];
-      const targetLane = resolveDestination === 'done' ? (doneLane ?? firstLane) : firstLane;
-      const resolvedTask = { ...resolveTarget, hasIssue: false };
+      const doneLane   = lanesRef.current.find(l => l.name === 'Done');
+      const cancelLane = lanesRef.current.find(l => l.name === 'Cancel');
+      const firstLane  = lanesRef.current[0];
+      const targetLane =
+        resolveDestination === 'done'   ? (doneLane ?? firstLane) :
+        resolveDestination === 'cancel' ? (cancelLane ?? firstLane) :
+        firstLane;
+      const resolvedTask = resolveDestination === 'cancel'
+        ? { ...resolveTarget, isCancelled: true, cancelNote: resolutionNote.trim() } // hasIssue คงเดิม (true)
+        : { ...resolveTarget, hasIssue: false };
       const next = lanesRef.current.map(l => {
         const cleaned = l.tasks.filter(t => t.id !== resolveTarget.id);
         if (targetLane && l.id === targetLane.id) {
           return {
             ...l,
-            tasks: resolveDestination === 'done'
-              ? [...cleaned, resolvedTask]   // append ท้าย Done
-              : [resolvedTask, ...cleaned],  // prepend หัว To Do
+            tasks: resolveDestination === 'todo'
+              ? [resolvedTask, ...cleaned]  // prepend หัว To Do
+              : [...cleaned, resolvedTask], // append ท้าย Done/Cancel
           };
         }
         return { ...l, tasks: cleaned };
@@ -1441,38 +1465,38 @@ export default function MyBoardClient({
       {resolveTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
           <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
-            <h3 className="text-[15px] font-semibold text-success mb-1">✓ ยืนยันว่าแก้ไขปัญหาแล้ว</h3>
-            <p className="text-[12.5px] text-txt-secondary mb-4">
-              {resolveDestination === 'done'
-                ? 'งานนี้จะย้ายตรงไป "Done" และปลด flag ปัญหาออก'
-                : 'งานนี้จะกลับไปอยู่เลน "To Do" และปลด flag ปัญหาออก'}
-            </p>
+            <h3 className="text-[15px] font-semibold text-success mb-1">จัดการการ์ดที่มีปัญหา</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-4">เลือกว่าจะย้ายงานนี้ไปไหนหลังปลด flag ปัญหาออก</p>
 
             {/* Destination radio */}
             <label className="block text-[12px] text-txt-secondary mb-2">ย้ายกลับไปที่</label>
-            <div className="flex gap-3 mb-4">
-              {(['todo', 'done'] as const).map(opt => (
-                <label key={opt} className={`flex-1 flex items-center gap-2.5 border rounded-lg px-3 py-2.5 cursor-pointer transition-colors ${
-                  resolveDestination === opt
+            <div className="flex flex-col gap-2 mb-4">
+              {([
+                { v: 'todo' as const,   label: 'To Do',       hint: 'ต้องทำงานต่อ / ต้องผ่าน review ใหม่ตามปกติ' },
+                { v: 'done' as const,   label: 'Done',        hint: 'แก้บั๊กเสร็จสมบูรณ์แล้ว ไม่ต้อง review ซ้ำ' },
+                { v: 'cancel' as const, label: '🚫 Cancel',   hint: 'เปิดผิด/เปิดซ้ำ ไม่ต้องทำต่อเลย ย้ายเข้าเลน Cancel' },
+              ]).map(({ v, label, hint }) => (
+                <label key={v} className={`flex items-start gap-2.5 border rounded-lg px-3 py-2.5 cursor-pointer transition-colors text-[12px] leading-[1.5] ${
+                  resolveDestination === v
                     ? 'border-accent bg-accent/10 text-txt-primary'
                     : 'border-app-border bg-surface-2 text-txt-secondary hover:border-[#3a3f4d]'
                 }`}>
                   <input
                     type="radio"
                     name="resolveDestination"
-                    value={opt}
-                    checked={resolveDestination === opt}
-                    onChange={() => setResolveDestination(opt)}
-                    className="accent-accent"
+                    value={v}
+                    checked={resolveDestination === v}
+                    onChange={() => setResolveDestination(v)}
+                    className="accent-accent mt-0.5 flex-shrink-0"
                   />
-                  <span className="text-[13px]">{opt === 'todo' ? 'To Do' : 'Done'}</span>
-                  {opt === 'todo' && <span className="text-[11px] text-txt-muted ml-auto">(ค่าเริ่มต้น)</span>}
+                  <span><b className="text-txt-primary">{label}</b> — {hint}</span>
                 </label>
               ))}
             </div>
 
             <label className="block text-[12px] text-txt-secondary mb-1.5">
-              อธิบายว่าแก้ไขปัญหานี้ยังไง <span className="text-danger">(จำเป็นต้องกรอก)</span>
+              อธิบายเหตุผล (จำเป็นต้องกรอกเสมอ ไม่ว่าจะเลือกปลายทางไหน — เช่น วิธีแก้บั๊ก หรือเหตุผลที่ยกเลิก)
+              <span className="text-danger"> (จำเป็นต้องกรอก)</span>
             </label>
             <textarea
               value={resolutionNote}
@@ -1490,7 +1514,9 @@ export default function MyBoardClient({
               </button>
               <button onClick={submitResolve} disabled={resolving || !resolutionNote.trim()}
                 className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${resolving ? 'btn-loading' : ''}`}>
-                {resolveDestination === 'done' ? 'ยืนยันและย้ายไป Done' : 'ยืนยันและกลับไป To Do'}
+                {resolveDestination === 'done' ? 'ยืนยันและย้ายไป Done'
+                  : resolveDestination === 'cancel' ? 'ยืนยันและยกเลิกงานนี้'
+                  : 'ยืนยันและกลับไป To Do'}
               </button>
             </div>
           </div>

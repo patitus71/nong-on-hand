@@ -16,7 +16,10 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
   const [task, targetLane] = await Promise.all([
     prisma.task.findUnique({
       where:  { id: params.taskId },
-      select: { id: true, squadId: true, reviewApprovedAt: true, requiresReview: true, lane: { select: { name: true } } },
+      select: {
+        id: true, squadId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true,
+        lane: { select: { name: true } },
+      },
     }),
     prisma.lane.findUnique({
       where:  { id: laneId },
@@ -29,6 +32,14 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
 
   const oldLaneName = task.lane?.name ?? '';
   const newLaneName = targetLane.name;
+
+  // เลน Cancel เข้าได้ทางเดียวผ่าน /api/tasks/[taskId]/flag เท่านั้น และเป็น terminal state
+  if (task.isCancelled) {
+    return new Response('งานนี้ถูกยกเลิกแล้ว ย้ายเลนต่อไม่ได้อีก', { status: 403 });
+  }
+  if (newLaneName === 'Cancel') {
+    return new Response('ย้ายเข้าเลน Cancel โดยตรงไม่ได้ — ต้องกด "จัดการปัญหานี้" แล้วเลือกปลายทาง Cancel เท่านั้น', { status: 403 });
+  }
 
   // QA_ENGINEER moving squad task to Done requires review approval — ยกเว้นงานที่ตั้ง
   // requiresReview: false ไว้ (งานแยกที่ไม่จำเป็นต้อง review)

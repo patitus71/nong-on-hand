@@ -14,10 +14,11 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
 
   const task = await prisma.task.findUnique({
     where: { id: params.taskId },
-    select: { id: true, squadId: true, laneId: true },
+    select: { id: true, squadId: true, laneId: true, isCancelled: true },
   });
   if (!task) return new Response('Not Found', { status: 404 });
   if (!task.squadId) return new Response('Task has no squad', { status: 400 });
+  if (task.isCancelled) return new Response('งานนี้ถูกยกเลิกแล้ว claim ต่อไม่ได้อีก', { status: 403 });
 
   // Verify assignee belongs to the same squad (ADMIN exempt)
   if (user.role !== 'ADMIN') {
