@@ -1172,7 +1172,9 @@ export default function MyBoardClient({
                 onPrLinkSave={handlePrLinkSave}
                 savingTaskIds={savingTaskIds}
               />
-              <AddTaskForm laneId={lane.id} squadId={userSquadId} onCreated={t => onTaskCreated(lane.id, t)} />
+              {lane.name === 'To Do' && (
+                <AddTaskForm laneId={lane.id} squadId={userSquadId} onCreated={t => onTaskCreated(lane.id, t)} />
+              )}
             </div>
           ))}
 
