@@ -84,16 +84,16 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
         },
       });
 
-      const dueDateStr = updated.dueDate ? thaiDate(updated.dueDate) : 'ไม่ระบุ';
+      const dueDateStr = updated.dueDate ? thaiDate(updated.dueDate) : 'Not specified';
 
       const ctx = new MentionContext();
       const mention = ctx.slot(assignee.lineDisplayName ?? assignee.name, assignee.lineUserId);
       const text = [
-        `📌 ${mention} ได้รับมอบหมายงานใหม่`,
-        `งาน: ${updated.title}`,
+        `📌 ${mention} assigned a new task`,
+        `Task: ${updated.title}`,
         `Squad: ${squad.name}`,
-        `มอบหมายโดย: ${user.name}`,
-        `กำหนดเสร็จ: ${dueDateStr}`,
+        `Assigned by: ${user.name}`,
+        `Due: ${dueDateStr}`,
       ].join('\n');
       await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
     } catch (err) {

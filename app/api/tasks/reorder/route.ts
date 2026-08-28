@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
+import { sendLineGroupMessageWithMention, MentionContext } from '@/lib/lineNotify';
 
 // Personal lane name → squad lane name for tasks that belong to a squad.
 // 'Review' is intentionally absent: tasks in personal Review lane keep the personal laneId
@@ -34,7 +35,10 @@ export async function PATCH(req: Request) {
   // Fetch tasks — include current laneId and reviewApprovedAt for guards
   const tasksRaw = await prisma.task.findMany({
     where:  { id: { in: taskIds } },
-    select: { id: true, squadId: true, laneId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true },
+    select: {
+      id: true, squadId: true, laneId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true,
+      reviewerId: true, title: true, prLink: true, assigneeId: true,
+    },
   });
   const taskById = new Map(tasksRaw.map(t => [t.id, t]));
 
@@ -167,6 +171,66 @@ export async function PATCH(req: Request) {
       }),
     ),
   );
+
+  // LINE notification — เฉพาะ task ที่ "ย้ายเข้า Review lane จริงในรอบนี้" และตั้ง reviewer
+  // ใหม่จริง (ต่างจากค่าเดิม) เท่านั้น กัน reorder ทั้งบอร์ด (ทุก task ทุกเลนถูกส่งมาด้วยเสมอ)
+  // ยิงแจ้งเตือนซ้ำให้ task อื่นที่บังเอิญค้างอยู่ใน Review lane
+  const reviewRequests = resolved
+    .filter(({ id, laneId, itemReviewerId, moved }) => {
+      if (!moved || !itemReviewerId) return false;
+      if (laneById.get(laneId)?.name !== 'Review') return false;
+      const task = taskById.get(id);
+      return itemReviewerId !== task?.reviewerId;
+    })
+    .map(({ id, itemReviewerId }) => ({ taskId: id, reviewerId: itemReviewerId! }));
+
+  if (reviewRequests.length > 0) {
+    void (async () => {
+      for (const { taskId, reviewerId } of reviewRequests) {
+        try {
+          const task = taskById.get(taskId);
+          if (!task?.squadId) continue;
+
+          const [reviewer, squad, assignee] = await Promise.all([
+            prisma.user.findUnique({
+              where:  { id: reviewerId },
+              select: { name: true, lineUserId: true, lineDisplayName: true },
+            }),
+            prisma.squad.findUnique({
+              where:  { id: task.squadId },
+              select: { name: true, lineGroupId: true },
+            }),
+            task.assigneeId
+              ? prisma.user.findUnique({ where: { id: task.assigneeId }, select: { name: true } })
+              : Promise.resolve(null),
+          ]);
+
+          if (!squad?.lineGroupId || !reviewer) continue;
+
+          await prisma.notification.create({
+            data: {
+              userId:        reviewerId,
+              message:       `งาน "${task.title}" ต้องการให้คุณ Review`,
+              relatedTaskId: taskId,
+            },
+          });
+
+          const ctx = new MentionContext();
+          const mention = ctx.slot(reviewer.lineDisplayName ?? reviewer.name, reviewer.lineUserId);
+          const text = [
+            `🔍 ${mention} received a review request`,
+            `Task: ${task.title}`,
+            `Squad: ${squad.name}`,
+            `Sent by: ${assignee?.name ?? session.user?.name ?? 'Unknown'}`,
+            ...(task.prLink ? [`🔗 PR: ${task.prLink}`] : []),
+          ].join('\n');
+          await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+        } catch (err) {
+          console.error('[reorder] LINE review-request notification error:', err);
+        }
+      }
+    })();
+  }
 
   revalidatePath('/my-board');
   revalidatePath('/squads/[squadId]', 'page');
