@@ -16,6 +16,7 @@ import {
   sendLineGroupMessageWithMention,
   MentionContext,
   thaiDate,
+  friendlyLineErrorReason,
 } from '@/lib/lineNotify';
 
 export async function POST(req: Request) {
@@ -52,7 +53,9 @@ export async function POST(req: Request) {
     byGroup.get(gid)!.push({ id: s.id, name: s.name });
   }
 
-  let sentMessages = 0;
+  let sentMessages   = 0;
+  let failedMessages = 0;
+  const failureReasons = new Set<string>();
 
   for (const [groupId, groupSquads] of Array.from(byGroup)) {
     const ctx = new MentionContext();
@@ -85,15 +88,19 @@ export async function POST(req: Request) {
       if (r.success) {
         sentMessages++;
       } else {
+        failedMessages++;
+        failureReasons.add(friendlyLineErrorReason(r.reason));
         console.error(`[send-all/${type}] group=${groupId} chunk=${i}:`, r.reason);
       }
     }
   }
 
   return Response.json({
-    ok:           true,
+    ok:              true,
     sentMessages,
-    totalSquads:  squads.length,
-    groupCount:   byGroup.size,
+    failedMessages,
+    failureReasons:  Array.from(failureReasons),
+    totalSquads:     squads.length,
+    groupCount:      byGroup.size,
   });
 }

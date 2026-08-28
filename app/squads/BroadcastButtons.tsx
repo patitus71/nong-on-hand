@@ -17,14 +17,21 @@ export default function BroadcastButtons() {
       });
       const data = await res.json();
       if (data.ok) {
-        const { sentMessages, totalSquads, groupCount } = data;
+        const { sentMessages, failedMessages, failureReasons, totalSquads, groupCount } = data;
         if (totalSquads === 0) {
           setToast('ℹ️ ไม่มี squad ที่ตั้งค่า LINE group ไว้');
         } else {
           const groupNote = groupCount < totalSquads
             ? ` (${totalSquads} squad รวมเป็น ${groupCount} กลุ่ม ตาม LINE group)`
             : ` (${totalSquads} squad)`;
-          setToast(`✅ ส่งแล้ว ${sentMessages} ข้อความ${groupNote}`);
+          const reasonNote = failureReasons?.length ? ` — ${failureReasons.join(', ')}` : '';
+          if (failedMessages > 0 && sentMessages === 0) {
+            setToast(`⚠️ ส่งแจ้งเตือน LINE ไม่สำเร็จเลย (0/${failedMessages} ข้อความ)${reasonNote}`);
+          } else if (failedMessages > 0) {
+            setToast(`⚠️ ส่งได้บางส่วน ${sentMessages}/${sentMessages + failedMessages} ข้อความ${groupNote}${reasonNote}`);
+          } else {
+            setToast(`✅ ส่งแล้ว ${sentMessages} ข้อความ${groupNote}`);
+          }
         }
       } else {
         setToast(`❌ ${data.reason ?? 'เกิดข้อผิดพลาด'}`);

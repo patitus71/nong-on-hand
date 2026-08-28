@@ -135,6 +135,16 @@ export async function replyLineMessage(
   }
 }
 
+/** แปลง reason ดิบจาก LINE API ให้เป็นข้อความที่ user อ่านเข้าใจได้ */
+export function friendlyLineErrorReason(reason: string | undefined): string {
+  if (!reason) return 'ไม่ทราบสาเหตุ';
+  if (reason.includes('monthly limit')) return 'โควตาข้อความ LINE เต็มเดือนนี้';
+  if (reason.includes('LINE_CHANNEL_ACCESS_TOKEN')) return 'ยังไม่ได้ตั้งค่า LINE token';
+  if (reason.includes('Network error')) return 'เชื่อมต่อ LINE API ไม่ได้';
+  if (/LINE API error \d+/.test(reason)) return 'LINE API ปฏิเสธคำขอ — ดู log ฝั่ง server';
+  return reason;
+}
+
 /** แปลงวันที่เป็น dd/MM/พศ (พุทธศักราช) */
 export function thaiDate(d: Date): string {
   const day   = d.getDate().toString().padStart(2, '0');

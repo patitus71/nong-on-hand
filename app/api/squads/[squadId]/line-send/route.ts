@@ -13,6 +13,7 @@ import {
 import {
   sendLineGroupMessageWithMention,
   MentionContext,
+  friendlyLineErrorReason,
 } from '@/lib/lineNotify';
 
 export async function POST(
@@ -60,5 +61,8 @@ export async function POST(
     console.error(`[line-send/${type}] squad=${squad.name}:`, result.reason);
   }
 
-  return Response.json({ ok: result.success, reason: result.reason });
+  return Response.json({
+    ok:     result.success,
+    reason: result.success ? undefined : friendlyLineErrorReason(result.reason),
+  });
 }

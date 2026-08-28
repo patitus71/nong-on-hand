@@ -224,7 +224,8 @@ export async function PATCH(req: Request) {
             `Sent by: ${assignee?.name ?? session.user?.name ?? 'Unknown'}`,
             ...(task.prLink ? [`🔗 PR: ${task.prLink}`] : []),
           ].join('\n');
-          await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+          const r = await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+          if (!r.success) console.error('[reorder] LINE review-request notification failed:', r.reason);
         } catch (err) {
           console.error('[reorder] LINE review-request notification error:', err);
         }

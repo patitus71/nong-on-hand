@@ -95,7 +95,8 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
         `Assigned by: ${user.name}`,
         `Due: ${dueDateStr}`,
       ].join('\n');
-      await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+      const r = await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+      if (!r.success) console.error('[claim] LINE assign notification failed:', r.reason);
     } catch (err) {
       console.error('[claim] LINE notification error:', err);
     }

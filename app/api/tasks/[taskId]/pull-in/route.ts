@@ -130,7 +130,8 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
           `Assigned by: ${user.name}`,
           `Due: ${dueDateStr}`,
         ].join('\n');
-        await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+        const r = await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
+        if (!r.success) console.error('[pull-in] LINE assign notification failed:', r.reason);
       } catch (err) {
         console.error('[pull-in] LINE notification error:', err);
       }
