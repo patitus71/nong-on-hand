@@ -9,7 +9,8 @@ export async function DELETE(
 ) {
   const session = await getServerSession(authOptions);
   const actor = session?.user as SessionUser | undefined;
-  requireAdmin(actor);
+  const denied = requireAdmin(actor);
+  if (denied) return denied;
 
   const { userId } = params;
 
@@ -17,7 +18,8 @@ export async function DELETE(
     return new Response('ไม่สามารถลบบัญชีตัวเองได้', { status: 400 });
   }
 
-  await assertNotLastAdmin(userId).catch((r: Response) => { throw r; });
+  const lastAdminDenied = await assertNotLastAdmin(userId);
+  if (lastAdminDenied) return lastAdminDenied;
 
   await prisma.user.update({
     where: { id: userId },

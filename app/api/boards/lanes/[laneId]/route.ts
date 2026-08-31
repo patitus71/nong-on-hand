@@ -1,11 +1,13 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { canEditMyBoardLanes, type SessionUser } from '@/lib/rbac';
 
 export async function DELETE(_req: Request, { params }: { params: { laneId: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
-  const user = session.user as any;
+  const user = session.user as SessionUser;
+  if (!canEditMyBoardLanes(user)) return new Response('Forbidden', { status: 403 });
 
   const lane = await prisma.lane.findUnique({
     where: { id: params.laneId },

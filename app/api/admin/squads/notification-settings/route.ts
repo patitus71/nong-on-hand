@@ -7,7 +7,8 @@ import { requireAdmin, type SessionUser } from '@/lib/rbac';
 // สำหรับทีมที่ไม่ต้องแยกเวลาต่อ squad — ลดจำนวนคลิกตั้งค่าทีละ squad
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const body = await req.json() as {
     standupAutoSendEnabled: boolean;

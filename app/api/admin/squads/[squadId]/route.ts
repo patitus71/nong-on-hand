@@ -5,7 +5,8 @@ import { requireAdmin, type SessionUser } from '@/lib/rbac';
 
 export async function DELETE(_req: Request, { params }: { params: { squadId: string } }) {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const squad = await prisma.squad.findUnique({ where: { id: params.squadId } });
   if (!squad) return new Response('Not found', { status: 404 });
@@ -28,7 +29,8 @@ export async function DELETE(_req: Request, { params }: { params: { squadId: str
 
 export async function PATCH(req: Request, { params }: { params: { squadId: string } }) {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const body = await req.json() as {
     name?: string;

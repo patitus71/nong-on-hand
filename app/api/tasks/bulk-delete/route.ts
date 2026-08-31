@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { canDeleteTask, type SessionUser } from '@/lib/rbac';
+import { canBulkSelectForDelete, type SessionUser } from '@/lib/rbac';
 import { buildTaskDeletionNotifications } from '@/lib/notifications';
 import { revalidatePath } from 'next/cache';
 
@@ -32,7 +32,7 @@ export async function DELETE(req: Request) {
   });
 
   for (const task of tasks) {
-    if (!canDeleteTask(user, task)) {
+    if (!canBulkSelectForDelete(user, task)) {
       return new Response(`Forbidden — ไม่มีสิทธิ์ลบงาน "${task.title}"`, { status: 403 });
     }
   }

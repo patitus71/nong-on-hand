@@ -1,13 +1,13 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { requireAdmin, canResetPassword, type SessionUser } from '@/lib/rbac';
+import { canResetPassword, type SessionUser } from '@/lib/rbac';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request, { params }: { params: { userId: string } }) {
   const session = await getServerSession(authOptions);
   const actor = session?.user as SessionUser | undefined;
-  requireAdmin(actor);
+  if (!actor) return new Response('Unauthorized', { status: 401 });
 
   const { password } = await req.json() as { password?: string };
   if (!password || password.length < 6) {

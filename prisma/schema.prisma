@@ -142,6 +142,7 @@ model Task {
   issueNote     String?   // โน้ตปัญหาปัจจุบัน
   isCancelled   Boolean   @default(false) // true = ถูกยกเลิกผ่าน resolve modal (destination=cancel) — terminal state, ห้ามเปลี่ยน laneId อีก
   cancelNote    String?   // เหตุผลที่ยกเลิก (= resolutionNote ตอน resolve) — hasIssue ยังคงเป็น true ต่อไปเสมอตอน cancel เพื่อให้ Squad Board ยังจัดอยู่บัคเก็ต "มีปัญหา"
+  cancelledAt   DateTime? // set ตอน isCancelled กลายเป็น true — ใช้กรอง "Cancel (today)" ใน EOD
   source        TaskSource @default(MANUAL) // MANUAL = สร้างเอง, IMPORTED = มาจาก import CSV/Excel
   importBatchId String?
   importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id])

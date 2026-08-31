@@ -74,7 +74,7 @@ export async function GET(req: Request) {
     const ctx      = new MentionContext();
     const ictNow   = new Date(Date.now() + 7 * 60 * 60 * 1000);
     const todayTH  = thaiDate(ictNow);
-    const parts: string[] = [`EOD Summary — (${todayTH})\nDone · In Progress · In Review · 🚩 Issue`];
+    const parts: string[] = [`EOD Summary — (${todayTH})`];
 
     for (const sq of groupSquads) {
       parts.push(await buildEodBlock(sq.id, sq.name, ctx));

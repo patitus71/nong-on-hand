@@ -3,11 +3,12 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import { ensurePersonalCancelLane } from '@/lib/personalBoard';
+import { canEditTaskContent, type SessionUser } from '@/lib/rbac';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
-  const user = session.user as any;
+  const user = session.user as SessionUser;
 
   const { hasIssue, issueNote, resolutionNote, destination } = await req.json();
 
@@ -19,6 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     },
   });
   if (!task) return new Response('Not Found', { status: 404 });
+  if (!canEditTaskContent(user, task)) return new Response('Forbidden', { status: 403 });
   if (task.isCancelled) return new Response('งานนี้ถูกยกเลิกแล้ว แก้ไขต่อไม่ได้อีก', { status: 403 });
 
   if (hasIssue) {
@@ -102,7 +104,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
         where: { id: params.taskId },
         data: {
           ...(resolveDestination === 'cancel'
-            ? { isCancelled: true, cancelNote: resolutionNote.trim() } // hasIssue/issueNote คงเดิม
+            ? { isCancelled: true, cancelNote: resolutionNote.trim(), cancelledAt: new Date() } // hasIssue/issueNote คงเดิม
             : { hasIssue: false, issueNote: null }),
           ...(targetLaneId ? { laneId: targetLaneId } : {}),
         },

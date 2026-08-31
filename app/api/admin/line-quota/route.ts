@@ -11,7 +11,8 @@ import { requireAdmin, type SessionUser } from '@/lib/rbac';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) return new Response('LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า', { status: 500 });

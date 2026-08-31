@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import type { SessionUser } from '@/lib/rbac';
+import { canEditSquadBoard, type SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
 import { resolveTimerAction, startTimer, stopTimer } from '@/lib/autoTimeTracking';
 
@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     prisma.task.findUnique({
       where:  { id: params.taskId },
       select: {
-        id: true, squadId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true,
+        id: true, squadId: true, assigneeId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true,
         lane: { select: { name: true } },
       },
     }),
@@ -29,6 +29,15 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
 
   if (!task) return new Response('Not Found', { status: 404 });
   if (!targetLane) return new Response('Lane not found', { status: 404 });
+
+  // ใครย้ายการ์ดนี้ได้: ADMIN เสมอ, เจ้าของงาน (my-board), หรือคนแก้ไข Squad Board ของ squad นั้นได้
+  // (ADMIN/QA_LEAD เจ้าของ squad) — QA_MANAGER/QA_ENGINEER-นอกทีม/floating-pool ที่ไม่ใช่เจ้าของงาน
+  // ต้องถูกบล็อก (floating pool ลากการ์ดของคนอื่นเองไม่ได้ตามสเปค 2.13)
+  const canMove =
+    user.role === 'ADMIN' ||
+    task.assigneeId === user.id ||
+    (!!task.squadId && canEditSquadBoard(user, task.squadId));
+  if (!canMove) return new Response('Forbidden', { status: 403 });
 
   const oldLaneName = task.lane?.name ?? '';
   const newLaneName = targetLane.name;

@@ -5,7 +5,8 @@ import { requireAdmin, type SessionUser } from '@/lib/rbac';
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const squads = await prisma.squad.findMany({
     select: {
@@ -26,7 +27,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const { name } = await req.json() as { name?: string };
   const trimmed = name?.trim();

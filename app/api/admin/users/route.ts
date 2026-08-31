@@ -12,7 +12,8 @@ const userSelect = {
 
 export async function GET() {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
@@ -26,7 +27,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  requireAdmin(session?.user as SessionUser | undefined);
+  const denied = requireAdmin(session?.user as SessionUser | undefined);
+  if (denied) return denied;
 
   const { name, username, password, role, squadId } = await req.json() as {
     name?: string; username?: string; password?: string;
@@ -64,7 +66,8 @@ export async function POST(req: Request) {
 export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   const actor = session?.user as SessionUser | undefined;
-  requireAdmin(actor);
+  const denied = requireAdmin(actor);
+  if (denied) return denied;
 
   const body = await req.json() as {
     userId: string; name?: string; role?: string; active?: boolean; squadId?: string | null;
@@ -83,12 +86,14 @@ export async function PATCH(req: Request) {
       return new Response('Forbidden: cannot assign this role', { status: 403 });
     }
     if (role !== target.role) {
-      await assertNotLastAdmin(userId).catch((r: Response) => { throw r; });
+      const lastAdminDenied = await assertNotLastAdmin(userId);
+      if (lastAdminDenied) return lastAdminDenied;
     }
   }
 
   if (active === false && target.active) {
-    await assertNotLastAdmin(userId).catch((r: Response) => { throw r; });
+    const lastAdminDenied = await assertNotLastAdmin(userId);
+    if (lastAdminDenied) return lastAdminDenied;
   }
 
   // QA_MANAGER / ADMIN ไม่ผูก squad — auto-clear เมื่อเปลี่ยน role มาเป็น 2 role นี้

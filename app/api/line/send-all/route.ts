@@ -72,7 +72,7 @@ export async function POST(req: Request) {
       const ictOffset = 7 * 60 * 60 * 1000;
       const todayICT  = new Date(Date.now() + ictOffset);
       const todayTH   = thaiDate(todayICT);
-      const parts: string[] = [`EOD Summary — (${todayTH})\nDone · In Progress · In Review · 🚩 Issue`];
+      const parts: string[] = [`EOD Summary — (${todayTH})`];
       for (const sq of groupSquads) {
         parts.push(await buildEodBlock(sq.id, sq.name, ctx));
       }

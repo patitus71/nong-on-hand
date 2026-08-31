@@ -15,44 +15,54 @@ export type SessionUser = {
 
 // ─── Basic Guards ──────────────────────────────────────────────────────────────
 
-/** ใช้กับ API route ที่ ADMIN เท่านั้นเข้าได้ */
-export function requireAdmin(user: SessionUser | null | undefined) {
+// หมายเหตุ: ฟังก์ชันกลุ่ม require*/assertNotLastAdmin เดิม throw new Response(...) ตรงๆ —
+// Next.js App Router Route Handler ไม่รองรับ pattern นี้ (ไม่เหมือน redirect()/notFound() ของ
+// next/navigation ที่มี digest พิเศษ) thrown Response กลายเป็น unhandled exception → 500 เปล่าๆ
+// เสมอ ไม่ว่า role จะถูกหรือผิด — เปลี่ยนเป็น return ค่า Response | null แทน ผู้เรียกต้องเช็คเอง
+
+/** ใช้กับ API route ที่ ADMIN เท่านั้นเข้าได้ — return Response ถ้าห้าม, null ถ้าผ่าน */
+export function requireAdmin(user: SessionUser | null | undefined): Response | null {
   if (!user || user.role !== "ADMIN") {
-    throw new Response("Forbidden", { status: 403 });
+    return new Response("Forbidden", { status: 403 });
   }
+  return null;
 }
 
-/** ADMIN หรือ QA_LEAD เข้าได้ */
-export function requireAdminOrQaLead(user: SessionUser | null | undefined) {
+/** ADMIN หรือ QA_LEAD เข้าได้ — return Response ถ้าห้าม, null ถ้าผ่าน */
+export function requireAdminOrQaLead(user: SessionUser | null | undefined): Response | null {
   if (!user || (user.role !== "ADMIN" && user.role !== "QA_LEAD")) {
-    throw new Response("Forbidden", { status: 403 });
+    return new Response("Forbidden", { status: 403 });
   }
+  return null;
 }
 
-export function requireRole(user: SessionUser | null | undefined, allowed: SessionUser["role"][]) {
+export function requireRole(user: SessionUser | null | undefined, allowed: SessionUser["role"][]): Response | null {
   if (!user || !allowed.includes(user.role)) {
-    throw new Response("Forbidden", { status: 403 });
+    return new Response("Forbidden", { status: 403 });
   }
+  return null;
 }
 
 /**
  * Last-admin guard: ป้องกันไม่ให้ระบบเหลือ ADMIN 0 คน
  * เรียกก่อน demote role, set active=false, หรือ soft-delete user ที่เป็น ADMIN
+ * return Response ถ้าห้าม, null ถ้าผ่าน
  */
-export async function assertNotLastAdmin(targetUserId: string) {
+export async function assertNotLastAdmin(targetUserId: string): Promise<Response | null> {
   const target = await prisma.user.findUnique({ where: { id: targetUserId } });
-  if (!target || target.role !== "ADMIN") return;
+  if (!target || target.role !== "ADMIN") return null;
 
   const adminCount = await prisma.user.count({
     where: { role: "ADMIN", active: true, deletedAt: null, id: { not: targetUserId } },
   });
 
   if (adminCount === 0) {
-    throw new Response(
+    return new Response(
       "ไม่สามารถลบ/ปิดใช้งาน หรือลด role ของ Admin คนสุดท้ายในระบบได้",
       { status: 400 }
     );
   }
+  return null;
 }
 
 // ─── Scope & Visibility ────────────────────────────────────────────────────────

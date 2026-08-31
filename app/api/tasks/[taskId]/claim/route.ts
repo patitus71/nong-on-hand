@@ -3,11 +3,13 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ensureSquadBoard } from '@/lib/squadBoard';
 import { sendLineGroupMessageWithMention, MentionContext, thaiDate } from '@/lib/lineNotify';
+import { canAssignTaskOnSquadBoard, type SessionUser } from '@/lib/rbac';
+import { canAssignTaskTo } from '@/lib/importTasks';
 
 export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
-  const user = session.user as any;
+  const user = session.user as SessionUser & { name: string };
 
   const { assigneeId } = await req.json();
   if (!assigneeId) return new Response('assigneeId required', { status: 400 });
@@ -19,16 +21,16 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
   if (!task) return new Response('Not Found', { status: 404 });
   if (!task.squadId) return new Response('Task has no squad', { status: 400 });
   if (task.isCancelled) return new Response('งานนี้ถูกยกเลิกแล้ว claim ต่อไม่ได้อีก', { status: 403 });
+  if (!canAssignTaskOnSquadBoard(user, task.squadId)) {
+    return new Response('Forbidden', { status: 403 });
+  }
 
-  // Verify assignee belongs to the same squad (ADMIN exempt)
-  if (user.role !== 'ADMIN') {
-    const assignee = await prisma.user.findUnique({
-      where: { id: assigneeId },
-      select: { squadId: true },
-    });
-    if (!assignee || assignee.squadId !== task.squadId) {
-      return new Response('Invalid assignee', { status: 400 });
-    }
+  const assignee = await prisma.user.findUnique({
+    where: { id: assigneeId },
+    select: { role: true, squadId: true },
+  });
+  if (!assignee || !canAssignTaskTo(user, assignee)) {
+    return new Response('Invalid assignee', { status: 400 });
   }
 
   // Find "To do" lane in the squad's SQUAD board — auto-create board if it doesn't exist yet

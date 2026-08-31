@@ -110,8 +110,12 @@ export default function SquadBoardClient({
       body:    JSON.stringify({ name, ...(newSprintEndDate ? { plannedEndDate: newSprintEndDate } : {}) }),
     });
     if (res.ok) {
+      const data = await res.json();
       setShowOpenSprint(false);
       setNewSprintName('');
+      if (data.carriedCount > 0) {
+        alert(`เปิด Sprint ใหม่แล้ว — ดึงงานค้าง ${data.carriedCount} งานจาก sprint เก่าเข้ามาด้วย`);
+      }
       router.refresh();
     } else {
       setOpenSprintError(await res.text());

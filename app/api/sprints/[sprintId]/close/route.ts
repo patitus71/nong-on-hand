@@ -5,6 +5,8 @@ import { prisma } from '@/lib/prisma';
 import type { SessionUser } from '@/lib/rbac';
 import { canManageSprint } from '@/lib/rbac';
 import { countUnfinishedTasks } from '@/lib/sprint';
+import { buildEndOfSprintReport } from '@/lib/squadLineMessages';
+import { sendLineTextMessage } from '@/lib/lineNotify';
 
 export async function PATCH(req: NextRequest, { params }: { params: { sprintId: string } }) {
   const session = await getSession();
@@ -13,7 +15,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { sprintId: 
 
   const sprint = await prisma.sprint.findUnique({
     where: { id: params.sprintId },
-    select: { id: true, squadId: true, status: true },
+    select: {
+      id: true, squadId: true, status: true,
+      squad: { select: { lineGroupId: true } },
+    },
   });
   if (!sprint) return NextResponse.json({ error: 'Sprint not found' }, { status: 404 });
   if (sprint.status === 'CLOSED') return NextResponse.json({ error: 'Sprint already closed' }, { status: 409 });
@@ -35,6 +40,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { sprintId: 
     data: { status: 'CLOSED', closedAt: new Date(), closedById: user.id },
     select: { id: true, name: true, status: true, closedAt: true },
   });
+
+  // End of Sprint report — best-effort, must not fail the close itself
+  if (sprint.squad.lineGroupId) {
+    try {
+      const chunks = await buildEndOfSprintReport(closed.id);
+      for (const chunk of chunks) {
+        const r = await sendLineTextMessage(sprint.squad.lineGroupId, chunk);
+        if (!r.success) console.error(`[sprint/close] End of Sprint LINE send failed:`, r.reason);
+      }
+    } catch (err) {
+      console.error('[sprint/close] End of Sprint report error:', err);
+    }
+  }
 
   return NextResponse.json(closed);
 }
