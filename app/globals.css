@@ -61,3 +61,31 @@ input, button, select, textarea {
 .card-at-risk {
   animation: card-shake 0.4s ease-in-out 3;
 }
+
+/* ── Review-approved card ─────────────────────────────────── */
+/* ตาม design-reference/my-board_14.html เป๊ะๆ — border-color เต็มสีจัดการผ่าน
+   Tailwind (border-success) ใน JSX แล้ว ตรงนี้แค่เพิ่ม border-left หนา + gradient + glow */
+@keyframes review-approved-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 191, 122, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(79, 191, 122, 0.25); }
+}
+.card-review-approved {
+  border-left-width: 5px;
+  background: linear-gradient(135deg, rgba(79, 191, 122, 0.14), rgba(79, 191, 122, 0.04));
+  animation: review-approved-glow 2.2s ease-in-out 3;
+}
+.review-approved-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--success);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 6px;
+  margin: -2px -2px 8px;
+}
+.review-approved-banner .checkmark {
+  font-size: 13px;
+}

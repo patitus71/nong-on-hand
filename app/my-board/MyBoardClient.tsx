@@ -111,6 +111,7 @@ function SortableCard({
   const otFmt     = fmt(task.totalOtMin);
 
   const isReviewLane = laneName === 'Review' && !overlay;
+  const isReviewApprovedBanner = isReviewLane && !!task.reviewApprovedAt;
   const reviewerOptions = isReviewLane && task.squadId
     ? (reviewersBySquad?.[task.squadId] ?? []).filter(r => r.id !== task.assigneeId)
     : [];
@@ -164,7 +165,7 @@ function SortableCard({
       {...attributes} {...listeners}
       className={`bg-surface-2 border rounded-lg p-2.5 transition-colors select-none relative
         ${task.isCancelled ? 'grayscale-[0.4] opacity-75 cursor-default' : 'cursor-grab active:cursor-grabbing'}
-        ${task.hasIssue && !task.isCancelled ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
+        ${isReviewApprovedBanner ? 'card-review-approved border-success' : task.hasIssue && !task.isCancelled ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
         ${isDragging && !overlay ? 'opacity-40' : ''}
         ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#3a3f4d]'}
         ${task.isAtRisk && !isDragging && !overlay ? 'card-at-risk' : ''}
@@ -180,6 +181,11 @@ function SortableCard({
       {task.isAtRisk && !saving && (
         <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10" title={task.riskReason}>🔥</span>
       )}
+      {isReviewApprovedBanner && (
+        <div className="review-approved-banner">
+          <span className="checkmark">✅</span> Review ผ่านแล้ว — พร้อมย้ายไป Done!
+        </div>
+      )}
       <Link
         href={`/tasks/${task.id}`}
         onClick={e => e.stopPropagation()}
@@ -187,7 +193,6 @@ function SortableCard({
         className="block text-[13px] text-txt-primary leading-snug mb-2 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
         {task.hasIssue && !task.isCancelled && <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />}
-        {task.reviewApprovedAt && <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0 mt-[5px]" title="Review ผ่านแล้ว — ย้ายไป Done ได้" />}
         {task.title}
       </Link>
       <div className="flex items-center justify-between">
@@ -711,7 +716,7 @@ export default function MyBoardClient({
 
     if (!over) return;
     const overId  = String(over.id);
-    const current = lanesRef.current;
+    let current = lanesRef.current;
 
     /* Review approval guard: block QA_ENGINEER from dragging squad task to Done without approval */
     const landedLane = current.find(l => l.tasks.some(t => t.id === activeId));
@@ -771,6 +776,20 @@ export default function MyBoardClient({
           setReviewMode(null); setReviewNormalHrs(''); setReviewOtHrs('');
           setReviewReplace(false); setReviewTimeAdded(false); setReviewTimeError('');
           return;
+        }
+
+        // ออกจากเลน Review ไปเลนอื่นที่ไม่ใช่ Done (เช่น bounce กลับ In Progress) — server
+        // (shouldResetReviewApproval ใน /api/tasks/reorder) reset reviewApprovedAt/reviewerId
+        // เสมอในเคสนี้ ต้อง sync local state ด้วย ไม่งั้น banner "Review ผ่านแล้ว" จะค้างอยู่
+        if (srcName === 'Review' && dstName !== 'Done') {
+          current = current.map(l => ({
+            ...l, tasks: l.tasks.map(t =>
+              t.id === activeId ? { ...t, reviewApprovedAt: null, reviewerId: null, reviewerName: null } : t
+            ),
+          }));
+          // else-branch below (dropped without reordering within the lane) never calls setLanes
+          // on its own — push the reset now so the banner clears immediately, not just on reload
+          setLanes(current);
         }
       }
     }
@@ -1016,9 +1035,14 @@ export default function MyBoardClient({
         : null;
       const ok = await saveOrder(lanesRef.current, { [pending.taskId]: pending.reviewerId });
       if (ok) {
+        // เข้าเลน Review รอบใหม่เสมอต้อง reset review approval (shouldResetReviewApproval ฝั่ง
+        // server ก็ทำแบบนี้ใน /api/tasks/reorder) — ต้อง sync local state ด้วยไม่งั้น banner
+        // "Review ผ่านแล้ว" เดิมจะค้างอยู่บนการ์ดทั้งที่ DB reset ไปแล้วจริง
         setLanes(lanesRef.current.map(l => ({
           ...l, tasks: l.tasks.map(t =>
-            t.id === pending.taskId ? { ...t, reviewerId: pending.reviewerId, reviewerName } : t
+            t.id === pending.taskId
+              ? { ...t, reviewerId: pending.reviewerId, reviewerName, reviewApprovedAt: null }
+              : t
           ),
         })));
       }
