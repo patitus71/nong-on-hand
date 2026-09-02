@@ -36,6 +36,12 @@ const SQ_TO_PERSONAL_LANE: Record<string, string> = {
 
 function personalBoardTasksInclude() {
   return {
+    // ticket ที่ถูก cancel (เลน Cancel) แต่ sprint ที่มันสังกัดปิดไปแล้ว ถือว่าจบเรื่องแล้วจริงๆ
+    // ไม่ต้องตามหลอนอยู่ใน My Board อีก (ดูย้อนหลังได้ผ่าน export report ตามปกติ) — sprintId เป็น
+    // null ก็ยังโชว์ตามเดิม (ไม่เคยผูกกับ sprint ไหนเลย)
+    where: {
+      NOT: { isCancelled: true, sprint: { status: 'CLOSED' as const } },
+    },
     orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
     include: {
       squad:    { select: { name: true } },
