@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { fmt, initials, avatarColor } from '@/lib/ui';
@@ -61,6 +61,7 @@ export default function SquadBoardClient({
   canAssign, canApproveReview, canCreateTask, canManageSprint, sprints, activeSprintId, hasOpenSprint,
 }: Props) {
   const router = useRouter();
+  const [sprintNavPending, startSprintNav] = useTransition();
 
   // ── Auto-refresh every 30 s so changes by other users (QA Engineer moving cards)
   // become visible without a manual reload ────────────────────────────────────────
@@ -403,17 +404,24 @@ export default function SquadBoardClient({
 
           {/* Sprint selector */}
           {sprints.length > 0 ? (
-            <select
-              className="bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent"
-              value={activeSprintId ?? ''}
-              onChange={e => router.push(`/squads/${currentSquadId}?sprint=${e.target.value}`)}
-            >
-              {sprints.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.status === 'OPEN' ? '🟢 ' : '🔴 '}{s.name}
-                </option>
-              ))}
-            </select>
+            <div className="inline-flex items-center gap-1.5">
+              <select
+                className={`bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent transition-opacity ${sprintNavPending ? 'opacity-50 pointer-events-none' : ''}`}
+                value={activeSprintId ?? ''}
+                disabled={sprintNavPending}
+                onChange={e => {
+                  const sprintId = e.target.value;
+                  startSprintNav(() => router.push(`/squads/${currentSquadId}?sprint=${sprintId}`));
+                }}
+              >
+                {sprints.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.status === 'OPEN' ? '🟢 ' : '🔴 '}{s.name}
+                  </option>
+                ))}
+              </select>
+              {sprintNavPending && <span className="inline-spinner" />}
+            </div>
           ) : (
             <span className="text-[12px] text-txt-muted bg-surface-1 border border-app-border px-2.5 py-[7px] rounded-md">
               ยังไม่มี Sprint
