@@ -21,12 +21,14 @@ type StandupPerson = {
 };
 
 async function fetchStandupPersons(squadId: string): Promise<Map<string, StandupPerson>> {
+  // laneId, not pulledIntoBoardAt, is the "on board" signal — pulledIntoBoardAt is set
+  // only by the import pull-in flow, so tasks created directly on a board never have it.
   const tasks = await prisma.task.findMany({
     where: {
       squadId,
-      deletedAt:         null,
-      pulledIntoBoardAt: { not: null },
-      laneId:            { not: null },
+      deletedAt:   null,
+      laneId:      { not: null },
+      isCancelled: false,
     },
     select: {
       id: true, title: true, hasIssue: true, issueNote: true, assigneeId: true, laneId: true,
