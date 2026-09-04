@@ -13,6 +13,7 @@
 //     /eod all on HH:MM      — เปิด auto-send EOD ให้ทุก squad พร้อมกัน (ADMIN เท่านั้น)
 //     /eod all off           — ปิด auto-send EOD ทุก squad
 //     /notify status         — ดูสถานะ auto-send ของ squad ที่ผูกกับกลุ่มนี้ (ทุก role)
+//     /mytasks                — สรุปงานของตัวเองใน sprint ที่เปิดอยู่ (ทุก role, ตอบด้วย Reply — ไม่กินโควตา push)
 //
 // หมายเหตุ: คำสั่งตั้งเวลาแบบแยกต่อ squad (/standup on|off เดิม) ถูกถอดออกแล้ว —
 // ตอนนี้ตั้งเวลาแบบรวมทุก squad พร้อมกันเท่านั้น (ผ่าน /standup all, /eod all
@@ -23,7 +24,9 @@
 
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
-import { replyLineMessage } from '@/lib/lineNotify';
+import { replyLineMessage, replyLineMessageWithMention, MentionContext, thaiDate, formatMinutes } from '@/lib/lineNotify';
+import { calcSprintDurationDays } from '@/lib/sprint';
+import { LINE_CHAR_LIMIT } from '@/lib/squadLineMessages';
 
 interface LineEvent {
   type: string;
@@ -70,6 +73,7 @@ const HELP_TEXT =
   '/eod all on HH:MM — เปิด EOD อัตโนมัติทุก squad (ADMIN)\n' +
   '/eod all off — ปิด EOD อัตโนมัติทุก squad (ADMIN)\n\n' +
   '/notify status — เช็คสถานะ standup/EOD ของ squad ที่ผูกกับกลุ่มนี้\n\n' +
+  '/mytasks — สรุปงานของตัวเองใน sprint ที่เปิดอยู่ตอนนี้\n\n' +
   '/help — แสดงข้อความนี้อีกครั้ง\n\n' +
   'ตั้งเวลาแยกเฉพาะ squad ใด squad หนึ่ง → ใช้ Admin Panel → Squads → LINE Auto-Send แทน';
 
@@ -252,6 +256,151 @@ export async function POST(req: Request) {
             event.replyToken,
             `📋 สถานะการแจ้งเตือนตอนนี้\n☀️ Standup: ${standupStatus}\n📊 EOD: ${eodStatus}`,
           );
+        }
+
+      // ────────────────────────────────────────────────────────
+      // /mytasks — สรุปงานของตัวเองใน sprint ที่เปิดอยู่ (ตอบด้วย Reply — ไม่กินโควตา push)
+      // ────────────────────────────────────────────────────────
+      } else if (event.source.groupId && lower === '/mytasks') {
+        const sender = await prisma.user.findFirst({
+          where:  { lineUserId: event.source.userId, deletedAt: null },
+          select: { id: true, name: true, lineDisplayName: true, squadId: true },
+        });
+
+        if (!sender) {
+          if (event.replyToken) {
+            await replyLineMessage(event.replyToken, '❌ ยังไม่ได้เชื่อมบัญชี — พิมพ์ /link <username> ก่อน');
+          }
+          continue;
+        }
+        if (!sender.squadId) {
+          if (event.replyToken) {
+            await replyLineMessage(event.replyToken, '❌ บัญชีนี้ยังไม่ได้ผูกกับ squad ใด ติดต่อ ADMIN');
+          }
+          continue;
+        }
+
+        const sprint = await prisma.sprint.findFirst({
+          where:  { squadId: sender.squadId, status: 'OPEN' },
+          select: { id: true, name: true, startedAt: true, squad: { select: { name: true } } },
+        });
+
+        if (!sprint) {
+          if (event.replyToken) {
+            await replyLineMessage(event.replyToken, '📋 squad นี้ยังไม่มี sprint เปิดอยู่ตอนนี้');
+          }
+          continue;
+        }
+
+        const tasks = await prisma.task.findMany({
+          where:  { assigneeId: sender.id, sprintId: sprint.id, deletedAt: null },
+          select: {
+            id: true, title: true, hasIssue: true, issueNote: true, isCancelled: true,
+            lane:     { select: { name: true } },
+            timeLogs: { select: { normalMinutes: true, otMinutes: true, endAt: true } },
+          },
+          orderBy: { order: 'asc' },
+        });
+
+        if (tasks.length === 0) {
+          if (event.replyToken) {
+            await replyLineMessage(event.replyToken, `📋 คุณยังไม่มีงานใน ${sprint.name} เลย`);
+          }
+          continue;
+        }
+
+        type MyTaskItem = {
+          title:     string;
+          issueNote: string | null;
+          normalMin: number;
+          otMin:     number;
+          hasLog:    boolean;
+          isRunning: boolean;
+        };
+
+        // Bucket order mirrors Standup/EOD's convention: isCancelled ต้องเช็คก่อน hasIssue เสมอ
+        // (hasIssue ค้างเป็น true ตลอดหลัง cancel โดยดีไซน์ — เช็ค hasIssue ก่อนจะทำให้ Cancel
+        // ไม่มีวันโผล่มาเลย ดู comment เดียวกันใน lib/squadLineMessages.ts fetchEodData)
+        const buckets: Record<'done' | 'review' | 'inProgress' | 'todo' | 'issue' | 'cancel', MyTaskItem[]> = {
+          done: [], review: [], inProgress: [], todo: [], issue: [], cancel: [],
+        };
+
+        for (const t of tasks) {
+          const item: MyTaskItem = {
+            title:     t.title,
+            issueNote: t.issueNote,
+            normalMin: t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+            otMin:     t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
+            hasLog:    t.timeLogs.length > 0,
+            isRunning: t.timeLogs.some(l => l.endAt === null),
+          };
+          if (t.isCancelled) { buckets.cancel.push(item); continue; }
+          if (t.hasIssue)    { buckets.issue.push(item); continue; }
+
+          const laneName = t.lane?.name?.toLowerCase();
+          if (laneName === 'done')             buckets.done.push(item);
+          else if (laneName === 'review')      buckets.review.push(item);
+          else if (laneName === 'in progress') buckets.inProgress.push(item);
+          else                                 buckets.todo.push(item); // 'to do' หรือเลนอื่นที่ไม่รู้จัก
+        }
+
+        const doneCount      = buckets.done.length;
+        const remainingCount = buckets.review.length + buckets.inProgress.length + buckets.todo.length + buckets.issue.length;
+
+        const ictOffset = 7 * 60 * 60 * 1000;
+        const startedTH  = thaiDate(new Date(sprint.startedAt.getTime() + ictOffset));
+        const daysPassed = calcSprintDurationDays(sprint.startedAt, new Date());
+
+        const ctx     = new MentionContext();
+        const mention = ctx.slot(sender.lineDisplayName ?? sender.name, event.source.userId);
+
+        const header = [
+          `📋 สรุปงานของ ${mention} — ${sprint.name} (${sprint.squad.name})`,
+          `เปิดเมื่อ ${startedTH} · ผ่านมาแล้ว ${daysPassed} วัน`,
+          '',
+          `✅ เสร็จแล้ว ${doneCount} งาน · เหลือค้าง ${remainingCount} งาน`,
+        ].join('\n');
+
+        const formatTicket = (item: MyTaskItem, showIssueNote: boolean): string => {
+          const lines = [item.title];
+          if (item.hasLog) {
+            let timeLine = `  ⏱️ ${formatMinutes(item.normalMin)}`;
+            if (item.isRunning)        timeLine += ' (กำลังนับอยู่)';
+            else if (item.otMin > 0)   timeLine += ` (OT ${formatMinutes(item.otMin)})`;
+            lines.push(timeLine);
+          }
+          if (showIssueNote && item.issueNote) lines.push(`  🚨 ${item.issueNote}`);
+          return lines.join('\n');
+        };
+
+        const SEP = '━━━━━━━━━━━━━━';
+        const formatCategory = (emoji: string, label: string, items: MyTaskItem[], showIssueNote = false): string | null => {
+          if (items.length === 0) return null;
+          const ticketsText = items.map(it => formatTicket(it, showIssueNote)).join('\n\n');
+          return [SEP, `${emoji} ${label} (${items.length})`, SEP, '', ticketsText].join('\n');
+        };
+
+        const categoryBlocks = [
+          formatCategory('✅', 'Done', buckets.done),
+          formatCategory('🟡', 'In Review', buckets.review),
+          formatCategory('🔵', 'In Progress', buckets.inProgress),
+          formatCategory('⚪', 'To Do', buckets.todo),
+          formatCategory('🚩', 'มีปัญหา', buckets.issue, true),
+          formatCategory('🚫', 'Cancel', buckets.cancel),
+        ].filter((b): b is string => b !== null);
+
+        let finalText = header;
+        let truncated = false;
+        for (const block of categoryBlocks) {
+          const candidate = `${finalText}\n\n${block}`;
+          if (candidate.length > LINE_CHAR_LIMIT) { truncated = true; break; }
+          finalText = candidate;
+        }
+        if (truncated) finalText += '\n\n(แสดงไม่ครบ — ดูทั้งหมดในเว็บ)';
+
+        if (event.replyToken) {
+          const r = await replyLineMessageWithMention(event.replyToken, finalText, ctx);
+          if (!r.success) console.error('[mytasks] LINE reply failed:', r.reason);
         }
       }
     }

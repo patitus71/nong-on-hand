@@ -135,6 +135,39 @@ export async function replyLineMessage(
   }
 }
 
+/**
+ * ตอบกลับในกลุ่มโดยใช้ replyToken พร้อม @mention (textV2 + substitution) —
+ * fallback เป็น "text" ธรรมดาถ้า chunk นี้ไม่มี mention จริง (เหมือน sendLineGroupMessageWithMention)
+ */
+export async function replyLineMessageWithMention(
+  replyToken: string,
+  text:       string,
+  ctx:        MentionContext,
+): Promise<{ success: boolean; reason?: string }> {
+  const substitution = ctx.filterForChunk(text);
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) return { success: false, reason: 'LINE_CHANNEL_ACCESS_TOKEN ยังไม่ได้ตั้งค่า' };
+
+  const message = Object.keys(substitution).length > 0
+    ? { type: 'textV2', text, substitution }
+    : { type: 'text', text };
+
+  try {
+    const res = await fetch(LINE_REPLY_ENDPOINT, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body:    JSON.stringify({ replyToken, messages: [message] }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return { success: false, reason: `LINE Reply API error ${res.status}: ${body}` };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, reason: `Network error: ${String(err)}` };
+  }
+}
+
 /** แปลง reason ดิบจาก LINE API ให้เป็นข้อความที่ user อ่านเข้าใจได้ */
 export function friendlyLineErrorReason(reason: string | undefined): string {
   if (!reason) return 'ไม่ทราบสาเหตุ';
