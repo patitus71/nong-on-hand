@@ -3,7 +3,6 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canPullIntoBoard, canAssignTaskTo } from '@/lib/importTasks';
 import { ensureSquadBoard } from '@/lib/squadBoard';
-import { sendLineGroupMessageWithMention, MentionContext, thaiDate } from '@/lib/lineNotify';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -93,49 +92,16 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     },
   });
 
-  // LINE notification — ส่งเฉพาะถ้า pull-in มาพร้อม assignee
+  // สร้าง in-app notification สำหรับ assignee — ไม่ส่ง LINE message ตอน assign แล้ว
+  // (เก็บเฉพาะ Standup/EOD/End-of-sprint บน LINE เพื่อไม่ให้เปลือง quota)
   if (assigneeId) {
-    void (async () => {
-      try {
-        const [assignee, squad] = await Promise.all([
-          prisma.user.findUnique({
-            where:  { id: assigneeId },
-            select: { name: true, lineUserId: true, lineDisplayName: true },
-          }),
-          prisma.squad.findUnique({
-            where:  { id: targetSquadId },
-            select: { name: true, lineGroupId: true },
-          }),
-        ]);
-
-        if (!squad?.lineGroupId || !assignee) return;
-
-        // สร้าง Notification ในแอปสำหรับ assignee
-        await prisma.notification.create({
-          data: {
-            userId:        assigneeId,
-            message:       `งาน "${updated.title}" ถูกมอบหมายให้คุณ`,
-            relatedTaskId: updated.id,
-          },
-        });
-
-        const dueDateStr = updated.dueDate ? thaiDate(updated.dueDate) : 'Not specified';
-
-        const ctx = new MentionContext();
-        const mention = ctx.slot(assignee.lineDisplayName ?? assignee.name, assignee.lineUserId);
-        const text = [
-          `📌 ${mention} assigned a new task`,
-          `Task: ${updated.title}`,
-          `Squad: ${squad.name}`,
-          `Assigned by: ${user.name}`,
-          `Due: ${dueDateStr}`,
-        ].join('\n');
-        const r = await sendLineGroupMessageWithMention(squad.lineGroupId, text, ctx);
-        if (!r.success) console.error('[pull-in] LINE assign notification failed:', r.reason);
-      } catch (err) {
-        console.error('[pull-in] LINE notification error:', err);
-      }
-    })();
+    void prisma.notification.create({
+      data: {
+        userId:        assigneeId,
+        message:       `งาน "${updated.title}" ถูกมอบหมายให้คุณ`,
+        relatedTaskId: updated.id,
+      },
+    }).catch(err => console.error('[pull-in] notification create error:', err));
   }
 
   return Response.json(updated);
