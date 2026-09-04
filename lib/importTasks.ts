@@ -91,17 +91,17 @@ export function canPullIntoBoard(task: { squadId: string | null }, qaLeadSquadId
 }
 
 /**
- * เงื่อนไขตอน assign งานให้ engineer:
- * - assignee ต้องมี role = QA_ENGINEER
+ * เงื่อนไขตอน assign งาน:
+ * - assignee ต้องมี role = QA_ENGINEER หรือ QA_LEAD
  * - ADMIN assign ได้ทุก squad
  * - floating pool member assign ข้าม squad ได้
- * - QA_LEAD assign ได้เฉพาะ engineer ใน squad ตัวเอง
+ * - QA_LEAD assign ได้เฉพาะคนใน squad ตัวเอง
  */
 export function canAssignTaskTo(
   actor: { role: string; squadId: string | null; isFloatingPoolMember?: boolean },
   assignee: { role: string; squadId: string | null }
 ) {
-  if (assignee.role !== "QA_ENGINEER") return false;
+  if (assignee.role !== "QA_ENGINEER" && assignee.role !== "QA_LEAD") return false;
   if (actor.role === "ADMIN") return true;
   if (actor.isFloatingPoolMember) return true;
   return assignee.squadId === actor.squadId;
