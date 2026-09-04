@@ -599,7 +599,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                     : 'งานจะเข้าเลน "To do" ของบอร์ด Squad ทันที'}
                 </p>
               </div>
-              <button onClick={() => setShowPullInModal(false)} className="text-txt-muted hover:text-txt-primary text-[18px] leading-none">✕</button>
+              <button onClick={() => setShowPullInModal(false)} disabled={pullSubmitting} className="text-txt-muted hover:text-txt-primary text-[18px] leading-none disabled:opacity-40">✕</button>
             </div>
             {/* Sprint selector */}
             <div className="px-5 py-3 border-b border-app-border">
