@@ -521,7 +521,7 @@ export default function SquadBoardClient({
 
       {/* Board */}
       <div
-        className={`grid gap-3.5 pb-5 ${isReadonly ? 'opacity-70 pointer-events-none select-none' : ''}`}
+        className={`grid gap-3.5 pb-5 ${isReadonly ? 'opacity-70 select-none' : ''}`}
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
       >
         {visibleLanes.map(lane => (
@@ -593,8 +593,8 @@ export default function SquadBoardClient({
                         {t.title}
                       </Link>
 
-                      {/* ⋯ menu button — ADMIN/QA_LEAD เท่านั้น */}
-                      {canAssign && (
+                      {/* ⋯ menu button — ADMIN/QA_LEAD เท่านั้น, ปิดถ้า sprint นี้ปิดแล้ว (view-only) */}
+                      {canAssign && !isReadonly && (
                         <button
                           onClick={e => {
                             e.stopPropagation();
@@ -651,7 +651,7 @@ export default function SquadBoardClient({
                     </div>
 
                     {/* Approve review button — Wait for review column only */}
-                    {lane.name === 'Wait for review' && canApproveReview && !t.reviewApprovedAt && (
+                    {lane.name === 'Wait for review' && canApproveReview && !t.reviewApprovedAt && !isReadonly && (
                       <button
                         onClick={() => approveReview(t.id)}
                         disabled={isApproving}
@@ -669,7 +669,7 @@ export default function SquadBoardClient({
                     )}
 
                     {/* Claim button */}
-                    {canAssign && members.length > 0 && (
+                    {canAssign && members.length > 0 && !isReadonly && (
                       <button
                         onClick={() => openClaim(t)}
                         className="mt-2 w-full text-[11.5px] px-2 py-1 rounded-md border border-app-border text-txt-muted hover:border-accent hover:text-accent transition-colors"
@@ -680,7 +680,7 @@ export default function SquadBoardClient({
                   </div>
 
                   {/* Card ⋯ dropdown */}
-                  {canAssign && menuOpen && (
+                  {canAssign && !isReadonly && menuOpen && (
                     <div
                       className="absolute right-0 top-8 bg-surface-2 border border-app-border rounded-lg py-1 min-w-[190px] z-20 shadow-lg"
                       onClick={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
@@ -706,7 +706,7 @@ export default function SquadBoardClient({
               );
             })}
 
-            {lane.name === 'To do list' && canCreateTask && hasOpenSprint && (
+            {lane.name === 'To do list' && canCreateTask && hasOpenSprint && !isReadonly && (
               <div className="mt-2 mb-1">
                 {showCreate ? (
                   <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
