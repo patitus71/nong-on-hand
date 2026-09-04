@@ -374,10 +374,6 @@ export async function buildEodBlock(
 // whole-sprint retrospective, not a daily digest, so every category should be visible.
 // No @mention — plain text is fine (rule: QA_LEAD/ADMIN closing the sprint already reads it).
 
-function eosJoin(titles: string[]): string {
-  return titles.length > 0 ? titles.join(', ') : '_ไม่มี_';
-}
-
 /**
  * Builds the "End of Sprint" report for the given (already-closed) sprint.
  * Reads sprint.closedAt back from the DB rather than taking a Date param, so the
@@ -461,14 +457,20 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
   if (doneByAssignee.size === 0) {
     doneLines.push('_ไม่มี_');
   } else {
-    for (const [, p] of Array.from(doneByAssignee)) doneLines.push(`- @${p.name}: ${p.titles.join(', ')}`);
+    for (const [, p] of Array.from(doneByAssignee)) {
+      doneLines.push(`@${p.name}`);
+      for (const title of p.titles) doneLines.push(`- ${title}`);
+    }
   }
 
   const cancelLines = [`🚫 Cancelled (${cancelCount})`];
   if (cancelByAssignee.size === 0) {
     cancelLines.push('_ไม่มี_');
   } else {
-    for (const [, p] of Array.from(cancelByAssignee)) cancelLines.push(`- @${p.name}: ${p.titles.join(', ')}`);
+    for (const [, p] of Array.from(cancelByAssignee)) {
+      cancelLines.push(`@${p.name}`);
+      for (const title of p.titles) cancelLines.push(`- ${title}`);
+    }
   }
 
   const issueLines = [`🚩 Issues encountered (${issueLogs.length})`];
@@ -480,12 +482,15 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     }
   }
 
-  const carriedLines = [
-    `➡️ Carried to next sprint (${carriedCount})`,
-    `- Todo: ${eosJoin(carried.todo)}`,
-    `- In Progress: ${eosJoin(carried.inProgress)}`,
-    `- Review: ${eosJoin(carried.review)}`,
-  ];
+  const carriedLines = [`➡️ Carried to next sprint (${carriedCount})`];
+  const carriedSub = (label: string, items: string[]) => {
+    carriedLines.push(`${label}:`);
+    if (items.length === 0) carriedLines.push('_ไม่มี_');
+    else for (const title of items) carriedLines.push(`- ${title}`);
+  };
+  carriedSub('Todo', carried.todo);
+  carriedSub('In Progress', carried.inProgress);
+  carriedSub('Review', carried.review);
 
   const parts = [headerPart, doneLines.join('\n'), cancelLines.join('\n'), issueLines.join('\n'), carriedLines.join('\n')];
   return mergeIntoChunks(parts);
