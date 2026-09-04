@@ -295,7 +295,7 @@ export async function POST(req: Request) {
         const tasks = await prisma.task.findMany({
           where:  { assigneeId: sender.id, sprintId: sprint.id, deletedAt: null },
           select: {
-            id: true, title: true, hasIssue: true, issueNote: true, isCancelled: true,
+            id: true, title: true, description: true, hasIssue: true, issueNote: true, isCancelled: true,
             lane:     { select: { name: true } },
             timeLogs: { select: { normalMinutes: true, otMinutes: true, endAt: true } },
           },
@@ -310,12 +310,13 @@ export async function POST(req: Request) {
         }
 
         type MyTaskItem = {
-          title:     string;
-          issueNote: string | null;
-          normalMin: number;
-          otMin:     number;
-          hasLog:    boolean;
-          isRunning: boolean;
+          title:       string;
+          description: string | null;
+          issueNote:   string | null;
+          normalMin:   number;
+          otMin:       number;
+          hasLog:      boolean;
+          isRunning:   boolean;
         };
 
         // Bucket order mirrors Standup/EOD's convention: isCancelled ต้องเช็คก่อน hasIssue เสมอ
@@ -327,12 +328,13 @@ export async function POST(req: Request) {
 
         for (const t of tasks) {
           const item: MyTaskItem = {
-            title:     t.title,
-            issueNote: t.issueNote,
-            normalMin: t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
-            otMin:     t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
-            hasLog:    t.timeLogs.length > 0,
-            isRunning: t.timeLogs.some(l => l.endAt === null),
+            title:       t.title,
+            description: t.description,
+            issueNote:   t.issueNote,
+            normalMin:   t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
+            otMin:       t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
+            hasLog:      t.timeLogs.length > 0,
+            isRunning:   t.timeLogs.some(l => l.endAt === null),
           };
           if (t.isCancelled) { buckets.cancel.push(item); continue; }
           if (t.hasIssue)    { buckets.issue.push(item); continue; }
@@ -362,7 +364,10 @@ export async function POST(req: Request) {
         ].join('\n');
 
         const formatTicket = (item: MyTaskItem, showIssueNote: boolean): string => {
-          const lines = [item.title];
+          const titleLine = item.description?.trim()
+            ? `${item.title} : ${item.description.trim()}`
+            : item.title;
+          const lines = [titleLine];
           if (item.hasLog) {
             let timeLine = `  ⏱️ ${formatMinutes(item.normalMin)}`;
             if (item.isRunning)        timeLine += ' (กำลังนับอยู่)';
