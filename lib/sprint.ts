@@ -18,12 +18,13 @@ export async function canOpenNewSprint(squadId: string): Promise<boolean> {
   return existing === null;
 }
 
-/** Count tasks in a sprint that are NOT in the Done lane (including tasks with no lane yet). */
+/** Count tasks in a sprint that are NOT in the Done lane (including tasks with no lane yet). Cancelled tasks don't count as unfinished work. */
 export async function countUnfinishedTasks(sprintId: string): Promise<number> {
   return prisma.task.count({
     where: {
       sprintId,
       deletedAt: null,
+      isCancelled: false,
       NOT: { lane: { name: 'Done' } },
     },
   });
