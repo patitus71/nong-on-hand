@@ -34,13 +34,20 @@ const SQ_TO_PERSONAL_LANE: Record<string, string> = {
   'Review':     'In Progress',  // personal board (other user) — treat as In Progress
 };
 
+// ticket ที่ Done หรือถูก cancel (เลน Cancel) แต่ sprint ที่มันสังกัดปิดไปแล้ว ถือว่าจบเรื่องแล้วจริงๆ
+// ไม่ต้องตามหลอนอยู่ใน My Board อีก (ดูย้อนหลังได้ผ่าน export report ตามปกติ) — sprintId เป็น
+// null ก็ยังโชว์ตามเดิม (ไม่เคยผูกกับ sprint ไหนเลย)
+function finishedInClosedSprintFilter() {
+  return [
+    { isCancelled: true, sprint: { status: 'CLOSED' as const } },
+    { lane: { name: 'Done' }, sprint: { status: 'CLOSED' as const } },
+  ];
+}
+
 function personalBoardTasksInclude() {
   return {
-    // ticket ที่ถูก cancel (เลน Cancel) แต่ sprint ที่มันสังกัดปิดไปแล้ว ถือว่าจบเรื่องแล้วจริงๆ
-    // ไม่ต้องตามหลอนอยู่ใน My Board อีก (ดูย้อนหลังได้ผ่าน export report ตามปกติ) — sprintId เป็น
-    // null ก็ยังโชว์ตามเดิม (ไม่เคยผูกกับ sprint ไหนเลย)
     where: {
-      NOT: { isCancelled: true, sprint: { status: 'CLOSED' as const } },
+      NOT: { OR: finishedInClosedSprintFilter() },
     },
     orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
     include: {
@@ -111,7 +118,7 @@ export default async function MyBoardPage() {
       assigneeId: user.id,
       squadId:    { not: null },
       laneId:     { not: null },
-      NOT: { lane: { boardId: board.id } },
+      NOT: { OR: [{ lane: { boardId: board.id } }, ...finishedInClosedSprintFilter()] },
     },
     include: {
       lane:     { select: { name: true } },
