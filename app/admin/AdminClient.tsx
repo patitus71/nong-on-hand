@@ -353,7 +353,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
         : 'bg-surface-2 text-txt-secondary hover:text-txt-primary border-b-app-border'
     }`;
 
-  const selCls = 'bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-md focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed';
+  const selCls = 'bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
     <div className="px-7 py-6 pb-16">
@@ -373,7 +373,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
             <p className="text-[13px] text-txt-secondary">ผู้ใช้ทั้งหมดในระบบ</p>
             <button
               onClick={openAddUser}
-              className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-3.5 py-2 rounded-lg transition-colors"
+              className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-3.5 py-2 rounded-[3px] transition-colors"
             >
               + เพิ่ม User
             </button>
@@ -382,7 +382,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
           {loadingUsers ? (
             <p className="text-txt-muted text-[13px]">กำลังโหลด...</p>
           ) : (
-            <div className="overflow-hidden border border-app-border rounded-[10px]">
+            <div className="overflow-hidden border border-app-border rounded-[4px]">
               <table className="w-full border-collapse bg-surface-1">
                 <thead>
                   <tr className="border-b border-app-border">
@@ -412,12 +412,12 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                                     value={editingName}
                                     onChange={e => { setEditingName(e.target.value); setNameError(''); }}
                                     onKeyDown={e => { if (e.key === 'Enter') saveUserName(u.id); if (e.key === 'Escape') setEditingNameId(null); }}
-                                    className="bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-md focus:outline-none w-36"
+                                    className="bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-[3px] focus:outline-none w-36"
                                   />
                                   <button
                                     onClick={() => saveUserName(u.id)}
                                     disabled={nameSaving}
-                                    className="text-[11px] bg-accent text-white px-2 py-1 rounded-md disabled:opacity-50"
+                                    className="text-[11px] bg-accent text-white px-2 py-1 rounded-[3px] disabled:opacity-50"
                                   >
                                     {nameSaving ? '...' : 'บันทึก'}
                                   </button>
@@ -497,7 +497,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                         <td className="px-3.5 py-2.5">
                           <button
                             onClick={() => openReset(u)}
-                            className="bg-surface-2 border border-app-border text-txt-secondary text-[11.5px] px-2.5 py-1.5 rounded-md hover:bg-surface-3 hover:text-txt-primary transition-colors"
+                            className="bg-surface-2 border border-app-border text-txt-secondary text-[11.5px] px-2.5 py-1.5 rounded-[3px] hover:bg-surface-3 hover:text-txt-primary transition-colors"
                           >
                             ตั้งรหัสผ่านใหม่
                           </button>
@@ -513,7 +513,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                                 u.id === actorId ? 'ไม่สามารถลบบัญชีตัวเองได้' :
                                 u.isLastAdmin    ? 'ไม่สามารถลบ Admin คนสุดท้ายได้' : ''
                               }
-                              className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1.5 rounded-md hover:bg-danger hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                              className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1.5 rounded-[3px] hover:bg-danger hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                             >
                               🗑 ลบ
                             </button>
@@ -542,7 +542,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
             <p className="text-[13px] text-txt-secondary">รายการ Squad ทั้งหมดในระบบ</p>
             <button
               onClick={() => { setShowAddSquad(true); setNewSquadName(''); setAddSquadError(''); }}
-              className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-3.5 py-2 rounded-lg transition-colors"
+              className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-3.5 py-2 rounded-[3px] transition-colors"
             >
               + เพิ่ม Squad
             </button>
@@ -551,7 +551,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
           {loadingSquads ? (
             <p className="text-txt-muted text-[13px]">กำลังโหลด...</p>
           ) : (
-            <div className="overflow-hidden border border-app-border rounded-[10px]">
+            <div className="overflow-hidden border border-app-border rounded-[4px]">
               <table className="w-full border-collapse bg-surface-1">
                 <thead>
                   <tr className="border-b border-app-border">
@@ -570,7 +570,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                               autoFocus value={editingSquadName}
                               onChange={e => setEditingSquadName(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') saveSquadName(); if (e.key === 'Escape') setEditingSquadId(null); }}
-                              className="bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-1.5 rounded-md focus:outline-none w-40"
+                              className="bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-1.5 rounded-[3px] focus:outline-none w-40"
                             />
                             {squadError && <span className="text-[11.5px] text-danger">{squadError}</span>}
                           </div>
@@ -612,23 +612,23 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                         {editingSquadId === sq.id ? (
                           <div className="flex gap-2">
                             <button onClick={saveSquadName} disabled={squadSaving || !editingSquadName.trim()}
-                              className="bg-accent hover:bg-accent-hover text-white text-[11.5px] px-2.5 py-1.5 rounded-md disabled:opacity-50 transition-colors">
+                              className="bg-accent hover:bg-accent-hover text-white text-[11.5px] px-2.5 py-1.5 rounded-[3px] disabled:opacity-50 transition-colors">
                               {squadSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                             </button>
                             <button onClick={() => setEditingSquadId(null)} disabled={squadSaving}
-                              className="bg-surface-2 border border-app-border text-txt-secondary text-[11.5px] px-2.5 py-1.5 rounded-md hover:bg-surface-3 transition-colors">
+                              className="bg-surface-2 border border-app-border text-txt-secondary text-[11.5px] px-2.5 py-1.5 rounded-[3px] hover:bg-surface-3 transition-colors">
                               ยกเลิก
                             </button>
                           </div>
                         ) : (
                           <div className="flex gap-2">
                             <button onClick={() => { setEditingSquadId(sq.id); setEditingSquadName(sq.name); setSquadError(''); }}
-                              className="text-[11.5px] text-txt-secondary hover:text-txt-primary border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-1.5 rounded-md transition-colors">
+                              className="text-[11.5px] text-txt-secondary hover:text-txt-primary border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-1.5 rounded-[3px] transition-colors">
                               ✎ แก้ไขชื่อ
                             </button>
                             <button
                               onClick={() => { setDeleteSquadTarget(sq); setDeleteSquadError(''); }}
-                              className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1.5 rounded-md hover:bg-danger hover:text-white transition-colors"
+                              className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1.5 rounded-[3px] hover:bg-danger hover:text-white transition-colors"
                             >
                               🗑 ลบ
                             </button>
@@ -650,22 +650,22 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       {/* ── Modal: Delete squad ──────────────────────────────── */}
       {deleteSquadTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[380px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-danger mb-1">🗑 ลบ Squad นี้?</h3>
             <p className="text-[12.5px] text-txt-secondary mb-3 leading-relaxed">
               ยืนยันการลบ <span className="font-semibold text-txt-primary">{deleteSquadTarget.name}</span>
             </p>
-            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-lg mb-4 leading-relaxed">
+            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-[3px] mb-4 leading-relaxed">
               ⚠ ลบได้เฉพาะ Squad ที่ไม่มีสมาชิกและไม่มีงานค้างอยู่เท่านั้น
             </p>
             {deleteSquadError && (
-              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-lg mb-3">{deleteSquadError}</p>
+              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-[3px] mb-3">{deleteSquadError}</p>
             )}
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setDeleteSquadTarget(null)}
                 disabled={deletingSquad}
-                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors"
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-[3px] hover:bg-surface-2 transition-colors"
               >
                 ยกเลิก
               </button>
@@ -682,7 +682,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                   setDeletingSquad(false);
                 }}
                 disabled={deletingSquad}
-                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-lg hover:bg-[#d94848] transition-colors disabled:opacity-50 ${deletingSquad ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${deletingSquad ? 'btn-loading' : ''}`}
               >
                 ยืนยันลบ
               </button>
@@ -694,30 +694,30 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       {/* ── Modal: Delete user ───────────────────────────────── */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[380px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-danger mb-1">🗑 ลบผู้ใช้นี้?</h3>
             <p className="text-[12.5px] text-txt-secondary mb-3 leading-relaxed">
               ยืนยันการลบ <span className="font-semibold text-txt-primary">{deleteTarget.name}</span>{' '}
               ({deleteTarget.username}) — role: {ROLE_LABEL[deleteTarget.role]}
             </p>
-            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-lg mb-4 leading-relaxed">
+            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-[3px] mb-4 leading-relaxed">
               ⚠ user จะหายออกจากระบบทันที — login ไม่ได้อีก แต่งานที่เคย assign ให้ยังอยู่ครบ
             </p>
             {deleteError && (
-              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-lg mb-3">{deleteError}</p>
+              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-[3px] mb-3">{deleteError}</p>
             )}
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setDeleteTarget(null)}
                 disabled={deleteConfirming}
-                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors"
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-[3px] hover:bg-surface-2 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={submitDeleteUser}
                 disabled={deleteConfirming}
-                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-lg hover:bg-[#d94848] transition-colors disabled:opacity-50 ${deleteConfirming ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${deleteConfirming ? 'btn-loading' : ''}`}
               >
                 ยืนยันลบ
               </button>
@@ -729,21 +729,21 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       {/* ── Modal: Reset password ─────────────────────────────── */}
       {resetTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[360px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[360px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-txt-primary mb-1">ตั้งรหัสผ่านใหม่</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">สำหรับ {resetTarget.name} ({resetTarget.username})</p>
             <label className="block text-[12px] text-txt-secondary mb-1.5">รหัสผ่านใหม่</label>
             <input ref={pwInputRef} type="text" value={password} onChange={e => setPassword(e.target.value)}
               placeholder="อย่างน้อย 6 ตัวอักษร"
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13.5px] px-2.5 py-2.5 rounded-lg focus:outline-none focus:border-accent mb-1" />
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13.5px] px-2.5 py-2.5 rounded-[3px] focus:outline-none focus:border-accent mb-1" />
             <button onClick={() => setPassword(genPassword())} className="text-[11.5px] text-accent hover:underline mb-3">🎲 สุ่มรหัสผ่านให้</button>
             <p className="text-[11px] text-txt-muted mb-4">ระบบจะ hash ด้วย bcrypt ก่อนบันทึก — ไม่มีการเก็บรหัสผ่านแบบข้อความล้วน</p>
             {resetError && <p className="text-[12px] text-danger mb-3">{resetError}</p>}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setResetTarget(null)} disabled={resetSaving}
-                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg transition-colors">ยกเลิก</button>
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-[3px] transition-colors">ยกเลิก</button>
               <button onClick={submitReset} disabled={resetSaving || password.length < 6}
-                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${resetSaving ? 'btn-loading' : ''}`}>
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${resetSaving ? 'btn-loading' : ''}`}>
                 บันทึกรหัสผ่านใหม่
               </button>
             </div>
@@ -754,7 +754,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       {/* ── Modal: Add User ───────────────────────────────────── */}
       {showAddUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[400px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-txt-primary mb-4">เพิ่ม User ใหม่</h3>
 
             <div className="space-y-3">
@@ -762,14 +762,14 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                 <label className="block text-[12px] text-txt-secondary mb-1">ชื่อ-นามสกุล</label>
                 <input type="text" value={newUser.name} placeholder="ชื่อที่แสดงในระบบ"
                   onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))}
-                  className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent" />
+                  className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent" />
               </div>
 
               <div>
                 <label className="block text-[12px] text-txt-secondary mb-1">Username</label>
                 <input type="text" value={newUser.username} placeholder="ใช้สำหรับ login"
                   onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))}
-                  className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent" />
+                  className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent" />
               </div>
 
               <div>
@@ -777,9 +777,9 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                 <div className="flex gap-2">
                   <input type="text" value={newUser.password} placeholder="อย่างน้อย 6 ตัวอักษร"
                     onChange={e => setNewUser(u => ({ ...u, password: e.target.value }))}
-                    className="flex-1 bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent" />
+                    className="flex-1 bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent" />
                   <button onClick={() => setNewUser(u => ({ ...u, password: genPassword() }))}
-                    className="text-[11.5px] text-accent border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-2 rounded-lg transition-colors">
+                    className="text-[11.5px] text-accent border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-2 rounded-[3px] transition-colors">
                     🎲 สุ่ม
                   </button>
                 </div>
@@ -790,7 +790,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                   <label className="block text-[12px] text-txt-secondary mb-1">Role</label>
                   <select value={newUser.role}
                     onChange={e => setNewUser(u => ({ ...u, role: e.target.value, squadId: noSquadRole(e.target.value) ? '' : u.squadId }))}
-                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent">
+                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent">
                     {ALL_ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                   </select>
                 </div>
@@ -803,7 +803,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                     disabled={noSquadRole(newUser.role)}
                     title={noSquadRole(newUser.role) ? 'Role นี้ไม่ผูก Squad' : ''}
                     onChange={e => setNewUser(u => ({ ...u, squadId: e.target.value }))}
-                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed">
+                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="">— ไม่ระบุ —</option>
                     {squads.map(sq => <option key={sq.id} value={sq.id}>{sq.name}</option>)}
                   </select>
@@ -815,9 +815,9 @@ export default function AdminClient({ actorRole, actorId }: Props) {
 
             <div className="flex gap-2 justify-end mt-5">
               <button onClick={() => setShowAddUser(false)} disabled={addingUser}
-                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg transition-colors">ยกเลิก</button>
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-[3px] transition-colors">ยกเลิก</button>
               <button onClick={submitAddUser} disabled={addingUser || !newUser.name.trim() || !newUser.username.trim() || newUser.password.length < 6}
-                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${addingUser ? 'btn-loading' : ''}`}>
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${addingUser ? 'btn-loading' : ''}`}>
                 สร้าง User
               </button>
             </div>
@@ -828,13 +828,13 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       {/* ── Modal: LINE Notification Settings ────────────────── */}
       {notifTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[380px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-txt-primary mb-1">LINE Auto-Send</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">{notifTarget.name}</p>
 
             <div className="space-y-4">
               {/* Standup */}
-              <div className="bg-surface-2 rounded-lg px-3.5 py-3">
+              <div className="bg-surface-2 rounded-[3px] px-3.5 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[12.5px] font-medium text-txt-primary">Standup</span>
                   <button
@@ -853,14 +853,14 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                       onChange={e => setNotifForm(f => ({ ...f, standupSendTime: e.target.value }))}
                       placeholder="09:00"
                       maxLength={5}
-                      className="w-full bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-md focus:outline-none focus:border-accent"
+                      className="w-full bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent"
                     />
                   </div>
                 )}
               </div>
 
               {/* EOD */}
-              <div className="bg-surface-2 rounded-lg px-3.5 py-3">
+              <div className="bg-surface-2 rounded-[3px] px-3.5 py-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[12.5px] font-medium text-txt-primary">EOD Summary</span>
                   <button
@@ -879,7 +879,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                       onChange={e => setNotifForm(f => ({ ...f, eodSendTime: e.target.value }))}
                       placeholder="18:00"
                       maxLength={5}
-                      className="w-full bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-md focus:outline-none focus:border-accent"
+                      className="w-full bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent"
                     />
                   </div>
                 )}
@@ -893,7 +893,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
             <button
               onClick={applyNotifToAllSquads}
               disabled={notifSaving || applyingAll}
-              className={`w-full mt-3 text-[12px] text-accent border border-accent/30 rounded-lg py-1.5 hover:bg-accent/10 disabled:opacity-50 transition-colors ${applyingAll ? 'btn-loading' : ''}`}
+              className={`w-full mt-3 text-[12px] text-accent border border-accent/30 rounded-[3px] py-1.5 hover:bg-accent/10 disabled:opacity-50 transition-colors ${applyingAll ? 'btn-loading' : ''}`}
             >
               ใช้เวลานี้กับทุก Squad
             </button>
@@ -905,11 +905,11 @@ export default function AdminClient({ actorRole, actorId }: Props) {
 
             <div className="flex gap-2 justify-end mt-4">
               <button onClick={() => setNotifTarget(null)} disabled={notifSaving || applyingAll}
-                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg hover:bg-surface-2 transition-colors">
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-[3px] hover:bg-surface-2 transition-colors">
                 ยกเลิก
               </button>
               <button onClick={saveNotif} disabled={notifSaving || applyingAll}
-                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${notifSaving ? 'btn-loading' : ''}`}>
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${notifSaving ? 'btn-loading' : ''}`}>
                 บันทึก (squad นี้เท่านั้น)
               </button>
             </div>
@@ -920,19 +920,19 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       {/* ── Modal: Add Squad ──────────────────────────────────── */}
       {showAddSquad && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[340px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[340px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-txt-primary mb-4">เพิ่ม Squad ใหม่</h3>
             <label className="block text-[12px] text-txt-secondary mb-1.5">ชื่อ Squad</label>
             <input autoFocus type="text" value={newSquadName} placeholder="เช่น SQ3"
               onChange={e => setNewSquadName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') addSquad(); if (e.key === 'Escape') setShowAddSquad(false); }}
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13.5px] px-2.5 py-2.5 rounded-lg focus:outline-none focus:border-accent" />
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13.5px] px-2.5 py-2.5 rounded-[3px] focus:outline-none focus:border-accent" />
             {addSquadError && <p className="text-[11.5px] text-danger mt-1">{addSquadError}</p>}
             <div className="flex gap-2 justify-end mt-4">
               <button onClick={() => setShowAddSquad(false)} disabled={addingSquad}
-                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-lg transition-colors">ยกเลิก</button>
+                className="px-4 py-2 text-[12.5px] text-txt-muted border border-app-border rounded-[3px] transition-colors">ยกเลิก</button>
               <button onClick={addSquad} disabled={addingSquad || !newSquadName.trim()}
-                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${addingSquad ? 'btn-loading' : ''}`}>
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${addingSquad ? 'btn-loading' : ''}`}>
                 สร้าง Squad
               </button>
             </div>

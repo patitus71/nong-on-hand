@@ -53,14 +53,14 @@ function PendingReviewSection({
   const [approving, setApproving] = useState<string | null>(null);
   if (reviews.length === 0) return null;
   return (
-    <div className="bg-[#111d2e] border border-accent/30 rounded-xl p-3 mb-5">
+    <div className="bg-accent-bg border border-accent/30 rounded-[4px] p-3 mb-3.5">
       <div className="flex items-center gap-2 mb-2.5">
-        <span className="text-[12.5px] font-semibold text-accent">🔍 รอฉัน Review</span>
+        <span className="text-[12.5px] font-semibold text-accent">◆ รอฉัน Review</span>
         <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{reviews.length}</span>
       </div>
       <div className="flex flex-wrap gap-2.5">
         {reviews.map(r => (
-          <div key={r.id} className="bg-surface-2 border border-accent/20 rounded-lg p-2.5 w-[240px] flex-shrink-0">
+          <div key={r.id} className="bg-surface-2 border border-accent/20 rounded-[3px] p-2.5 w-[240px] flex-shrink-0">
             <Link href={`/tasks/${r.id}`}
               className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug">
               {r.title}
@@ -82,7 +82,7 @@ function PendingReviewSection({
                 await onApprove(r.id);
                 setApproving(null);
               }}
-              className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-md hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
+              className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-[3px] hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
             >
               {approving === r.id ? '...' : '✓ Approve Review'}
             </button>
@@ -163,11 +163,11 @@ function SortableCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes} {...listeners}
-      className={`bg-surface-2 border rounded-lg p-2.5 transition-colors select-none relative
+      className={`bg-surface-2 border rounded-[3px] p-2.5 transition-colors select-none relative
         ${task.isCancelled ? 'grayscale-[0.4] opacity-75 cursor-default' : 'cursor-grab active:cursor-grabbing'}
         ${isReviewApprovedBanner ? 'card-review-approved border-success' : task.hasIssue && !task.isCancelled ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
         ${isDragging && !overlay ? 'opacity-40' : ''}
-        ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#3a3f4d]'}
+        ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#B4BCC8]'}
         ${task.isAtRisk && !isDragging && !overlay ? 'card-at-risk' : ''}
         ${saving ? 'opacity-60 pointer-events-none cursor-wait' : ''}
       `}
@@ -179,7 +179,7 @@ function SortableCard({
         />
       )}
       {task.isAtRisk && !saving && (
-        <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10" title={task.riskReason}>🔥</span>
+        <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10 text-warning" title={task.riskReason}>▲</span>
       )}
       {isReviewApprovedBanner && (
         <div className="review-approved-banner">
@@ -192,12 +192,12 @@ function SortableCard({
         onPointerDown={e => e.stopPropagation()}
         className="block text-[13px] text-txt-primary leading-snug mb-2 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
-        {task.hasIssue && !task.isCancelled && <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />}
+        {task.hasIssue && !task.isCancelled && <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>}
         {task.title}
       </Link>
       <div className="flex items-center justify-between">
         {task.squad
-          ? <span className="text-[10.5px] text-txt-secondary bg-[#2a2e3a] px-2 py-0.5 rounded-full">{task.squad.name}</span>
+          ? <span className="text-[10.5px] text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full">{task.squad.name}</span>
           : <span />}
         {av && task.assignee && (
           <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
@@ -233,7 +233,7 @@ function SortableCard({
                 value={task.reviewerId ?? ''}
                 onChange={handleReviewerSelectChange}
                 disabled={reviewerSaving}
-                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-md focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
+                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
               >
                 <option value="">— ยังไม่เลือก —</option>
                 {reviewerOptions.map(r => (
@@ -257,7 +257,7 @@ function SortableCard({
                 onChange={e => { setPrLinkDraft(e.target.value); setPrLinkError(''); }}
                 onBlur={handlePrLinkBlur}
                 placeholder="https://github.com/..."
-                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-md focus:outline-none focus:border-accent placeholder-txt-muted"
+                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent placeholder-txt-muted"
               />
             )}
             {prLinkError && <p className="text-[10px] text-danger mt-0.5">{prLinkError}</p>}
@@ -287,7 +287,7 @@ function SortableFlaggedCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes} {...listeners}
-      className={`bg-surface-2 border border-danger/45 rounded-lg p-2.5 w-[220px] flex-shrink-0 cursor-grab active:cursor-grabbing select-none ${
+      className={`bg-surface-2 border border-danger/45 rounded-[3px] p-2.5 w-[220px] flex-shrink-0 cursor-grab active:cursor-grabbing select-none ${
         isDragging ? 'opacity-40' : ''
       }`}
     >
@@ -297,14 +297,14 @@ function SortableFlaggedCard({
         onPointerDown={e => e.stopPropagation()}
         className="block text-[12.5px] text-txt-primary mb-1 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />
+        <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>
         {task.title}
       </Link>
       {task.squad && <p className="text-[10.5px] text-txt-muted mb-2">{task.squad.name}</p>}
       <button
         onClick={e => { e.stopPropagation(); onResolve(task); }}
         onPointerDown={e => e.stopPropagation()}
-        className="w-full bg-surface-3 text-success text-[11px] py-1.5 rounded-md hover:bg-success-bg font-medium transition-colors"
+        className="w-full bg-surface-3 text-success text-[11px] py-1.5 rounded-[3px] hover:bg-success-bg font-medium transition-colors"
       >
         ✓ จัดการปัญหานี้
       </button>
@@ -327,7 +327,7 @@ function DroppableLaneCards({
     <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
       <div
         ref={setNodeRef}
-        className={`flex flex-col gap-2 overflow-y-auto flex-1 px-0.5 pb-0.5 min-h-[40px] rounded-lg transition-colors ${
+        className={`flex flex-col gap-2 overflow-y-auto flex-1 px-0.5 pb-0.5 min-h-[40px] rounded-[3px] transition-colors ${
           isOver ? 'bg-accent/5' : ''
         }`}
       >
@@ -365,9 +365,9 @@ function DroppableIssueSection({
 }: { flaggedTasks: TaskData[]; onResolve: (t: TaskData) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: ISSUE_DROP_ID });
   return (
-    <div className="bg-danger-bg border border-danger/30 rounded-xl p-3 mb-5">
+    <div className="bg-danger-bg border border-danger/30 rounded-[4px] p-3 mb-5">
       <div className="flex items-center gap-2 mb-2.5">
-        <span className="text-[12.5px] font-semibold text-danger">⚠ การ์ดที่มีปัญหา</span>
+        <span className="text-[12.5px] font-semibold text-danger">▲ การ์ดที่มีปัญหา</span>
         {flaggedTasks.length > 0 && (
           <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{flaggedTasks.length}</span>
         )}
@@ -378,7 +378,7 @@ function DroppableIssueSection({
       <SortableContext items={flaggedTasks.map(t => t.id)} strategy={horizontalListSortingStrategy}>
         <div
           ref={setNodeRef}
-          className={`flex gap-2.5 flex-wrap min-h-[52px] rounded-lg p-1 transition-colors ${
+          className={`flex gap-2.5 flex-wrap min-h-[52px] rounded-[3px] p-1 transition-colors ${
             isOver ? 'bg-danger/25 ring-2 ring-danger' : ''
           } ${flaggedTasks.length === 0 ? 'items-center' : ''}`}
         >
@@ -427,7 +427,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 
   if (!open) return (
     <button onClick={() => setOpen(true)}
-      className="w-full text-left text-[12px] text-txt-muted hover:text-txt-secondary hover:bg-surface-2 px-1.5 py-1.5 rounded-md flex items-center gap-1.5 mt-1.5 transition-colors">
+      className="w-full text-left text-[12px] text-txt-muted hover:text-txt-secondary hover:bg-surface-2 px-1.5 py-1.5 rounded-[3px] flex items-center gap-1.5 mt-1.5 transition-colors">
       + เพิ่มงาน
     </button>
   );
@@ -435,12 +435,12 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
   return (
     <form onSubmit={submit} className="mt-2">
       <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="ชื่องาน..."
-        className="w-full bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none mb-1.5" />
+        className="w-full bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-1.5" />
       <div className="flex gap-1.5">
         <button type="submit" disabled={saving || !title.trim()}
-          className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50">บันทึก</button>
+          className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">บันทึก</button>
         <button type="button" onClick={() => { setOpen(false); setTitle(''); }}
-          className="text-txt-muted text-[12px] px-2 py-1.5 rounded-md hover:text-txt-secondary">ยกเลิก</button>
+          className="text-txt-muted text-[12px] px-2 py-1.5 rounded-[3px] hover:text-txt-secondary">ยกเลิก</button>
       </div>
     </form>
   );
@@ -448,6 +448,10 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 
 /* ─── Protected lane names ───────────────────────────── */
 const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Review', 'Done', 'Cancel']);
+/* สัญลักษณ์รูปทรงกำกับสถานะ — ห้ามพึ่งสีเดี่ยวๆ (colorblind-safe), ดู design handoff */
+const LANE_GLYPH: Record<string, string> = {
+  'To Do': '○', 'In Progress': '◐', 'Review': '◆', 'Done': '✓', 'Cancel': '⊘',
+};
 const PROTECTED_TOOLTIP = 'เลนนี้ผูกกับ Squad Board — แก้ไข/ลบไม่ได้';
 
 /* ปิดไว้ชั่วคราว — auto-start timer ตอนลากเข้า In Progress เรียก 2 endpoint
@@ -1119,17 +1123,17 @@ export default function MyBoardClient({
         <div className="flex items-center gap-2">
           <button
             onClick={openExport}
-            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors"
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors"
           >
             📄 Export Report
           </button>
           {canEditLanes && (
             <button
               onClick={() => { setEditMode(e => !e); setAddingLane(false); }}
-              className={`border text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 transition-colors ${
+              className={`border text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 transition-colors ${
                 editMode
                   ? 'bg-accent text-white border-accent'
-                  : 'bg-surface-2 border-app-border text-txt-primary hover:bg-[#2a2e3a]'
+                  : 'bg-surface-2 border-app-border text-txt-primary hover:bg-surface-3'
               }`}
             >
               ✎ แก้ไขเลน
@@ -1137,7 +1141,7 @@ export default function MyBoardClient({
           )}
           {canCreateTask && (
             <Link href="/tasks"
-              className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-[7px] rounded-md transition-colors">
+              className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-[7px] rounded-[3px] transition-colors">
               + สร้างงานใหม่
             </Link>
           )}
@@ -1150,15 +1154,13 @@ export default function MyBoardClient({
         {/* Pending reviews section (tasks where I'm the reviewer) */}
         <PendingReviewSection reviews={pendingReviewsList} onApprove={approveReview} />
 
-        <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
-
         <div
           className={`grid gap-3.5 pb-5 items-start ${editMode ? 'edit-mode-on' : ''}`}
           style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
         >
           {normalLanes.map(lane => (
             <div key={lane.id}
-              className={`bg-surface-1 border rounded-[12px] p-2.5 flex flex-col transition-colors ${
+              className={`bg-surface-1 border rounded-[4px] p-2.5 flex flex-col transition-colors ${
                 editMode ? 'border-accent' : 'border-app-border'
               }`}
               style={{ height: 'calc(100vh - 220px)' }}
@@ -1172,6 +1174,7 @@ export default function MyBoardClient({
                     lane.name === 'In Progress' ? 'text-accent'  :
                     'text-txt-primary'
                   }`}>
+                    {LANE_GLYPH[lane.name] && <span className="mr-1">{LANE_GLYPH[lane.name]}</span>}
                     {lane.name}
                   </span>
                   <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
@@ -1205,18 +1208,18 @@ export default function MyBoardClient({
           {editMode && (
             addingLane ? (
               <form onSubmit={submitLane}
-                className="bg-surface-1 border border-accent rounded-[12px] p-3">
+                className="bg-surface-1 border border-accent rounded-[4px] p-3">
                 <input autoFocus value={newLaneName} onChange={e => setNewLaneName(e.target.value)}
                   placeholder="ชื่อเลนใหม่..."
-                  className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent mb-2" />
+                  className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-2" />
                 <button type="submit" disabled={savingLane || !newLaneName.trim()}
-                  className="w-full bg-accent text-white text-[12px] py-1.5 rounded-md disabled:opacity-50">
+                  className="w-full bg-accent text-white text-[12px] py-1.5 rounded-[3px] disabled:opacity-50">
                   + เพิ่มเลนนี้
                 </button>
               </form>
             ) : (
               <button onClick={() => setAddingLane(true)}
-                className="border-[1.5px] border-dashed border-accent rounded-[12px] flex items-center justify-center gap-1.5 text-[13px] text-accent h-11 hover:bg-accent/5 transition-colors">
+                className="border-[1.5px] border-dashed border-accent rounded-[4px] flex items-center justify-center gap-1.5 text-[13px] text-accent h-11 hover:bg-accent/5 transition-colors">
                 + เพิ่มเลน
               </button>
             )
@@ -1224,7 +1227,7 @@ export default function MyBoardClient({
 
           {!editMode && (
             <button onClick={() => setEditMode(true)}
-              className="border-[1.5px] border-dashed border-app-border rounded-[12px] flex items-center justify-center gap-1.5 text-[13px] text-txt-muted hover:border-accent hover:text-accent transition-colors h-11">
+              className="border-[1.5px] border-dashed border-app-border rounded-[4px] flex items-center justify-center gap-1.5 text-[13px] text-txt-muted hover:border-accent hover:text-accent transition-colors h-11">
               + เพิ่มเลน
             </button>
           )}
@@ -1232,10 +1235,12 @@ export default function MyBoardClient({
 
         {editMode && (
           <button onClick={() => { setEditMode(false); setAddingLane(false); }}
-            className="mt-2 bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors">
+            className="mt-2 bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-[3px] hover:bg-surface-3 transition-colors">
             ✓ เสร็จสิ้นการแก้ไข
           </button>
         )}
+
+        <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
         <DragOverlay>
           {activeTask && <SortableCard task={activeTask} overlay />}
@@ -1245,12 +1250,12 @@ export default function MyBoardClient({
       {/* ── Review block alert ────────────────────────── */}
       {reviewBlockMsg && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-warning/40 rounded-xl p-5 w-[380px] shadow-xl">
+          <div className="bg-surface-1 border border-warning/40 rounded-[4px] p-5 w-[380px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-warning mb-2">⚠ ยังไม่ผ่าน Review</h3>
             <p className="text-[13px] text-txt-secondary mb-4">{reviewBlockMsg}</p>
             <button
               onClick={() => setReviewBlockMsg(null)}
-              className="w-full bg-accent hover:bg-accent-hover text-white text-[13px] font-medium py-2 rounded-lg transition-colors"
+              className="w-full bg-accent hover:bg-accent-hover text-white text-[13px] font-medium py-2 rounded-[3px] transition-colors"
             >
               เข้าใจแล้ว
             </button>
@@ -1261,8 +1266,8 @@ export default function MyBoardClient({
       {/* ── Modal: Flag issue ─────────────────────────── */}
       {flagTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
-            <h3 className="text-[15px] font-semibold text-danger mb-1">⚠ รายงานปัญหา</h3>
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[400px] shadow-xl">
+            <h3 className="text-[15px] font-semibold text-danger mb-1">▲ รายงานปัญหา</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">
               <span className="font-medium text-txt-primary">{flagTarget.title}</span>
               <br />งานนี้จะถูก flag และขึ้นสถานะ "มีปัญหา" บน Squad Board ทันที
@@ -1275,23 +1280,23 @@ export default function MyBoardClient({
               value={flagNote}
               onChange={e => setFlagNote(e.target.value)}
               placeholder="เช่น พบ bug ที่ทำให้ระบบ crash เมื่อ input ว่าง"
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent resize-y min-h-[80px] font-inherit"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent resize-y min-h-[80px] font-inherit"
             />
             {flagError && <p className="text-[11.5px] text-danger mt-2">{flagError}</p>}
             <div className="flex gap-2 justify-end mt-4">
               <button
                 onClick={() => setFlagTarget(null)}
                 disabled={flagging}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors"
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={submitFlag}
                 disabled={flagging || !flagNote.trim()}
-                className={`bg-danger hover:bg-danger/80 text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${flagging ? 'btn-loading' : ''}`}
+                className={`bg-danger hover:bg-danger/80 text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${flagging ? 'btn-loading' : ''}`}
               >
-                ⚠ Flag ปัญหานี้
+                ▲ Flag ปัญหานี้
               </button>
             </div>
           </div>
@@ -1301,7 +1306,7 @@ export default function MyBoardClient({
       {/* ── Modal: Start timer (To Do → In Progress) ──────── */}
       {startTimerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[420px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[420px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-txt-primary mb-1">▶ เริ่มบันทึกเวลา?</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">
               งาน <span className="font-medium text-txt-primary">"{startTimerModal.taskTitle}"</span>{' '}
@@ -1310,11 +1315,11 @@ export default function MyBoardClient({
             </p>
             <div className="flex gap-2 justify-end">
               <button onClick={skipStartTimer} disabled={startTimerSaving}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                 ข้าม — ย้ายโดยไม่จับเวลา
               </button>
               <button onClick={confirmStartTimer} disabled={startTimerSaving}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
+                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
                 {startTimerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
               </button>
             </div>
@@ -1331,7 +1336,7 @@ export default function MyBoardClient({
         const hasOptions = options.length > 0;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-            <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
+            <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[400px] shadow-xl">
               {hasOptions ? (
                 <>
                   <h3 className="text-[15px] font-semibold text-txt-primary mb-1">🔍 เลือกผู้รับ Review</h3>
@@ -1343,7 +1348,7 @@ export default function MyBoardClient({
                   <select
                     value={selectedReviewerId}
                     onChange={e => setSelectedReviewerId(e.target.value)}
-                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent mb-4"
+                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-4"
                   >
                     <option value="">— เลือกผู้ review —</option>
                     {options.map(r => (
@@ -1352,12 +1357,12 @@ export default function MyBoardClient({
                   </select>
                   <div className="flex gap-2 justify-end">
                     <button onClick={cancelReviewerModal}
-                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                       ยกเลิก
                     </button>
                     <button
                       onClick={() => confirmReviewerModal(selectedReviewerId || null)}
-                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg transition-colors"
+                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] transition-colors"
                     >
                       ยืนยัน →
                     </button>
@@ -1372,11 +1377,11 @@ export default function MyBoardClient({
                   </p>
                   <div className="flex gap-2 justify-end">
                     <button onClick={cancelReviewerModal}
-                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                       ยกเลิก
                     </button>
                     <button onClick={() => confirmReviewerModal(null)}
-                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg transition-colors">
+                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] transition-colors">
                       เข้า Review โดยไม่เลือก reviewer
                     </button>
                   </div>
@@ -1390,14 +1395,14 @@ export default function MyBoardClient({
       {/* ── Modal: Record time before Review ────────────── */}
       {reviewTimeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[450px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[450px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-txt-primary mb-1">⏱ บันทึกเวลาก่อนส่ง Review</h3>
             <p className="text-[12.5px] text-txt-secondary mb-2">
               งาน <span className="font-medium text-txt-primary">"{reviewTimeModal.taskTitle}"</span>
             </p>
 
             {reviewTimeModal.hasTime && !reviewTimeAdded && (
-              <div className="flex items-center gap-2 text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-lg mb-3">
+              <div className="flex items-center gap-2 text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-[3px] mb-3">
                 <span>✓ เวลาที่บันทึกแล้ว:</span>
                 <span className="font-medium">{fmt(reviewTimeModal.totalNormalMin)}</span>
                 {reviewTimeModal.totalOtMin > 0 && (
@@ -1408,7 +1413,7 @@ export default function MyBoardClient({
             )}
 
             {reviewTimeAdded && (
-              <div className="text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-lg mb-3">
+              <div className="text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-[3px] mb-3">
                 ✓ บันทึกเวลาเรียบร้อย — กดยืนยันเพื่อย้ายงานไป Review
               </div>
             )}
@@ -1420,7 +1425,7 @@ export default function MyBoardClient({
                 </p>
 
                 <div className="flex flex-col gap-2 mb-3">
-                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-[3px] border cursor-pointer transition-colors ${
                     reviewMode === 'auto' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
                   }`}>
                     <input type="radio" name="revMode" value="auto" checked={reviewMode === 'auto'}
@@ -1430,7 +1435,7 @@ export default function MyBoardClient({
                       <p className="text-[11px] text-txt-muted">หยุดการนับเวลาที่กำลังทำงานอยู่และบันทึกเวลาที่ผ่านมา</p>
                     </div>
                   </label>
-                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors ${
+                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-[3px] border cursor-pointer transition-colors ${
                     reviewMode === 'manual' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
                   }`}>
                     <input type="radio" name="revMode" value="manual" checked={reviewMode === 'manual'}
@@ -1441,7 +1446,7 @@ export default function MyBoardClient({
 
                 {reviewMode === 'auto' && (
                   <button onClick={submitReviewAuto} disabled={reviewTimeSaving}
-                    className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50">
+                    className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
                     {reviewTimeSaving ? 'กำลังบันทึก...' : '⏹ หยุดและบันทึกเวลา'}
                   </button>
                 )}
@@ -1468,18 +1473,18 @@ export default function MyBoardClient({
                         <input type="number" min="0.25" step="0.25" autoFocus
                           value={reviewNormalHrs} onChange={e => setReviewNormalHrs(e.target.value)}
                           placeholder="เช่น 2.5"
-                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                       </div>
                       <div className="flex-1">
                         <label className="block text-[11px] text-txt-muted mb-1">OT (ชม.) — ไม่บังคับ</label>
                         <input type="number" min="0" step="0.25"
                           value={reviewOtHrs} onChange={e => setReviewOtHrs(e.target.value)}
                           placeholder="0"
-                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                       </div>
                     </div>
                     <button onClick={submitReviewManual} disabled={reviewTimeSaving || !reviewNormalHrs}
-                      className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-lg hover:bg-accent/20 transition-colors disabled:opacity-50">
+                      className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
                       {reviewTimeSaving ? 'กำลังบันทึก...' : '✎ บันทึกเวลา'}
                     </button>
                   </div>
@@ -1491,18 +1496,18 @@ export default function MyBoardClient({
 
             <div className="flex gap-2 justify-end mt-1">
               <button onClick={cancelReviewModal}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                 ยกเลิก
               </button>
               {reviewTimeModal.hasTime && !reviewTimeAdded && (
                 <button onClick={proceedToReview}
-                  className="px-4 py-2 text-[12.5px] text-txt-secondary hover:text-txt-primary border border-app-border rounded-lg transition-colors">
+                  className="px-4 py-2 text-[12.5px] text-txt-secondary hover:text-txt-primary border border-app-border rounded-[3px] transition-colors">
                   ข้าม — ย้ายงานเลย
                 </button>
               )}
               <button onClick={proceedToReview}
                 disabled={!reviewTimeModal.hasTime && !reviewTimeAdded}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
+                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
                 ยืนยันและย้ายงาน →
               </button>
             </div>
@@ -1513,7 +1518,7 @@ export default function MyBoardClient({
       {/* ── Modal: Resolve issue ───────────────────────── */}
       {resolveTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[400px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[400px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-success mb-1">จัดการการ์ดที่มีปัญหา</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">เลือกว่าจะย้ายงานนี้ไปไหนหลังปลด flag ปัญหาออก</p>
 
@@ -1525,10 +1530,10 @@ export default function MyBoardClient({
                 { v: 'done' as const,   label: 'Done',        hint: 'แก้บั๊กเสร็จสมบูรณ์แล้ว ไม่ต้อง review ซ้ำ' },
                 { v: 'cancel' as const, label: '🚫 Cancel',   hint: 'เปิดผิด/เปิดซ้ำ ไม่ต้องทำต่อเลย ย้ายเข้าเลน Cancel' },
               ]).map(({ v, label, hint }) => (
-                <label key={v} className={`flex items-start gap-2.5 border rounded-lg px-3 py-2.5 cursor-pointer transition-colors text-[12px] leading-[1.5] ${
+                <label key={v} className={`flex items-start gap-2.5 border rounded-[3px] px-3 py-2.5 cursor-pointer transition-colors text-[12px] leading-[1.5] ${
                   resolveDestination === v
                     ? 'border-accent bg-accent/10 text-txt-primary'
-                    : 'border-app-border bg-surface-2 text-txt-secondary hover:border-[#3a3f4d]'
+                    : 'border-app-border bg-surface-2 text-txt-secondary hover:border-[#B4BCC8]'
                 }`}>
                   <input
                     type="radio"
@@ -1551,18 +1556,18 @@ export default function MyBoardClient({
               value={resolutionNote}
               onChange={e => setResolutionNote(e.target.value)}
               placeholder="เช่น เพิ่ม null check ก่อน call ฟังก์ชัน แก้ปัญหา crash เมื่อ state เป็น undefined"
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent resize-y min-h-[80px] font-inherit"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent resize-y min-h-[80px] font-inherit"
             />
             {resolveError && <p className="text-[11.5px] text-danger mt-2">{resolveError}</p>}
             <div className="flex gap-2 justify-end mt-4">
               <button
                 onClick={() => { setResolveTarget(null); setResolutionNote(''); setResolveDestination('todo'); }}
                 disabled={resolving}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                 ยกเลิก
               </button>
               <button onClick={submitResolve} disabled={resolving || !resolutionNote.trim()}
-                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors ${resolving ? 'btn-loading' : ''}`}>
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${resolving ? 'btn-loading' : ''}`}>
                 {resolveDestination === 'done' ? 'ยืนยันและย้ายไป Done'
                   : resolveDestination === 'cancel' ? 'ยืนยันและยกเลิกงานนี้'
                   : 'ยืนยันและกลับไป To Do'}
@@ -1578,7 +1583,7 @@ export default function MyBoardClient({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
           onClick={e => { if (e.target === e.currentTarget) setShowExport(false); }}
         >
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
             <div className="flex items-center justify-between px-5 py-4 border-b border-app-border">
               <div>
                 <h2 className="text-[15px] font-semibold text-txt-primary">📄 Export Report (บอร์ดของฉัน)</h2>
@@ -1603,15 +1608,15 @@ export default function MyBoardClient({
                 </div>
                 <div className="px-5 py-3 border-t border-app-border flex items-center gap-2.5">
                   <button onClick={downloadMarkdown}
-                    className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-[7px] rounded-md transition-colors">
+                    className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-[7px] rounded-[3px] transition-colors">
                     ⬇ ดาวน์โหลด .md
                   </button>
                   <button onClick={copyPlainText}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors">
                     {copied ? '✅ คัดลอกแล้ว!' : '📋 Copy เป็นข้อความ'}
                   </button>
                   <button onClick={() => window.print()}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors">
                     🖨 พิมพ์ / บันทึก PDF
                   </button>
                 </div>
@@ -1624,7 +1629,7 @@ export default function MyBoardClient({
       {/* ── Drag-and-drop save toast ── */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-[60] px-4 py-2.5 rounded-lg shadow-xl text-[12.5px] font-medium text-white ${
+          className={`fixed bottom-5 right-5 z-[60] px-4 py-2.5 rounded-[3px] shadow-xl text-[12.5px] font-medium text-white ${
             toast.type === 'error' ? 'bg-danger' : 'bg-success'
           }`}
         >

@@ -3,27 +3,28 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0f1115;
-  --surface-1: #1b1e26;
-  --surface-2: #22252f;
-  --border: #2a2e39;
-  --text-primary: #eceef2;
-  --text-secondary: #9aa0ac;
-  --text-muted: #666c78;
-  --accent: #6d8cff;
-  --accent-bg: #1c2340;
-  --danger: #ef5a5a;
-  --danger-bg: #3a1f22;
-  --warning: #e3a83e;
-  --warning-bg: #3a2f1a;
-  --success: #4fbf7a;
-  --success-bg: #153323;
+  --bg: #EEF0F4;
+  --surface-1: #FFFFFF;
+  --surface-2: #F6F7F9;
+  --surface-3: #F0F2F5;
+  --border: #C4CBD5;
+  --text-primary: #16181D;
+  --text-secondary: #5D6470;
+  --text-muted: #7B828E;
+  --accent: #1355E0;
+  --accent-bg: #E7EEFC;
+  --danger: #9A4E00;
+  --danger-bg: #FEF3E7;
+  --warning: #9A4E00;
+  --warning-bg: #FEF3E7;
+  --success: #0B6650;
+  --success-bg: #E3F1EC;
 }
 
 html, body {
-  background: #0f1115;
-  color: #eceef2;
-  font-family: 'Inter', 'IBM Plex Sans Thai', sans-serif;
+  background: #EEF0F4;
+  color: #16181D;
+  font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -57,7 +58,7 @@ input, button, select, textarea {
   display: inline-block;
   width: 13px; height: 13px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(22, 24, 29, 0.12);
   border-top-color: var(--accent);
   animation: btn-spin 0.6s linear infinite;
 }
@@ -76,12 +77,12 @@ input, button, select, textarea {
 /* ตาม design-reference/my-board_14.html เป๊ะๆ — border-color เต็มสีจัดการผ่าน
    Tailwind (border-success) ใน JSX แล้ว ตรงนี้แค่เพิ่ม border-left หนา + gradient + glow */
 @keyframes review-approved-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 191, 122, 0); }
-  50%      { box-shadow: 0 0 0 4px rgba(79, 191, 122, 0.25); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(11, 102, 80, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(11, 102, 80, 0.2); }
 }
 .card-review-approved {
   border-left-width: 5px;
-  background: linear-gradient(135deg, rgba(79, 191, 122, 0.14), rgba(79, 191, 122, 0.04));
+  background: linear-gradient(135deg, rgba(11, 102, 80, 0.1), rgba(11, 102, 80, 0.02));
   animation: review-approved-glow 2.2s ease-in-out 3;
 }
 .review-approved-banner {
@@ -93,7 +94,7 @@ input, button, select, textarea {
   font-size: 11px;
   font-weight: 600;
   padding: 5px 9px;
-  border-radius: 6px;
+  border-radius: 3px;
   margin: -2px -2px 8px;
 }
 .review-approved-banner .checkmark {

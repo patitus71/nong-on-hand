@@ -106,7 +106,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
 
       {/* Success banner */}
       {importDone > 0 && (
-        <div className="flex flex-col gap-1 bg-success-bg border border-success/30 text-success text-[12.5px] px-3 py-2.5 rounded-lg mb-5 leading-relaxed">
+        <div className="flex flex-col gap-1 bg-success-bg border border-success/30 text-success text-[12.5px] px-3 py-2.5 rounded-[3px] mb-5 leading-relaxed">
           <span>✓ Import สำเร็จ {importDone} งาน</span>
           <span className="text-txt-secondary">
             งานอยู่ใน{' '}
@@ -122,7 +122,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
           onClick={() => fileRef.current?.click()}
           onDragOver={e => e.preventDefault()}
           onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-          className="border border-dashed border-app-border rounded-[12px] p-9 text-center cursor-pointer mb-5 hover:border-accent hover:bg-[#161a26] transition-colors"
+          className="border border-dashed border-app-border rounded-[4px] p-9 text-center cursor-pointer mb-5 hover:border-accent hover:bg-[#161a26] transition-colors"
         >
           <div className="text-[26px] mb-2">⬆</div>
           <p className="text-[14px] font-medium text-txt-primary mb-1">ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</p>
@@ -157,7 +157,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             </div>
             <button
               onClick={() => { setFile(null); setRows([]); setImportDone(0); }}
-              className="text-[12px] text-txt-secondary bg-surface-2 border border-app-border px-2.5 py-[5px] rounded-md hover:bg-[#2a2e3a] transition-colors"
+              className="text-[12px] text-txt-secondary bg-surface-2 border border-app-border px-2.5 py-[5px] rounded-[3px] hover:bg-surface-3 transition-colors"
             >
               เปลี่ยนไฟล์
             </button>
@@ -166,7 +166,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
           {parsing && <p className="text-[12.5px] text-txt-secondary mb-4">กำลัง parse ไฟล์...</p>}
 
           {!parsing && errorCount > 0 && (
-            <div className="flex items-start gap-2 bg-warning-bg border border-warning/30 rounded-lg px-3 py-2.5 text-[12.5px] text-warning mb-3.5">
+            <div className="flex items-start gap-2 bg-warning-bg border border-warning/30 rounded-[3px] px-3 py-2.5 text-[12.5px] text-warning mb-3.5">
               <span>⚠</span>
               <div>
                 พบ {errorCount} แถวที่มีปัญหา — แถวเหล่านี้จะไม่ถูก import
@@ -178,7 +178,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
           )}
 
           {!parsing && rows.length > 0 && (
-            <table className="w-full border-collapse bg-surface-1 border border-app-border rounded-[10px] overflow-hidden mb-5">
+            <table className="w-full border-collapse bg-surface-1 border border-app-border rounded-[4px] overflow-hidden mb-5">
               <thead>
                 <tr className="border-b border-app-border">
                   {['', 'Title', 'Squad', 'Estimate', 'Description'].map(h => (
@@ -217,14 +217,14 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => { setFile(null); setRows([]); }}
-                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3.5 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3.5 py-2 rounded-[3px] hover:bg-surface-3 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={doImport}
                 disabled={importing || validCount === 0}
-                className="bg-accent text-white text-[13px] px-3.5 py-2 rounded-md font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
+                className="bg-accent text-white text-[13px] px-3.5 py-2 rounded-[3px] font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
               >
                 {importing
                   ? 'กำลัง import...'

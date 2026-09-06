@@ -158,3 +158,14 @@ export function laneBadgeCls(name: string | null): string {
   if (l.includes('review'))   return 'bg-warning-bg text-warning';
   return 'bg-surface-2 text-txt-secondary';
 }
+
+/* สัญลักษณ์รูปทรงกำกับสถานะ — ห้ามพึ่งสีเดี่ยวๆ (colorblind-safe), ดู design handoff */
+export function laneGlyph(name: string | null): string {
+  if (!name) return '○';
+  const l = name.toLowerCase();
+  if (l.includes('cancel'))   return '⊘';
+  if (l.includes('done'))     return '✓';
+  if (l.includes('review'))   return '◆';
+  if (l.includes('progress')) return '◐';
+  return '○';
+}

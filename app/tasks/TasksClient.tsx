@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fmt, initials, avatarColor, laneBadgeCls } from '@/lib/ui';
+import { fmt, initials, avatarColor, laneBadgeCls, laneGlyph } from '@/lib/ui';
 
 type TaskRow = {
   id:                  string;
@@ -272,8 +272,8 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   const isSingleSquad      = selectedSquadIds.length === 1;
   const canBulkPullIn      = canPullIn && allSelectedPending && isSingleSquad;
 
-  const selCls = 'bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent';
-  const btnCls = 'bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 transition-colors hover:bg-[#2a2e3a]';
+  const selCls = 'bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-[3px] focus:outline-none focus:border-accent';
+  const btnCls = 'bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 transition-colors hover:bg-surface-3';
 
   return (
     <div className="px-7 py-6 pb-16">
@@ -286,7 +286,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
         </div>
         {['ADMIN', 'QA_LEAD'].includes(userRole) && (
           <Link href="/tasks/import"
-            className="bg-accent text-white text-[13px] px-3.5 py-2 rounded-md font-medium hover:bg-accent-hover transition-colors">
+            className="bg-accent text-white text-[13px] px-3.5 py-2 rounded-[3px] font-medium hover:bg-accent-hover transition-colors">
             ⬆ Import งาน
           </Link>
         )}
@@ -295,14 +295,14 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       {/* Stats */}
       <div className="flex gap-2.5 mb-5 flex-wrap">
         {[
-          { num: stats.total,      label: 'งานทั้งหมด', danger: false },
-          { num: stats.inProgress, label: 'กำลังทำ',    danger: false },
-          { num: stats.done,       label: 'เสร็จแล้ว',  danger: false },
-          { num: stats.issues,     label: 'มีปัญหา',    danger: true  },
+          { num: stats.total,      label: 'งานทั้งหมด', glyph: '',  danger: false },
+          { num: stats.inProgress, label: 'กำลังทำ',    glyph: '◐', danger: false },
+          { num: stats.done,       label: 'เสร็จแล้ว',  glyph: '✓', danger: false },
+          { num: stats.issues,     label: 'มีปัญหา',    glyph: '▲', danger: true  },
         ].map(s => (
-          <div key={s.label} className="bg-surface-1 border border-app-border rounded-[10px] px-4 py-3 min-w-[110px]">
+          <div key={s.label} className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3 min-w-[110px]">
             <div className={`text-[19px] font-semibold leading-tight ${s.danger ? 'text-danger' : 'text-txt-primary'}`}>{s.num}</div>
-            <div className="text-[11.5px] text-txt-secondary mt-0.5">{s.label}</div>
+            <div className="text-[11.5px] text-txt-secondary mt-0.5">{s.glyph && <span className="mr-1">{s.glyph}</span>}{s.label}</div>
           </div>
         ))}
       </div>
@@ -310,7 +310,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       {/* Toolbar */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <input
-          className="w-[220px] bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent placeholder:text-txt-muted"
+          className="w-[220px] bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-[3px] focus:outline-none focus:border-accent placeholder:text-txt-muted"
           placeholder="ค้นหางาน..."
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -332,7 +332,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
           className={`${btnCls} ${issueOnly ? 'border-danger text-danger' : ''}`}
           onClick={() => setIssueOnly(!issueOnly)}
         >
-          ⚠ เฉพาะที่มีปัญหา
+          ▲ เฉพาะที่มีปัญหา
         </button>
         {canDeleteAny && (
           <button
@@ -346,12 +346,12 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
 
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 bg-accent-bg border border-accent/35 rounded-[10px] px-4 py-2.5 mb-3 text-[13px] text-accent">
+        <div className="flex items-center gap-3 bg-accent-bg border border-accent/35 rounded-[4px] px-4 py-2.5 mb-3 text-[13px] text-accent">
           <span>เลือกแล้ว {selectedIds.size} งาน</span>
           <div className="flex-1" />
           <button
             onClick={() => setSelectedIds(new Set())}
-            className="bg-surface-2 border border-app-border text-txt-secondary text-[12.5px] px-3 py-1.5 rounded-md hover:bg-[#2a2e3a] transition-colors"
+            className="bg-surface-2 border border-app-border text-txt-secondary text-[12.5px] px-3 py-1.5 rounded-[3px] hover:bg-surface-3 transition-colors"
           >
             ยกเลิกเลือก
           </button>
@@ -360,14 +360,14 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
               onClick={() => openPullIn(Array.from(selectedIds))}
               disabled={!canBulkPullIn}
               title={canBulkPullIn ? '' : 'ดึงเข้าบอร์ดได้เฉพาะงาน pending-import ล้วนๆ และต้องอยู่ Squad เดียวกันเท่านั้น'}
-              className="bg-accent text-white text-[12.5px] px-3 py-1.5 rounded-md font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="bg-accent text-white text-[12.5px] px-3 py-1.5 rounded-[3px] font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               📥 ดึงเข้าบอร์ด ({selectedIds.size} งาน)
             </button>
           )}
           <button
             onClick={() => openDeleteModal(Array.from(selectedIds))}
-            className="bg-danger border border-danger text-white text-[12.5px] px-3 py-1.5 rounded-md font-medium hover:bg-[#d94848] transition-colors"
+            className="bg-danger border border-danger text-white text-[12.5px] px-3 py-1.5 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors"
           >
             🗑 ลบ ({selectedIds.size} งาน)
           </button>
@@ -375,7 +375,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       )}
 
       {/* Table */}
-      <div className="w-full bg-surface-1 border border-app-border rounded-[10px] overflow-hidden">
+      <div className="w-full bg-surface-1 border border-app-border rounded-[4px] overflow-hidden">
         <table className="w-full border-collapse">
           <thead>
             <tr>
@@ -485,10 +485,10 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                   <td className="px-3.5 py-3">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`text-[11.5px] px-2.5 py-1 rounded-full font-medium ${badge}`}>
-                        {t.laneName ?? 'ยังไม่ดึง'}
+                        {t.laneName ? `${laneGlyph(t.laneName)} ${t.laneName}` : '○ ยังไม่ดึง'}
                       </span>
                       {t.hasIssue && (
-                        <span className="text-[11.5px] px-2.5 py-1 rounded-full bg-danger-bg text-danger font-medium">มีปัญหา</span>
+                        <span className="text-[11.5px] px-2.5 py-1 rounded-full bg-danger-bg text-danger font-medium">▲ มีปัญหา</span>
                       )}
                     </div>
                   </td>
@@ -534,13 +534,13 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                         </button>
                         {menuOpen && (
                           <div
-                            className="absolute right-0 top-7 bg-surface-2 border border-app-border rounded-lg py-1 min-w-[170px] z-20 shadow-lg"
+                            className="absolute right-0 top-7 bg-surface-2 border border-app-border rounded-[3px] py-1 min-w-[170px] z-20 shadow-lg"
                             onClick={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
                           >
                             {canPullIn && pending && (
                               <button
                                 onClick={() => openPullIn([t.id])}
-                                className="w-full text-left text-[12.5px] px-3 py-2 hover:bg-[#2a2e3a] transition-colors text-txt-primary flex items-center gap-2"
+                                className="w-full text-left text-[12.5px] px-3 py-2 hover:bg-surface-3 transition-colors text-txt-primary flex items-center gap-2"
                               >
                                 📥 ดึงเข้าบอร์ด
                               </button>
@@ -589,7 +589,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       {/* ── Pull-in modal ── */}
       {showPullInModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[600px] max-h-[85vh] flex flex-col shadow-2xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[600px] max-h-[85vh] flex flex-col shadow-2xl">
             <div className="px-5 pt-5 pb-3 border-b border-app-border flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-[15px] font-semibold text-txt-primary">📥 ดึงงานเข้าบอร์ด</h2>
@@ -610,7 +610,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                 }
                 if (squadSprints.length === 0) {
                   return (
-                    <div className="bg-warning-bg border border-warning/30 rounded-lg px-3 py-2">
+                    <div className="bg-warning-bg border border-warning/30 rounded-[3px] px-3 py-2">
                       <p className="text-[12px] text-warning font-medium">⚠ Squad นี้ยังไม่มี Sprint ที่เปิดอยู่</p>
                       <p className="text-[11px] text-txt-secondary mt-0.5">ADMIN หรือ QA Lead ต้องเปิด Sprint ที่ Squad Board ก่อนจึงจะดึงงานได้</p>
                     </div>
@@ -622,7 +622,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                     <select
                       value={selectedSprintId}
                       onChange={e => setSelectedSprintId(e.target.value)}
-                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-md focus:outline-none focus:border-accent"
+                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent"
                     >
                       <option value="">— เลือก Sprint —</option>
                       {squadSprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -646,19 +646,19 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                       <label className="block text-[10.5px] text-txt-secondary mb-1">Estimate (ชม.)</label>
                       <input type="number" step="0.5" min="0" placeholder="เช่น 2.5" value={f.est}
                         onChange={e => setField(id, 'est', e.target.value)}
-                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-md focus:outline-none focus:border-accent" />
+                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                     </div>
                     <div>
                       <label className="block text-[10.5px] text-txt-secondary mb-1">วันที่คาดว่าจะเสร็จ</label>
                       <input type="date" value={f.due}
                         onChange={e => setField(id, 'due', e.target.value)}
-                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-md focus:outline-none focus:border-accent" />
+                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                     </div>
                     <div>
                       <label className="block text-[10.5px] text-txt-secondary mb-1">มอบหมายให้</label>
                       <select value={f.assignee}
                         onChange={e => setField(id, 'assignee', e.target.value)}
-                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-md focus:outline-none focus:border-accent">
+                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent">
                         <option value="">— เลือกทีหลัง —</option>
                         {qaEngineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
@@ -673,13 +673,13 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
             </p>
             <div className="px-5 pb-5 pt-3 flex justify-end gap-2">
               <button onClick={() => setShowPullInModal(false)} disabled={pullSubmitting}
-                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors">
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors">
                 ยกเลิก
               </button>
               <button
                 onClick={submitPullIn}
                 disabled={pullSubmitting || !modalSquadId || !selectedSprintId}
-                className={`bg-accent text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 ${pullSubmitting ? 'btn-loading' : ''}`}
+                className={`bg-accent text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 ${pullSubmitting ? 'btn-loading' : ''}`}
               >
                 ยืนยันดึงเข้าบอร์ด
               </button>
@@ -691,7 +691,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       {/* ── Delete confirm modal ── */}
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[400px] shadow-2xl p-5">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[400px] shadow-2xl p-5">
             <h2 className="text-[15px] font-semibold text-danger mb-1">🗑 ลบงาน{pendingDeleteIds.length > 1 ? ` ${pendingDeleteIds.length} รายการ` : 'นี้'}?</h2>
             <p className="text-[12.5px] text-txt-secondary mb-3 leading-relaxed">
               {pendingDeleteIds.length === 1
@@ -699,32 +699,32 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                 : `ยืนยันการลบ ${pendingDeleteIds.length} งาน: ${pendingDeleteIds.map(id => tasks.find(t => t.id === id)?.title).filter(Boolean).join(', ')}`
               }
             </p>
-            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-lg mb-2 leading-relaxed">
+            <p className="text-[12px] text-warning bg-warning-bg px-3 py-2 rounded-[3px] mb-2 leading-relaxed">
               ⚠ ลบแล้วจะแจ้งเตือนผู้รับผิดชอบ (ถ้ามี) และงานจะหายออกจากระบบ ดึงกลับมาไม่ได้
             </p>
             {pendingDeleteIds.some(id => {
               const t = tasks.find(x => x.id === id);
               return t && (t.totalNormalMin > 0 || t.totalOtMin > 0);
             }) && (
-              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-lg mb-2 leading-relaxed">
+              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-[3px] mb-2 leading-relaxed">
                 ⚠ งานที่เลือกมีเวลาที่ log ไว้อยู่ — เวลาทำงานและ OT จะหายไปด้วยเมื่อลบ
               </p>
             )}
             {deleteError && (
-              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-lg mb-3">{deleteError}</p>
+              <p className="text-[12px] text-danger bg-danger-bg px-3 py-2 rounded-[3px] mb-3">{deleteError}</p>
             )}
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => { setShowDeleteModal(false); setPendingDeleteIds([]); setDeleteError(''); }}
                 disabled={deleting}
-                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={submitDelete}
                 disabled={deleting}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-[#d94848] transition-colors disabled:opacity-50 ${deleting ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${deleting ? 'btn-loading' : ''}`}
               >
                 ลบงานนี้ถาวร
               </button>

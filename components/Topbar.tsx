@@ -20,8 +20,7 @@ export default async function Topbar() {
       <div className="flex items-center">
         <Link href="/" className="flex items-center gap-2.5">
           <div
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[13px] font-bold text-white flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg,#6d8cff,#4a63c9)' }}
+            className="w-[26px] h-[26px] rounded-[3px] flex items-center justify-center text-[13px] font-bold text-white flex-shrink-0 bg-accent"
           >
             TB
           </div>

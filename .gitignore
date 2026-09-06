@@ -26,5 +26,7 @@ Thumbs.db
 # Design reference / internal docs (optional — remove if you want these tracked)
 design-reference/
 md/
+handoff/
+handoff.zip
 
 .vercel

@@ -395,7 +395,7 @@ export default function SquadBoardClient({
         <div className="flex items-center gap-2.5 flex-wrap">
           <h1 className="text-[19px] font-semibold text-txt-primary">Squad Board</h1>
           <select
-            className="bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent"
+            className="bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-[3px] focus:outline-none focus:border-accent"
             value={currentSquadId}
             onChange={e => router.push(`/squads/${e.target.value}`)}
           >
@@ -406,7 +406,7 @@ export default function SquadBoardClient({
           {sprints.length > 0 ? (
             <div className="inline-flex items-center gap-1.5">
               <select
-                className={`bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-md focus:outline-none focus:border-accent transition-opacity ${sprintNavPending ? 'opacity-50 pointer-events-none' : ''}`}
+                className={`bg-surface-1 border border-app-border text-txt-primary text-[13px] px-2.5 py-[7px] rounded-[3px] focus:outline-none focus:border-accent transition-opacity ${sprintNavPending ? 'opacity-50 pointer-events-none' : ''}`}
                 value={activeSprintId ?? ''}
                 disabled={sprintNavPending}
                 onChange={e => {
@@ -423,7 +423,7 @@ export default function SquadBoardClient({
               {sprintNavPending && <span className="inline-spinner" />}
             </div>
           ) : (
-            <span className="text-[12px] text-txt-muted bg-surface-1 border border-app-border px-2.5 py-[7px] rounded-md">
+            <span className="text-[12px] text-txt-muted bg-surface-1 border border-app-border px-2.5 py-[7px] rounded-[3px]">
               ยังไม่มี Sprint
             </span>
           )}
@@ -434,7 +434,7 @@ export default function SquadBoardClient({
           {canManageSprint && activeSprint?.status === 'OPEN' && (
             <button
               onClick={() => { setShowCloseSprint(true); setCloseSprintError(''); setUnfinishedCount(null); }}
-              className="bg-surface-2 border border-danger/40 text-danger text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-danger-bg transition-colors"
+              className="bg-surface-2 border border-danger/40 text-danger text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 hover:bg-danger-bg transition-colors"
             >
               🔴 ปิด Sprint
             </button>
@@ -442,7 +442,7 @@ export default function SquadBoardClient({
           {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
             <button
               onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setOpenSprintError(''); }}
-              className="bg-surface-2 border border-success/40 text-success text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-success-bg transition-colors"
+              className="bg-surface-2 border border-success/40 text-success text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 hover:bg-success-bg transition-colors"
             >
               🟢 เปิด Sprint ใหม่
             </button>
@@ -451,7 +451,7 @@ export default function SquadBoardClient({
           <button
             onClick={manualRefresh}
             title="อัปเดตข้อมูลล่าสุด"
-            className="bg-surface-2 border border-app-border text-txt-muted text-[13px] px-2.5 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] hover:text-txt-primary transition-colors"
+            className="bg-surface-2 border border-app-border text-txt-muted text-[13px] px-2.5 py-[7px] rounded-[3px] flex items-center gap-1.5 hover:bg-surface-3 hover:text-txt-primary transition-colors"
           >
             ↻
             <span className="text-[11px]">
@@ -461,14 +461,14 @@ export default function SquadBoardClient({
           {isReadonly && activeSprint && (
             <button
               onClick={openSprintExport}
-              className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] transition-colors"
+              className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 hover:bg-surface-3 transition-colors"
             >
               📄 Export Sprint
             </button>
           )}
           <button
             onClick={openExport}
-            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md flex items-center gap-1.5 hover:bg-[#2a2e3a] transition-colors"
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 hover:bg-surface-3 transition-colors"
           >
             ↓ Export Report
           </button>
@@ -503,7 +503,7 @@ export default function SquadBoardClient({
 
       {/* Readonly banner for closed sprint */}
       {isReadonly && (
-        <div className="flex items-center gap-2 bg-surface-1 border border-app-border rounded-lg px-4 py-2.5 mb-4 text-[12.5px] text-txt-secondary">
+        <div className="flex items-center gap-2 bg-surface-1 border border-app-border rounded-[3px] px-4 py-2.5 mb-4 text-[12.5px] text-txt-secondary">
           <span className="text-lg">🔒</span>
           <span>
             Sprint นี้ปิดแล้ว ({activeSprint?.closedAt ? new Date(activeSprint.closedAt).toLocaleDateString('th-TH') : ''}) — ดูข้อมูลได้อย่างเดียว
@@ -511,7 +511,7 @@ export default function SquadBoardClient({
           {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
             <button
               onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setOpenSprintError(''); }}
-              className="ml-auto bg-success-bg border border-success/40 text-success text-[12px] px-3 py-1 rounded-md hover:bg-success/15 transition-colors"
+              className="ml-auto bg-success-bg border border-success/40 text-success text-[12px] px-3 py-1 rounded-[3px] hover:bg-success/15 transition-colors"
             >
               🟢 เปิด Sprint ใหม่
             </button>
@@ -527,7 +527,7 @@ export default function SquadBoardClient({
         {visibleLanes.map(lane => (
           <div
             key={lane.name}
-            className="bg-surface-1 border border-app-border rounded-[12px] p-2.5 flex flex-col"
+            className="bg-surface-1 border border-app-border rounded-[4px] p-2.5 flex flex-col"
             style={{ height: 'calc(100vh - 240px)' }}
           >
             {/* Lane header */}
@@ -539,7 +539,10 @@ export default function SquadBoardClient({
                 lane.name === 'On-Board In Progress' ? 'text-accent'   :
                 'text-txt-primary'
               }`}>
-                {lane.name}
+                {({
+                  'มีปัญหา': '▲', 'Done': '✓', 'Wait for review': '◆',
+                  'On-Board In Progress': '◐', 'On-Board': '○', 'To do list': '○',
+                } as Record<string, string>)[lane.name] ?? ''} {lane.name}
               </span>
               <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">
                 {lane.tasks.length}
@@ -565,11 +568,11 @@ export default function SquadBoardClient({
                 <div key={t.id} className={`relative mb-2 last:mb-0 ${t.isAtRisk ? 'card-at-risk' : ''}`}>
                   {t.isAtRisk && (
                     <span
-                      className="absolute top-1.5 right-2 text-[13px] leading-none z-10 pointer-events-none"
+                      className="absolute top-1.5 right-2 text-[12px] leading-none z-10 pointer-events-none text-warning"
                       title={t.riskReason}
-                    >🔥</span>
+                    >▲</span>
                   )}
-                  <div className={`bg-surface-2 border rounded-lg p-2.5 ${
+                  <div className={`bg-surface-2 border rounded-[3px] p-2.5 ${
                     t.isCancelled ? 'grayscale-[0.4] opacity-80 border-app-border'
                     : t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
                   }`}>
@@ -585,10 +588,10 @@ export default function SquadBoardClient({
                             🚫 ยกเลิก
                           </span>
                         ) : t.hasIssue && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-danger flex-shrink-0 mt-[5px]" />
+                          <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>
                         )}
                         {t.reviewApprovedAt && lane.name === 'Wait for review' && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-success flex-shrink-0 mt-[5px]" title="Review ผ่านแล้ว" />
+                          <span className="text-success flex-shrink-0 text-[11px] leading-[1.4]" title="Review ผ่านแล้ว">✓</span>
                         )}
                         {t.title}
                       </Link>
@@ -655,7 +658,7 @@ export default function SquadBoardClient({
                       <button
                         onClick={() => approveReview(t.id)}
                         disabled={isApproving}
-                        className={`mt-2 w-full text-[11.5px] px-2 py-1.5 rounded-md bg-success-bg border border-success/30 text-success hover:bg-success/15 transition-colors disabled:opacity-50 font-medium ${isApproving ? 'btn-loading' : ''}`}
+                        className={`mt-2 w-full text-[11.5px] px-2 py-1.5 rounded-[3px] bg-success-bg border border-success/30 text-success hover:bg-success/15 transition-colors disabled:opacity-50 font-medium ${isApproving ? 'btn-loading' : ''}`}
                       >
                         ✓ Review ผ่าน
                       </button>
@@ -663,7 +666,7 @@ export default function SquadBoardClient({
 
                     {/* Already approved indicator */}
                     {lane.name === 'Wait for review' && t.reviewApprovedAt && (
-                      <div className="mt-2 text-[10.5px] text-success text-center py-1 bg-success-bg rounded-md">
+                      <div className="mt-2 text-[10.5px] text-success text-center py-1 bg-success-bg rounded-[3px]">
                         ✓ Review ผ่านแล้ว — รอ QA_ENGINEER ย้ายไป Done
                       </div>
                     )}
@@ -672,7 +675,7 @@ export default function SquadBoardClient({
                     {canAssign && members.length > 0 && !isReadonly && (
                       <button
                         onClick={() => openClaim(t)}
-                        className="mt-2 w-full text-[11.5px] px-2 py-1 rounded-md border border-app-border text-txt-muted hover:border-accent hover:text-accent transition-colors"
+                        className="mt-2 w-full text-[11.5px] px-2 py-1 rounded-[3px] border border-app-border text-txt-muted hover:border-accent hover:text-accent transition-colors"
                       >
                         + เพิ่มเข้าบอร์ดของฉัน
                       </button>
@@ -682,20 +685,20 @@ export default function SquadBoardClient({
                   {/* Card ⋯ dropdown */}
                   {canAssign && !isReadonly && menuOpen && (
                     <div
-                      className="absolute right-0 top-8 bg-surface-2 border border-app-border rounded-lg py-1 min-w-[190px] z-20 shadow-lg"
+                      className="absolute right-0 top-8 bg-surface-2 border border-app-border rounded-[3px] py-1 min-w-[190px] z-20 shadow-lg"
                       onClick={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
                     >
                       {!t.flaggedForDeletion ? (
                         <button
                           onClick={() => openFlagModal(t)}
-                          className="w-full text-left text-[12px] px-3 py-2 rounded-md hover:bg-danger-bg text-danger transition-colors"
+                          className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-danger-bg text-danger transition-colors"
                         >
                           🚩 Flag ให้ลบ
                         </button>
                       ) : (
                         <button
                           onClick={() => submitUnflag(t.id)}
-                          className="w-full text-left text-[12px] px-3 py-2 rounded-md hover:bg-surface-0 text-txt-secondary transition-colors"
+                          className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-surface-0 text-txt-secondary transition-colors"
                         >
                           ↩ ยกเลิก flag (เก็บงานนี้ไว้)
                         </button>
@@ -715,13 +718,13 @@ export default function SquadBoardClient({
                       value={createTitle}
                       onChange={e => setCreateTitle(e.target.value)}
                       placeholder="ชื่องาน..."
-                      className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-md focus:outline-none font-[inherit]"
+                      className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit]"
                     />
                     <div className="flex gap-1.5">
                       <button
                         type="submit"
                         disabled={createLoading || !createTitle.trim()}
-                        className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-md font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
+                        className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
                       >
                         เพิ่ม
                       </button>
@@ -729,7 +732,7 @@ export default function SquadBoardClient({
                         type="button"
                         onClick={() => { setShowCreate(false); setCreateTitle(''); }}
                         disabled={createLoading}
-                        className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-md transition-colors"
+                        className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
                       >
                         ยกเลิก
                       </button>
@@ -738,7 +741,7 @@ export default function SquadBoardClient({
                 ) : (
                   <button
                     onClick={() => setShowCreate(true)}
-                    className="w-full text-[12px] text-txt-muted hover:text-txt-primary border border-dashed border-app-border rounded-lg py-2 transition-colors hover:border-accent hover:bg-surface-2"
+                    className="w-full text-[12px] text-txt-muted hover:text-txt-primary border border-dashed border-app-border rounded-[3px] py-2 transition-colors hover:border-accent hover:bg-surface-2"
                   >
                     + เพิ่มงานใหม่
                   </button>
@@ -756,14 +759,14 @@ export default function SquadBoardClient({
           <button
             onClick={() => sendLine('standup')}
             disabled={lineLoading !== null}
-            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-lg hover:border-accent hover:bg-surface-1 transition-colors disabled:opacity-50"
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:border-accent hover:bg-surface-1 transition-colors disabled:opacity-50"
           >
             {lineLoading === 'standup' ? 'กำลังส่ง...' : '📤 ส่ง Standup เช้านี้'}
           </button>
           <button
             onClick={() => sendLine('eod')}
             disabled={lineLoading !== null}
-            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-lg hover:border-accent hover:bg-surface-1 transition-colors disabled:opacity-50"
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:border-accent hover:bg-surface-1 transition-colors disabled:opacity-50"
           >
             {lineLoading === 'eod' ? 'กำลังส่ง...' : '📤 ส่งสรุปสิ้นวัน'}
           </button>
@@ -776,7 +779,7 @@ export default function SquadBoardClient({
       {/* ── Flag modal ── */}
       {flagTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[400px] shadow-2xl p-5">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[400px] shadow-2xl p-5">
             <h2 className="text-[15px] font-semibold text-danger mb-1">🚩 Flag งานนี้ให้ลบ</h2>
             <p className="text-[12.5px] text-txt-secondary mb-3 leading-relaxed">
               ยืนยันการ flag &ldquo;{flagTarget.taskTitle}&rdquo;
@@ -788,7 +791,7 @@ export default function SquadBoardClient({
               onChange={e => { setFlagNote(e.target.value); setFlagError(''); }}
               placeholder="เช่น ticket นี้ดูเหมือนสร้างซ้ำจากอีกอัน หรือไม่เกี่ยวกับ sprint นี้เลย"
               rows={3}
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-lg font-[inherit] resize-y focus:outline-none focus:border-accent"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-[3px] font-[inherit] resize-y focus:outline-none focus:border-accent"
             />
             {flagError && <p className="text-[11.5px] text-danger mt-1.5">{flagError}</p>}
             <p className="text-[11px] text-txt-muted mt-2 leading-relaxed">
@@ -799,14 +802,14 @@ export default function SquadBoardClient({
               <button
                 onClick={() => setFlagTarget(null)}
                 disabled={flagging}
-                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={submitFlag}
                 disabled={flagging}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-[#d94848] transition-colors disabled:opacity-50 ${flagging ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${flagging ? 'btn-loading' : ''}`}
               >
                 ยืนยัน Flag
               </button>
@@ -818,7 +821,7 @@ export default function SquadBoardClient({
       {/* ── Export modal ── */}
       {showExport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[600px] max-h-[85vh] flex flex-col shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[600px] max-h-[85vh] flex flex-col shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[15px] font-semibold text-txt-primary">Export รายงานส่วนตัว — {userName}</h3>
               <button onClick={() => setShowExport(false)}
@@ -829,32 +832,32 @@ export default function SquadBoardClient({
                 <label className="block text-[12px] text-txt-secondary mb-1">ตั้งแต่วันที่</label>
                 <input type="date" value={exportStart}
                   onChange={e => { setExportStart(e.target.value); setExportMd(''); }}
-                  className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+                  className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
               </div>
               <div>
                 <label className="block text-[12px] text-txt-secondary mb-1">ถึงวันที่</label>
                 <input type="date" value={exportEnd}
                   onChange={e => { setExportEnd(e.target.value); setExportMd(''); }}
-                  className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent" />
+                  className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
               </div>
               <button onClick={fetchExport}
                 disabled={exportLoading || !exportStart || !exportEnd}
-                className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-[7px] rounded-lg disabled:opacity-50 transition-colors">
+                className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-[7px] rounded-[3px] disabled:opacity-50 transition-colors">
                 {exportLoading ? 'กำลังสร้าง...' : 'สร้าง Report'}
               </button>
             </div>
             {exportMd && (
               <>
-                <div className="flex-1 overflow-y-auto bg-surface-2 border border-app-border rounded-lg p-3 mb-4 min-h-0">
+                <div className="flex-1 overflow-y-auto bg-surface-2 border border-app-border rounded-[3px] p-3 mb-4 min-h-0">
                   <pre className="text-[12.5px] text-txt-secondary whitespace-pre-wrap font-mono leading-relaxed">{exportMd}</pre>
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button onClick={printPdf}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-lg hover:bg-[#2a2e3a] transition-colors">
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors">
                     Print / PDF
                   </button>
                   <button onClick={downloadMd}
-                    className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-lg transition-colors">
+                    className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-[3px] transition-colors">
                     ↓ Download .md
                   </button>
                 </div>
@@ -867,7 +870,7 @@ export default function SquadBoardClient({
       {/* ── Claim dialog ── */}
       {claimTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[340px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[340px] shadow-xl">
             <h2 className="text-[15px] font-semibold text-txt-primary mb-1">เพิ่มเข้าบอร์ดของฉัน</h2>
             <p className="text-[12px] text-txt-muted mb-4 leading-relaxed">
               งานจะเข้าเลน <span className="text-accent font-medium">To do</span> ในบอร์ดของผู้รับผิดชอบ
@@ -881,7 +884,7 @@ export default function SquadBoardClient({
             <select
               value={assigneeId}
               onChange={e => setAssigneeId(e.target.value)}
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-md focus:outline-none focus:border-accent"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent"
             >
               {members.map(m => (
                 <option key={m.id} value={m.id}>
@@ -896,14 +899,14 @@ export default function SquadBoardClient({
               <button
                 onClick={submitClaim}
                 disabled={claiming}
-                className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[13px] py-2 rounded-md font-medium disabled:opacity-50 transition-colors ${claiming ? 'btn-loading' : ''}`}
+                className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[13px] py-2 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${claiming ? 'btn-loading' : ''}`}
               >
                 ยืนยัน
               </button>
               <button
                 onClick={() => setClaimTarget(null)}
                 disabled={claiming}
-                className="px-4 py-2 text-[13px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-md transition-colors"
+                className="px-4 py-2 text-[13px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
               >
                 ยกเลิก
               </button>
@@ -915,7 +918,7 @@ export default function SquadBoardClient({
       {/* ── Sprint export modal ── */}
       {showSprintExport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[620px] max-h-[85vh] flex flex-col shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[620px] max-h-[85vh] flex flex-col shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[15px] font-semibold text-txt-primary">📄 Sprint Report — {activeSprint?.name}</h3>
               <button onClick={() => setShowSprintExport(false)}
@@ -927,12 +930,12 @@ export default function SquadBoardClient({
               </div>
             ) : (
               <>
-                <div className="flex-1 overflow-y-auto bg-surface-2 border border-app-border rounded-lg p-3 mb-4 min-h-0">
+                <div className="flex-1 overflow-y-auto bg-surface-2 border border-app-border rounded-[3px] p-3 mb-4 min-h-0">
                   <pre className="text-[12.5px] text-txt-secondary whitespace-pre-wrap font-mono leading-relaxed">{sprintExportMd}</pre>
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button onClick={downloadSprintMd}
-                    className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-lg transition-colors">
+                    className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-[3px] transition-colors">
                     ↓ Download .md
                   </button>
                 </div>
@@ -945,7 +948,7 @@ export default function SquadBoardClient({
       {/* ── Open Sprint modal ── */}
       {showOpenSprint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[400px] shadow-2xl p-5">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[400px] shadow-2xl p-5">
             <h2 className="text-[15px] font-semibold text-success mb-1">🟢 เปิด Sprint ใหม่</h2>
             <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">
               Squad <b>{currentSquadName}</b> จะเริ่ม Sprint ใหม่ทันที — สามารถดึงงานเข้า Sprint นี้ได้ที่หน้างานทั้งหมด
@@ -957,28 +960,28 @@ export default function SquadBoardClient({
               onChange={e => setNewSprintName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && submitOpenSprint()}
               placeholder={`Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`}
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-md focus:outline-none focus:border-accent mb-3 font-[inherit]"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-3 font-[inherit]"
             />
             <label className="block text-[12px] text-txt-secondary mb-1.5">วันปิด Sprint <span className="text-txt-muted">(ไม่บังคับ — ใช้แจ้งเตือนงานเสี่ยง)</span></label>
             <input
               type="date"
               value={newSprintEndDate}
               onChange={e => setNewSprintEndDate(e.target.value)}
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-md focus:outline-none focus:border-accent mb-3 font-[inherit]"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-3 font-[inherit]"
             />
             {openSprintError && <p className="text-[12px] text-danger mb-3">{openSprintError}</p>}
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowOpenSprint(false)}
                 disabled={openingLoading}
-                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={submitOpenSprint}
                 disabled={openingLoading}
-                className={`bg-success border border-success text-white text-[13px] px-4 py-2 rounded-md font-medium hover:opacity-90 transition-colors disabled:opacity-50 ${openingLoading ? 'btn-loading' : ''}`}
+                className={`bg-success border border-success text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:opacity-90 transition-colors disabled:opacity-50 ${openingLoading ? 'btn-loading' : ''}`}
               >
                 เปิด Sprint
               </button>
@@ -990,16 +993,16 @@ export default function SquadBoardClient({
       {/* ── Close Sprint modal ── */}
       {showCloseSprint && activeSprint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-[440px] shadow-2xl p-5">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[440px] shadow-2xl p-5">
             <h2 className="text-[15px] font-semibold text-danger mb-1">🔴 ปิด Sprint</h2>
             <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">
               ยืนยันการปิด <b>{activeSprint.name}</b> — หลังปิดแล้วบอร์ดจะเป็น read-only และเปิด Sprint ใหม่ได้
             </p>
 
             {unfinishedCount !== null && unfinishedCount > 0 && (
-              <div className="bg-warning-bg border border-warning/30 rounded-lg px-3 py-2.5 mb-4">
+              <div className="bg-warning-bg border border-warning/30 rounded-[3px] px-3 py-2.5 mb-4">
                 <p className="text-[12.5px] text-warning font-medium">
-                  ⚠ ยังมีงานที่ยังไม่เสร็จ {unfinishedCount} งาน
+                  ▲ ยังมีงานที่ยังไม่เสร็จ {unfinishedCount} งาน
                 </p>
                 <p className="text-[11.5px] text-txt-secondary mt-1">
                   งานเหล่านี้จะยังอยู่ใน Sprint นี้ (read-only) ไม่ถูก carry over อัตโนมัติ
@@ -1013,14 +1016,14 @@ export default function SquadBoardClient({
               <button
                 onClick={() => { setShowCloseSprint(false); setUnfinishedCount(null); }}
                 disabled={closingLoading}
-                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-md hover:bg-[#2a2e3a] transition-colors"
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors"
               >
                 ยกเลิก
               </button>
               <button
                 onClick={() => submitCloseSprint(unfinishedCount !== null)}
                 disabled={closingLoading}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-md font-medium hover:bg-[#d94848] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
               >
                 {unfinishedCount !== null ? 'ยืนยันปิด (มีงานค้าง)' : 'ปิด Sprint'}
               </button>

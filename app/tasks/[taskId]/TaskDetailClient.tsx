@@ -347,14 +347,14 @@ export default function TaskDetailClient({
 
       {/* Issue banner */}
       {task.hasIssue && (
-        <div className="flex items-center gap-2 bg-danger-bg text-danger text-[12.5px] px-3 py-2.5 rounded-lg mb-3.5">
+        <div className="flex items-center gap-2 bg-danger-bg text-danger text-[12.5px] px-3 py-2.5 rounded-[3px] mb-3.5">
           ⚠ งานนี้ถูกทำเครื่องหมายว่ามีปัญหา{task.issueNote && ` — "${task.issueNote}"`}
         </div>
       )}
 
       {/* Send-to-retro success */}
       {retroResult && (
-        <div className="flex items-center justify-between bg-success-bg text-success text-[12.5px] px-3 py-2.5 rounded-lg mb-3.5">
+        <div className="flex items-center justify-between bg-success-bg text-success text-[12.5px] px-3 py-2.5 rounded-[3px] mb-3.5">
           <span>✓ ส่งเข้า Retro แล้ว</span>
           <Link href={`/squads/${retroResult.squadId}/retro`} className="underline">ดู Retro →</Link>
         </div>
@@ -373,12 +373,12 @@ export default function TaskDetailClient({
                   value={titleDraft}
                   onChange={e => { setTitleDraft(e.target.value); if (titleError) setTitleError(''); }}
                   onKeyDown={e => { if (e.key === 'Enter') saveTitle(); if (e.key === 'Escape') { setEditingTitle(false); setTitleError(''); } }}
-                  className="flex-1 text-xl font-semibold bg-surface-2 border border-accent text-txt-primary px-2.5 py-1 rounded-lg focus:outline-none"
+                  className="flex-1 text-xl font-semibold bg-surface-2 border border-accent text-txt-primary px-2.5 py-1 rounded-[3px] focus:outline-none"
                 />
                 <button
                   onClick={saveTitle}
                   disabled={titleSaving}
-                  className="text-[12px] bg-accent text-white px-3 py-1.5 rounded-md disabled:opacity-50 whitespace-nowrap"
+                  className="text-[12px] bg-accent text-white px-3 py-1.5 rounded-[3px] disabled:opacity-50 whitespace-nowrap"
                 >
                   {titleSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
@@ -439,13 +439,13 @@ export default function TaskDetailClient({
                 value={descDraft}
                 onChange={e => setDescDraft(e.target.value)}
                 placeholder="รายละเอียดงาน..."
-                className="w-full bg-surface-2 border border-accent text-txt-primary text-[13.5px] px-2.5 py-2 rounded-lg focus:outline-none leading-relaxed resize-y"
+                className="w-full bg-surface-2 border border-accent text-txt-primary text-[13.5px] px-2.5 py-2 rounded-[3px] focus:outline-none leading-relaxed resize-y"
               />
               <div className="flex gap-1.5 mt-1.5">
                 <button
                   onClick={saveDesc}
                   disabled={descSaving}
-                  className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50"
+                  className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50"
                 >
                   {descSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
@@ -477,13 +477,13 @@ export default function TaskDetailClient({
                 พูดถึงใน retro ({task.retroItems.length} ครั้ง)
               </p>
               {task.retroItems.map(r => (
-                <div key={r.id} className="flex items-center justify-between text-[12px] px-2.5 py-2 bg-surface-2 rounded-lg mb-1.5">
+                <div key={r.id} className="flex items-center justify-between text-[12px] px-2.5 py-2 bg-surface-2 rounded-[3px] mb-1.5">
                   <span className="text-txt-secondary">{r.retroTitle} · {catLabel(r.category)}</span>
                   <span className="text-txt-muted">{new Date(r.createdAt).toLocaleDateString('th-TH')}</span>
                 </div>
               ))}
               {task.retroItems.length >= 2 && (
-                <div className="text-[11.5px] text-warning bg-warning-bg px-2.5 py-2 rounded-md mt-2">
+                <div className="text-[11.5px] text-warning bg-warning-bg px-2.5 py-2 rounded-[3px] mt-2">
                   ⚠ ปัญหานี้ถูกพูดถึงซ้ำ {task.retroItems.length} ครั้ง — อาจต้องจัดลำดับความสำคัญเพิ่ม
                 </div>
               )}
@@ -498,7 +498,7 @@ export default function TaskDetailClient({
               </p>
               <div className="flex flex-col gap-2">
                 {task.issueLogs.map(l => (
-                  <div key={l.id} className="bg-surface-1 border border-app-border rounded-lg px-3 py-2.5 text-[12px]">
+                  <div key={l.id} className="bg-surface-1 border border-app-border rounded-[3px] px-3 py-2.5 text-[12px]">
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <span className="text-danger font-medium flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-danger inline-block" />
@@ -535,7 +535,7 @@ export default function TaskDetailClient({
             return (
               <>
                 <p className="text-[11px] uppercase tracking-wider text-txt-muted font-medium mt-5 mb-2">ประวัติเวลาที่ log</p>
-                <div className="bg-surface-1 border border-app-border rounded-[10px] overflow-hidden">
+                <div className="bg-surface-1 border border-app-border rounded-[4px] overflow-hidden">
                   {history.map((h, i) => {
                     if (h.kind === 'action') {
                       let detail: { deletedCount?: number; totalNormalMin?: number; totalOtMin?: number } = {};
@@ -583,7 +583,7 @@ export default function TaskDetailClient({
         {/* ─── Right ─── */}
         <div>
           {/* Metadata */}
-          <div className="bg-surface-1 border border-app-border rounded-[10px] px-3.5 py-1 mb-3.5">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] px-3.5 py-1 mb-3.5">
             {sbRow('ผู้รับผิดชอบ',
               task.assignee && av
                 ? <span className="flex items-center gap-1.5">
@@ -604,23 +604,23 @@ export default function TaskDetailClient({
           </div>
 
           {/* Actions */}
-          <div className="bg-surface-1 border border-app-border rounded-[10px] p-3.5 flex flex-col gap-2">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-3.5 flex flex-col gap-2">
 
             {/* Auto timer */}
             {openSession ? (
               <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between px-3 py-2 rounded-md border border-accent/50 bg-surface-2">
+                <div className="flex items-center justify-between px-3 py-2 rounded-[3px] border border-accent/50 bg-surface-2">
                   <span className="text-[12px] text-accent">⏱ กำลังจับเวลา</span>
                   <span className="text-[13px] font-mono text-txt-primary">{fmtElapsed(elapsed)}</span>
                 </div>
                 <button onClick={stopTimerFn} disabled={timerSaving}
-                  className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-danger/40 bg-surface-2 text-danger hover:bg-danger-bg transition-colors disabled:opacity-50">
+                  className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-danger/40 bg-surface-2 text-danger hover:bg-danger-bg transition-colors disabled:opacity-50">
                   {timerSaving ? 'กำลังหยุด...' : '⏹ หยุดจับเวลา'}
                 </button>
               </div>
             ) : (
               <button onClick={startTimerFn} disabled={timerSaving}
-                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-app-border bg-surface-2 hover:bg-[#2a2e3a] text-txt-primary transition-colors disabled:opacity-50">
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-app-border bg-surface-2 hover:bg-surface-3 text-txt-primary transition-colors disabled:opacity-50">
                 {timerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
               </button>
             )}
@@ -628,7 +628,7 @@ export default function TaskDetailClient({
             {/* Manual time log */}
             {!timeLogOpen ? (
               <button onClick={() => { setTimeLogOpen(true); setTimeLogError(''); }}
-                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-app-border bg-surface-2 hover:bg-[#2a2e3a] text-txt-primary transition-colors">
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-app-border bg-surface-2 hover:bg-surface-3 text-txt-primary transition-colors">
                 ✎ บันทึกเวลา (manual)
               </button>
             ) : (
@@ -642,7 +642,7 @@ export default function TaskDetailClient({
                       value={normalHours}
                       onChange={e => setNormalHours(e.target.value)}
                       placeholder="เช่น 2.5"
-                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent"
+                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent"
                     />
                   </div>
                   <div className="flex-1">
@@ -652,14 +652,14 @@ export default function TaskDetailClient({
                       value={otHours}
                       onChange={e => setOtHours(e.target.value)}
                       placeholder="0"
-                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-accent"
+                      className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent"
                     />
                   </div>
                 </div>
                 {timeLogError && <p className="text-[11.5px] text-danger">{timeLogError}</p>}
                 <div className="flex gap-1.5">
                   <button type="submit" disabled={timeLogSaving || !normalHours}
-                    className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50">
+                    className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">
                     {timeLogSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                   </button>
                   <button type="button" onClick={() => { setTimeLogOpen(false); setTimeLogError(''); }}
@@ -672,16 +672,16 @@ export default function TaskDetailClient({
             {task.timeLogs.length > 0 && (
               !clearConfirm ? (
                 <button onClick={() => setClearConfirm(true)}
-                  className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-danger/30 bg-surface-2 text-danger/80 hover:text-danger hover:bg-danger-bg transition-colors">
+                  className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-danger/30 bg-surface-2 text-danger/80 hover:text-danger hover:bg-danger-bg transition-colors">
                   🗑 ล้างเวลาทั้งหมด
                 </button>
               ) : (
-                <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-md border border-danger/40 bg-danger-bg">
+                <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-[3px] border border-danger/40 bg-danger-bg">
                   <p className="text-[12px] text-danger font-medium">ยืนยันลบเวลาทั้งหมด?</p>
                   <p className="text-[11px] text-txt-muted">ไม่สามารถกู้คืนได้ แต่จะบันทึกลง Log</p>
                   <div className="flex gap-1.5">
                     <button onClick={clearAllTimeLogs} disabled={clearSaving}
-                      className="bg-danger text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50 hover:bg-danger/80 transition-colors">
+                      className="bg-danger text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50 hover:bg-danger/80 transition-colors">
                       {clearSaving ? 'กำลังลบ...' : 'ยืนยัน ลบทั้งหมด'}
                     </button>
                     <button onClick={() => setClearConfirm(false)}
@@ -694,7 +694,7 @@ export default function TaskDetailClient({
             {/* Flag issue */}
             {!task.hasIssue && !flagging && (
               <button onClick={toggleFlag}
-                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-app-border bg-surface-2 hover:bg-[#2a2e3a] text-txt-primary transition-colors">
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-app-border bg-surface-2 hover:bg-surface-3 text-txt-primary transition-colors">
                 ⚠ ทำเครื่องหมายว่ามีปัญหา
               </button>
             )}
@@ -705,11 +705,11 @@ export default function TaskDetailClient({
                   value={flagContent}
                   onChange={e => setFlagContent(e.target.value)}
                   placeholder="อธิบายปัญหาสั้นๆ..."
-                  className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-2 rounded-lg focus:outline-none resize-none"
+                  className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-2 rounded-[3px] focus:outline-none resize-none"
                 />
                 <div className="flex gap-1.5">
                   <button type="submit" disabled={flagSaving}
-                    className="bg-danger text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50">บันทึก</button>
+                    className="bg-danger text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">บันทึก</button>
                   <button type="button" onClick={() => setFlagging(false)}
                     className="text-txt-muted text-[12px] px-2 py-1.5 hover:text-txt-secondary">ยกเลิก</button>
                 </div>
@@ -719,7 +719,7 @@ export default function TaskDetailClient({
             {/* Send to retro */}
             {!retroOpen && !retroResult && (
               <button onClick={() => { setRetroOpen(true); setRetroContent(task.issueNote ?? task.title); }}
-                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-app-border bg-surface-2 hover:bg-[#2a2e3a] text-txt-primary transition-colors">
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-app-border bg-surface-2 hover:bg-surface-3 text-txt-primary transition-colors">
                 ➜ ส่งเข้า Retro
               </button>
             )}
@@ -730,11 +730,11 @@ export default function TaskDetailClient({
                   value={retroContent}
                   onChange={e => setRetroContent(e.target.value)}
                   placeholder="เนื้อหาการ์ด retro..."
-                  className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-2 rounded-lg focus:outline-none resize-none"
+                  className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-2 rounded-[3px] focus:outline-none resize-none"
                 />
                 <div className="flex gap-1.5">
                   <button type="submit" disabled={retroSaving || !retroContent.trim()}
-                    className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-md disabled:opacity-50">ส่ง</button>
+                    className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">ส่ง</button>
                   <button type="button" onClick={() => setRetroOpen(false)}
                     className="text-txt-muted text-[12px] px-2 py-1.5 hover:text-txt-secondary">ยกเลิก</button>
                 </div>
@@ -744,7 +744,7 @@ export default function TaskDetailClient({
             {/* Unflag — opens resolve modal */}
             {task.hasIssue && (
               <button onClick={toggleFlag}
-                className="w-full text-left text-[12.5px] px-3 py-2 rounded-md border border-danger/40 bg-surface-2 text-danger hover:bg-danger-bg transition-colors">
+                className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-danger/40 bg-surface-2 text-danger hover:bg-danger-bg transition-colors">
                 ✓ แก้ไขปัญหาแล้ว — ปลด flag
               </button>
             )}
@@ -755,7 +755,7 @@ export default function TaskDetailClient({
       {/* Resolve modal */}
       {resolveOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-xl p-5 w-[380px] shadow-xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[380px] shadow-xl">
             <h3 className="text-[15px] font-semibold text-success mb-1">✓ ยืนยันว่าแก้ไขปัญหาแล้ว</h3>
             <p className="text-[12.5px] text-txt-secondary mb-4">งานนี้จะปลด flag ปัญหาออก</p>
             <label className="block text-[12px] text-txt-secondary mb-1.5">
@@ -766,16 +766,16 @@ export default function TaskDetailClient({
               value={resolutionNote}
               onChange={e => setResolutionNote(e.target.value)}
               placeholder="เช่น เพิ่ม null check ก่อน call ฟังก์ชัน แก้ปัญหา crash เมื่อ state เป็น undefined"
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-lg focus:outline-none focus:border-accent resize-y min-h-[80px]"
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent resize-y min-h-[80px]"
             />
             {resolveError && <p className="text-[11.5px] text-danger mt-2">{resolveError}</p>}
             <div className="flex gap-2 justify-end mt-4">
               <button onClick={() => setResolveOpen(false)} disabled={resolveSaving}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-lg transition-colors">
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                 ยกเลิก
               </button>
               <button onClick={submitResolve} disabled={resolveSaving}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-lg disabled:opacity-50 transition-colors">
+                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
                 {resolveSaving ? 'กำลังบันทึก...' : 'ยืนยันและปลด flag'}
               </button>
             </div>

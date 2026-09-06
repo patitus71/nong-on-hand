@@ -75,9 +75,9 @@ function PieChart({ rows }: { rows: DashboardPersonRow[] }) {
 }
 
 const COLS = [
-  { key: 'WENT_WELL',   label: 'Went well',    cls: 'text-success'  },
-  { key: 'TO_IMPROVE',  label: 'To improve',   cls: 'text-warning'  },
-  { key: 'ACTION_ITEM', label: 'Action items', cls: 'text-accent'   },
+  { key: 'WENT_WELL',   label: 'Went well',    cls: 'text-success', glyph: '✓' },
+  { key: 'TO_IMPROVE',  label: 'To improve',   cls: 'text-warning', glyph: '▲' },
+  { key: 'ACTION_ITEM', label: 'Action items', cls: 'text-accent',  glyph: '◐' },
 ] as const;
 
 type ColKey = typeof COLS[number]['key'];
@@ -285,11 +285,11 @@ export default function RetroBoardClient({
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
               placeholder="ชื่อ Retro..."
-              className="w-full bg-surface-2 border border-accent text-txt-primary text-[12px] px-2.5 py-1.5 rounded-md focus:outline-none mb-1.5"
+              className="w-full bg-surface-2 border border-accent text-txt-primary text-[12px] px-2.5 py-1.5 rounded-[3px] focus:outline-none mb-1.5"
             />
             <div className="flex gap-1.5">
               <button type="submit" disabled={createSaving || !newTitle.trim()}
-                className="flex-1 bg-accent text-white text-[11.5px] py-1 rounded-md disabled:opacity-50">
+                className="flex-1 bg-accent text-white text-[11.5px] py-1 rounded-[3px] disabled:opacity-50">
                 สร้าง
               </button>
               <button type="button" onClick={() => { setCreating(false); setNewTitle(''); }}
@@ -311,7 +311,7 @@ export default function RetroBoardClient({
               <div key={r.id}>
                 <div
                   onClick={() => { setSelectedId(r.id); setConfirmDeleteId(null); }}
-                  className={`group relative flex flex-col gap-0.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors border
+                  className={`group relative flex flex-col gap-0.5 px-3 py-2.5 rounded-[3px] cursor-pointer transition-colors border
                     ${isSelected
                       ? 'bg-accent/10 border-accent/30'
                       : 'hover:bg-surface-2 border-transparent'
@@ -339,7 +339,7 @@ export default function RetroBoardClient({
                 </div>
 
                 {confirmDeleteId === r.id && (
-                  <div className="flex items-center gap-2 px-3 py-2 mx-1 mb-0.5 bg-surface-2 border border-app-border rounded-md">
+                  <div className="flex items-center gap-2 px-3 py-2 mx-1 mb-0.5 bg-surface-2 border border-app-border rounded-[3px]">
                     <span className="text-[11px] text-txt-secondary flex-1">ลบ &ldquo;{r.title}&rdquo;?</span>
                     <button
                       onClick={() => handleDelete(r.id)}
@@ -382,14 +382,14 @@ export default function RetroBoardClient({
                 {canExport && selectedRetro.status === 'CLOSED' && (
                   <button
                     onClick={openExport}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors"
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors"
                   >
                     📄 Export Report
                   </button>
                 )}
                 {selectedRetro.status === 'OPEN' && (
                   <button onClick={closeRetro} disabled={closing}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-md hover:bg-[#2a2e3a] disabled:opacity-50 transition-colors">
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 disabled:opacity-50 transition-colors">
                     ปิด Retro นี้
                   </button>
                 )}
@@ -406,9 +406,9 @@ export default function RetroBoardClient({
                 const colItems = selectedRetro.items.filter(i => i.category === col.key);
                 const isOpen   = selectedRetro.status === 'OPEN';
                 return (
-                  <div key={col.key} className="bg-surface-1 border border-app-border rounded-[12px] p-3">
+                  <div key={col.key} className="bg-surface-1 border border-app-border rounded-[4px] p-3">
                     <div className="flex items-center justify-between mb-3">
-                      <span className={`text-[13.5px] font-semibold ${col.cls}`}>{col.label}</span>
+                      <span className={`text-[13.5px] font-semibold ${col.cls}`}>{col.glyph} {col.label}</span>
                       <span className="text-[11px] text-txt-muted">{colItems.length}</span>
                     </div>
 
@@ -429,7 +429,7 @@ export default function RetroBoardClient({
                         onChange={e => setAddContent(prev => ({ ...prev, [col.key]: e.target.value }))}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCard(col.key); } }}
                         placeholder="+ เพิ่มการ์ด..."
-                        className="w-full bg-surface-2 border border-dashed border-app-border text-txt-primary text-[12.5px] px-2.5 py-[9px] rounded-lg focus:outline-none mt-1 placeholder:text-txt-muted"
+                        className="w-full bg-surface-2 border border-dashed border-app-border text-txt-primary text-[12.5px] px-2.5 py-[9px] rounded-[3px] focus:outline-none mt-1 placeholder:text-txt-muted"
                       />
                     )}
                   </div>
@@ -446,7 +446,7 @@ export default function RetroBoardClient({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
           onClick={e => { if (e.target === e.currentTarget) setShowExport(false); }}
         >
-          <div className="bg-surface-1 border border-app-border rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-2xl max-h-[90vh] flex flex-col mx-4">
             <div className="flex items-center justify-between px-5 py-4 border-b border-app-border">
               <div>
                 <h2 className="text-[15px] font-semibold text-txt-primary">📄 Export Report</h2>
@@ -520,15 +520,15 @@ export default function RetroBoardClient({
                 </div>
                 <div className="px-5 py-3 border-t border-app-border flex items-center gap-2.5">
                   <button onClick={downloadMarkdown}
-                    className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-[7px] rounded-md transition-colors">
+                    className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-[7px] rounded-[3px] transition-colors">
                     ⬇ ดาวน์โหลด .md
                   </button>
                   <button onClick={copyPlainText}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors">
                     {copied ? '✅ คัดลอกแล้ว!' : '📋 Copy เป็นข้อความ'}
                   </button>
                   <button onClick={() => window.print()}
-                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-md hover:bg-[#2a2e3a] transition-colors">
+                    className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-4 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors">
                     🖨 พิมพ์ / บันทึก PDF
                   </button>
                   <span className="text-[11.5px] text-txt-muted ml-auto">บันทึกลง DB แล้ว</span>
@@ -552,7 +552,7 @@ function RetroCard({ item, colKey, isOpen, onVote, onConvert }: {
   const av = item.author ? avatarColor(item.author.name) : null;
 
   return (
-    <div className="bg-surface-2 border border-app-border rounded-lg p-[11px] mb-2">
+    <div className="bg-surface-2 border border-app-border rounded-[3px] p-[11px] mb-2">
       {item.linkedTaskId && colKey === 'TO_IMPROVE' && (
         <Link href={`/tasks/${item.linkedTaskId}`}
           className="flex items-center gap-1 text-[11px] text-accent mb-2 hover:underline">
@@ -578,7 +578,7 @@ function RetroCard({ item, colKey, isOpen, onVote, onConvert }: {
               <Link href={`/tasks/${item.linkedTaskId}`} className="text-[10.5px] text-accent hover:underline">ดูงาน →</Link>
             ) : (
               <button onClick={onConvert}
-                className="text-[10.5px] text-txt-secondary px-2 py-1 rounded-md hover:text-txt-primary transition-colors"
+                className="text-[10.5px] text-txt-secondary px-2 py-1 rounded-[3px] hover:text-txt-primary transition-colors"
                 style={{ background: 'var(--surface-3)', border: 'none', cursor: 'pointer' }}>
                 แปลงเป็นงาน
               </button>
