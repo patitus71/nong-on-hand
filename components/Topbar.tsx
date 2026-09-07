@@ -2,6 +2,7 @@ import { getSession } from '@/lib/session';
 import Link from 'next/link';
 import NavTabs from './NavTabs';
 import LogoutButton from './LogoutButton';
+import ThemeToggle from './ThemeToggle';
 
 function initials(name: string) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -36,6 +37,7 @@ export default async function Topbar() {
             {initials(user?.name ?? 'U')}
           </div>
         </div>
+        <ThemeToggle />
         <LogoutButton />
       </div>
     </header>
