@@ -1244,6 +1244,8 @@ export default function MyBoardClient({
         <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
           onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
 
+        <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
+
         <div
           className={`grid gap-3.5 pb-5 items-start ${editMode ? 'edit-mode-on' : ''}`}
           style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
@@ -1331,8 +1333,6 @@ export default function MyBoardClient({
             ✓ เสร็จสิ้นการแก้ไข
           </button>
         )}
-
-        <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
         <DragOverlay>
           {activeTask && <SortableCard task={activeTask} laneName={activeLaneName} overlay />}
