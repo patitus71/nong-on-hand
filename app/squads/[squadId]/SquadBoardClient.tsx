@@ -84,8 +84,6 @@ export default function SquadBoardClient({
     setLastRefreshed(new Date());
   }
 
-  const [activeMember, setActiveMember] = useState<string | null>(null);
-
   // ── Sprint management ────────────────────────────────────────────────────────
   const activeSprint = sprints.find(s => s.id === activeSprintId) ?? null;
   const isReadonly   = activeSprint?.status === 'CLOSED';
@@ -264,12 +262,16 @@ export default function SquadBoardClient({
     win.document.close(); win.print();
   }
 
-  const visibleLanes = lanes.map(lane => ({
-    ...lane,
-    tasks: activeMember
-      ? lane.tasks.filter(t => t.assignee?.id === activeMember)
-      : lane.tasks,
-  }));
+  const laneByName = new Map(lanes.map(l => [l.name, l.tasks]));
+  const poolTasks  = laneByName.get('To do list') ?? [];
+
+  const STATUS_COLS: { key: string; label: string; glyph: string; color: string }[] = [
+    { key: 'On-Board',              label: 'ยังไม่เริ่ม', glyph: '○', color: 'text-txt-secondary' },
+    { key: 'On-Board In Progress',  label: 'กำลังทำ',    glyph: '◐', color: 'text-accent' },
+    { key: 'Wait for review',       label: 'รอ review',   glyph: '◆', color: 'text-warning' },
+    { key: 'Done',                  label: 'Done',        glyph: '✓', color: 'text-success' },
+    { key: 'มีปัญหา',              label: 'มีปัญหา',     glyph: '▲', color: 'text-danger' },
+  ];
 
   // ── Card ⋯ menu ──────────────────────────────────────────────────────────────
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -387,6 +389,159 @@ export default function SquadBoardClient({
     }
   }
 
+  // ── Card renderer — shared between member matrix cells and the unclaimed pool ──
+  function renderCard(t: TaskCard, laneName: string) {
+    const av        = t.assignee ? avatarColor(t.assignee.name) : null;
+    const normalFmt = fmt(t.totalNormalMin);
+    const otFmt     = fmt(t.totalOtMin);
+    const menuOpen  = openMenuId === t.id;
+    const isApproving = approvingId === t.id;
+
+    return (
+      <div key={t.id} className={`relative ${t.isAtRisk ? 'card-at-risk' : ''}`}>
+        {t.isAtRisk && (
+          <span
+            className="absolute top-1.5 right-2 text-[12px] leading-none z-10 pointer-events-none text-warning"
+            title={t.riskReason}
+          >▲</span>
+        )}
+        <div className={`bg-surface-1 border rounded-[3px] p-2.5 ${
+          t.isCancelled ? 'grayscale-[0.4] opacity-80 border-app-border'
+          : t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
+        }`}>
+
+          {/* Title row */}
+          <div className="flex items-start gap-1 mb-2">
+            <Link
+              href={`/tasks/${t.id}`}
+              className="flex-1 text-[13px] text-txt-primary flex items-start gap-1.5 hover:text-accent transition-colors"
+            >
+              {t.isCancelled ? (
+                <span className="text-[9.5px] font-semibold bg-surface-3 text-txt-secondary px-1.5 py-0.5 rounded-full flex-shrink-0 mt-[1px]">
+                  🚫 ยกเลิก
+                </span>
+              ) : t.hasIssue && (
+                <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>
+              )}
+              {t.reviewApprovedAt && laneName === 'Wait for review' && (
+                <span className="text-success flex-shrink-0 text-[11px] leading-[1.4]" title="Review ผ่านแล้ว">✓</span>
+              )}
+              {t.title}
+            </Link>
+
+            {/* ⋯ menu button — ADMIN/QA_LEAD เท่านั้น, ปิดถ้า sprint นี้ปิดแล้ว (view-only) */}
+            {canAssign && !isReadonly && (
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  e.nativeEvent.stopImmediatePropagation();
+                  setOpenMenuId(menuOpen ? null : t.id);
+                }}
+                className="text-txt-muted hover:text-txt-primary text-[14px] leading-none px-1 py-0.5 rounded hover:bg-surface-0 flex-shrink-0"
+              >
+                ⋯
+              </button>
+            )}
+          </div>
+
+          {/* Flagged badge */}
+          {t.flaggedForDeletion && (
+            <div className="mb-2">
+              <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-danger-bg text-danger font-semibold">
+                🚩 Flag ให้ลบ{t.deletionFlagNote ? ` — "${t.deletionFlagNote}"` : ''}
+              </span>
+            </div>
+          )}
+
+          {/* Cancelled note */}
+          {t.isCancelled && (
+            <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
+              ยกเลิกโดย {t.cancelledByName ?? '—'}{t.cancelNote ? ` — ${t.cancelNote}` : ''}
+            </p>
+          )}
+
+          {/* On-Board / On-Board In Progress: show personal lane */}
+          {(laneName === 'On-Board' || laneName === 'On-Board In Progress') && t.laneName && t.assignee && (
+            <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
+              อยู่เลน &ldquo;{t.laneName}&rdquo; ในบอร์ดของ {t.assignee.name}
+            </p>
+          )}
+
+          {/* Bottom row: assignee + time */}
+          <div className="flex items-center justify-between">
+            {av && t.assignee ? (
+              <div
+                className="w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
+                style={{ background: av.bg, color: av.fg }}
+                title={t.assignee.name}
+              >
+                {initials(t.assignee.name)}
+              </div>
+            ) : <span />}
+            {(normalFmt || otFmt) && (
+              <span className={`text-[11px] ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
+                {normalFmt && <>รวม {normalFmt}</>}
+                {otFmt     && <> · OT {otFmt}</>}
+              </span>
+            )}
+          </div>
+
+          {/* Approve review button — Wait for review column only */}
+          {laneName === 'Wait for review' && canApproveReview && !t.reviewApprovedAt && !isReadonly && (
+            <button
+              onClick={() => approveReview(t.id)}
+              disabled={isApproving}
+              className={`mt-2 w-full text-[11.5px] px-2 py-1.5 rounded-[3px] bg-success-bg border border-success/30 text-success hover:bg-success/15 transition-colors disabled:opacity-50 font-medium ${isApproving ? 'btn-loading' : ''}`}
+            >
+              ✓ Review ผ่าน
+            </button>
+          )}
+
+          {/* Already approved indicator */}
+          {laneName === 'Wait for review' && t.reviewApprovedAt && (
+            <div className="mt-2 text-[10.5px] text-success text-center py-1 bg-success-bg rounded-[3px]">
+              ✓ Review ผ่านแล้ว — รอ QA_ENGINEER ย้ายไป Done
+            </div>
+          )}
+
+          {/* Claim button */}
+          {canAssign && members.length > 0 && !isReadonly && (
+            <button
+              onClick={() => openClaim(t)}
+              className="mt-2 w-full text-[11.5px] px-2 py-1 rounded-[3px] border border-app-border text-txt-muted hover:border-accent hover:text-accent transition-colors"
+            >
+              + เพิ่มเข้าบอร์ดของฉัน
+            </button>
+          )}
+        </div>
+
+        {/* Card ⋯ dropdown */}
+        {canAssign && !isReadonly && menuOpen && (
+          <div
+            className="absolute right-0 top-8 bg-surface-2 border border-app-border rounded-[3px] py-1 min-w-[190px] z-20 shadow-lg"
+            onClick={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+          >
+            {!t.flaggedForDeletion ? (
+              <button
+                onClick={() => openFlagModal(t)}
+                className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-danger-bg text-danger transition-colors"
+              >
+                🚩 Flag ให้ลบ
+              </button>
+            ) : (
+              <button
+                onClick={() => submitUnflag(t.id)}
+                className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-surface-0 text-txt-secondary transition-colors"
+              >
+                ↩ ยกเลิก flag (เก็บงานนี้ไว้)
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="px-7 py-6 pb-16">
 
@@ -475,32 +630,6 @@ export default function SquadBoardClient({
         </div>
       </div>
 
-      {/* Member strip */}
-      {members.length > 0 && (
-        <div className="flex gap-2 mb-5 flex-wrap">
-          {members.map(m => {
-            const av = avatarColor(m.name);
-            const isActive = activeMember === m.id;
-            return (
-              <button
-                key={m.id}
-                onClick={() => setActiveMember(isActive ? null : m.id)}
-                className={`flex items-center gap-1.5 border rounded-full px-3 py-1 pr-3 text-[12.5px] transition-colors ${
-                  isActive ? 'border-accent bg-accent-bg' : 'border-app-border bg-surface-1 hover:border-txt-muted'
-                }`}
-              >
-                <div className="w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
-                  style={{ background: av.bg, color: av.fg }}>
-                  {initials(m.name)}
-                </div>
-                <span className="text-txt-primary">{m.name}</span>
-                <span className="text-txt-muted text-[10.5px] ml-0.5">{m.taskCount} งาน</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Readonly banner for closed sprint */}
       {isReadonly && (
         <div className="flex items-center gap-2 bg-surface-1 border border-app-border rounded-[3px] px-4 py-2.5 mb-4 text-[12.5px] text-txt-secondary">
@@ -519,238 +648,109 @@ export default function SquadBoardClient({
         </div>
       )}
 
-      {/* Board */}
-      <div
-        className={`grid gap-3.5 pb-5 ${isReadonly ? 'opacity-70 select-none' : ''}`}
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
-      >
-        {visibleLanes.map(lane => (
-          <div
-            key={lane.name}
-            className="bg-surface-1 border border-app-border rounded-[4px] p-2.5 flex flex-col"
-            style={{ height: 'calc(100vh - 240px)' }}
-          >
-            {/* Lane header */}
-            <div className="flex items-center gap-1.5 px-1 pb-2.5 flex-shrink-0">
-              <span className={`text-[13px] font-semibold ${
-                lane.name === 'มีปัญหา'             ? 'text-danger'   :
-                lane.name === 'Done'                 ? 'text-success'  :
-                lane.name === 'Wait for review'      ? 'text-warning'  :
-                lane.name === 'On-Board In Progress' ? 'text-accent'   :
-                'text-txt-primary'
-              }`}>
-                {({
-                  'มีปัญหา': '▲', 'Done': '✓', 'Wait for review': '◆',
-                  'On-Board In Progress': '◐', 'On-Board': '○', 'To do list': '○',
-                } as Record<string, string>)[lane.name] ?? ''} {lane.name}
-              </span>
-              <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">
-                {lane.tasks.length}
-              </span>
-            </div>
+      {/* Board matrix — rows: squad members × columns: 5 derived statuses */}
+      <div className={isReadonly ? 'opacity-70 select-none' : ''}>
+        {members.length > 0 && (
+          <div className="overflow-x-auto pb-1">
+            <div
+              className="grid gap-2.5 min-w-[880px] mb-3.5"
+              style={{ gridTemplateColumns: '190px repeat(5, minmax(0,1fr))' }}
+            >
+              {/* Header row */}
+              <span />
+              {STATUS_COLS.map(col => (
+                <span key={col.key} className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${col.color}`}>
+                  <span>{col.glyph}</span>{col.label}
+                </span>
+              ))}
 
-            {/* Scrollable cards area */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-            {lane.tasks.length === 0 && (
-              <div className="text-center text-[12px] text-txt-muted py-6 px-2">
-                {lane.name === 'To do list' ? 'ดึงงานเข้าบอร์ดเพื่อเริ่มต้น' : 'ว่างอยู่'}
-              </div>
-            )}
-
-            {lane.tasks.map(t => {
-              const av        = t.assignee ? avatarColor(t.assignee.name) : null;
-              const normalFmt = fmt(t.totalNormalMin);
-              const otFmt     = fmt(t.totalOtMin);
-              const menuOpen  = openMenuId === t.id;
-              const isApproving = approvingId === t.id;
-
-              return (
-                <div key={t.id} className={`relative mb-2 last:mb-0 ${t.isAtRisk ? 'card-at-risk' : ''}`}>
-                  {t.isAtRisk && (
-                    <span
-                      className="absolute top-1.5 right-2 text-[12px] leading-none z-10 pointer-events-none text-warning"
-                      title={t.riskReason}
-                    >▲</span>
-                  )}
-                  <div className={`bg-surface-2 border rounded-[3px] p-2.5 ${
-                    t.isCancelled ? 'grayscale-[0.4] opacity-80 border-app-border'
-                    : t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
-                  }`}>
-
-                    {/* Title row */}
-                    <div className="flex items-start gap-1 mb-2">
-                      <Link
-                        href={`/tasks/${t.id}`}
-                        className="flex-1 text-[13px] text-txt-primary flex items-start gap-1.5 hover:text-accent transition-colors"
-                      >
-                        {t.isCancelled ? (
-                          <span className="text-[9.5px] font-semibold bg-surface-3 text-txt-secondary px-1.5 py-0.5 rounded-full flex-shrink-0 mt-[1px]">
-                            🚫 ยกเลิก
-                          </span>
-                        ) : t.hasIssue && (
-                          <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>
-                        )}
-                        {t.reviewApprovedAt && lane.name === 'Wait for review' && (
-                          <span className="text-success flex-shrink-0 text-[11px] leading-[1.4]" title="Review ผ่านแล้ว">✓</span>
-                        )}
-                        {t.title}
-                      </Link>
-
-                      {/* ⋯ menu button — ADMIN/QA_LEAD เท่านั้น, ปิดถ้า sprint นี้ปิดแล้ว (view-only) */}
-                      {canAssign && !isReadonly && (
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            e.nativeEvent.stopImmediatePropagation();
-                            setOpenMenuId(menuOpen ? null : t.id);
-                          }}
-                          className="text-txt-muted hover:text-txt-primary text-[14px] leading-none px-1 py-0.5 rounded hover:bg-surface-0 flex-shrink-0"
-                        >
-                          ⋯
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Flagged badge */}
-                    {t.flaggedForDeletion && (
-                      <div className="mb-2">
-                        <span className="text-[10.5px] px-2 py-0.5 rounded-full bg-danger-bg text-danger font-semibold">
-                          🚩 Flag ให้ลบ{t.deletionFlagNote ? ` — "${t.deletionFlagNote}"` : ''}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Cancelled note */}
-                    {t.isCancelled && (
-                      <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
-                        ยกเลิกโดย {t.cancelledByName ?? '—'}{t.cancelNote ? ` — ${t.cancelNote}` : ''}
-                      </p>
-                    )}
-
-                    {/* On-Board / On-Board In Progress: show personal lane */}
-                    {(lane.name === 'On-Board' || lane.name === 'On-Board In Progress') && t.laneName && t.assignee && (
-                      <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
-                        อยู่เลน &ldquo;{t.laneName}&rdquo; ในบอร์ดของ {t.assignee.name}
-                      </p>
-                    )}
-
-                    {/* Bottom row: assignee + time */}
-                    <div className="flex items-center justify-between">
-                      {av && t.assignee ? (
-                        <div
-                          className="w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
-                          style={{ background: av.bg, color: av.fg }}
-                          title={t.assignee.name}
-                        >
-                          {initials(t.assignee.name)}
-                        </div>
-                      ) : <span />}
-                      {(normalFmt || otFmt) && (
-                        <span className={`text-[11px] ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
-                          {normalFmt && <>รวม {normalFmt}</>}
-                          {otFmt     && <> · OT {otFmt}</>}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Approve review button — Wait for review column only */}
-                    {lane.name === 'Wait for review' && canApproveReview && !t.reviewApprovedAt && !isReadonly && (
-                      <button
-                        onClick={() => approveReview(t.id)}
-                        disabled={isApproving}
-                        className={`mt-2 w-full text-[11.5px] px-2 py-1.5 rounded-[3px] bg-success-bg border border-success/30 text-success hover:bg-success/15 transition-colors disabled:opacity-50 font-medium ${isApproving ? 'btn-loading' : ''}`}
-                      >
-                        ✓ Review ผ่าน
-                      </button>
-                    )}
-
-                    {/* Already approved indicator */}
-                    {lane.name === 'Wait for review' && t.reviewApprovedAt && (
-                      <div className="mt-2 text-[10.5px] text-success text-center py-1 bg-success-bg rounded-[3px]">
-                        ✓ Review ผ่านแล้ว — รอ QA_ENGINEER ย้ายไป Done
-                      </div>
-                    )}
-
-                    {/* Claim button */}
-                    {canAssign && members.length > 0 && !isReadonly && (
-                      <button
-                        onClick={() => openClaim(t)}
-                        className="mt-2 w-full text-[11.5px] px-2 py-1 rounded-[3px] border border-app-border text-txt-muted hover:border-accent hover:text-accent transition-colors"
-                      >
-                        + เพิ่มเข้าบอร์ดของฉัน
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Card ⋯ dropdown */}
-                  {canAssign && !isReadonly && menuOpen && (
+              {/* Member rows */}
+              {members.flatMap(m => {
+                const av = avatarColor(m.name);
+                return [
+                  <div key={`m-${m.id}`} className="flex items-center gap-2 bg-surface-1 border border-app-border rounded-[4px] px-3 py-2.5">
                     <div
-                      className="absolute right-0 top-8 bg-surface-2 border border-app-border rounded-[3px] py-1 min-w-[190px] z-20 shadow-lg"
-                      onClick={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                      className="w-6 h-6 rounded-full text-[10px] font-semibold flex items-center justify-center flex-shrink-0"
+                      style={{ background: av.bg, color: av.fg }}
                     >
-                      {!t.flaggedForDeletion ? (
-                        <button
-                          onClick={() => openFlagModal(t)}
-                          className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-danger-bg text-danger transition-colors"
-                        >
-                          🚩 Flag ให้ลบ
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => submitUnflag(t.id)}
-                          className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-surface-0 text-txt-secondary transition-colors"
-                        >
-                          ↩ ยกเลิก flag (เก็บงานนี้ไว้)
-                        </button>
-                      )}
+                      {initials(m.name)}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {lane.name === 'To do list' && canCreateTask && hasOpenSprint && !isReadonly && (
-              <div className="mt-2 mb-1">
-                {showCreate ? (
-                  <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
-                    <input
-                      autoFocus
-                      value={createTitle}
-                      onChange={e => setCreateTitle(e.target.value)}
-                      placeholder="ชื่องาน..."
-                      className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit]"
-                    />
-                    <div className="flex gap-1.5">
-                      <button
-                        type="submit"
-                        disabled={createLoading || !createTitle.trim()}
-                        className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
-                      >
-                        เพิ่ม
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowCreate(false); setCreateTitle(''); }}
-                        disabled={createLoading}
-                        className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
-                      >
-                        ยกเลิก
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => setShowCreate(true)}
-                    className="w-full text-[12px] text-txt-muted hover:text-txt-primary border border-dashed border-app-border rounded-[3px] py-2 transition-colors hover:border-accent hover:bg-surface-2"
-                  >
-                    + เพิ่มงานใหม่
-                  </button>
-                )}
-              </div>
-            )}
-            </div>{/* end scrollable cards area */}
+                    <span className="text-[13px] font-medium text-txt-primary truncate">{m.name}</span>
+                    <span className="ml-auto text-[11px] text-txt-muted flex-shrink-0">{m.taskCount} งาน</span>
+                  </div>,
+                  ...STATUS_COLS.map(col => {
+                    const cellTasks = (laneByName.get(col.key) ?? []).filter(t => t.assignee?.id === m.id);
+                    return (
+                      <div key={`${m.id}-${col.key}`} className="bg-surface-3 rounded-[4px] p-2 flex flex-col gap-1.5 min-h-[52px]">
+                        {cellTasks.map(t => renderCard(t, col.key))}
+                      </div>
+                    );
+                  }),
+                ];
+              })}
+            </div>
           </div>
-        ))}
+        )}
+
+        {/* Pool: unclaimed tasks — ยังไม่มีเจ้าของ */}
+        <div className="bg-surface-1 border border-app-border rounded-[5px] p-3.5 flex flex-col gap-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[12.5px] font-semibold text-txt-secondary">○ กองกลาง — ยังไม่มีเจ้าของ · {poolTasks.length}</span>
+            {canAssign && poolTasks.length > 0 && (
+              <span className="ml-auto text-[11.5px] text-txt-muted">assign ให้สมาชิกได้จากปุ่ม &ldquo;+ เพิ่มเข้าบอร์ดของฉัน&rdquo; บนการ์ด</span>
+            )}
+          </div>
+          <div className="flex gap-2.5 flex-wrap">
+            {poolTasks.length === 0 && (
+              <span className="text-[12px] text-txt-muted py-1">ไม่มีงานรอ assign</span>
+            )}
+            {poolTasks.map(t => (
+              <div key={t.id} className="flex-[0_0_250px]">
+                {renderCard(t, 'To do list')}
+              </div>
+            ))}
+          </div>
+
+          {canCreateTask && hasOpenSprint && !isReadonly && (
+            <div className="mt-1 max-w-[320px]">
+              {showCreate ? (
+                <form onSubmit={submitCreate} className="flex flex-col gap-1.5">
+                  <input
+                    autoFocus
+                    value={createTitle}
+                    onChange={e => setCreateTitle(e.target.value)}
+                    placeholder="ชื่องาน..."
+                    className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit]"
+                  />
+                  <div className="flex gap-1.5">
+                    <button
+                      type="submit"
+                      disabled={createLoading || !createTitle.trim()}
+                      className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
+                    >
+                      เพิ่ม
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowCreate(false); setCreateTitle(''); }}
+                      disabled={createLoading}
+                      className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <button
+                  onClick={() => setShowCreate(true)}
+                  className="w-full text-[12px] text-txt-muted hover:text-txt-primary border border-dashed border-app-border rounded-[3px] py-2 transition-colors hover:border-accent hover:bg-surface-2"
+                >
+                  + เพิ่มงานใหม่
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── LINE send buttons ── */}

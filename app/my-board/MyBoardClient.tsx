@@ -46,49 +46,93 @@ type PendingReview = {
 
 type Reviewer = { id: string; name: string };
 
-/* ─── Pending review section ─────────────────────────── */
-function PendingReviewSection({
-  reviews, onApprove,
-}: { reviews: PendingReview[]; onApprove: (taskId: string) => Promise<void> }) {
+/* ─── Queue rail (left sidebar): urgent / pending-review / ready-to-close ── */
+function QueueRail({
+  atRiskTasks, pendingReviews, readyTasks, onApprove, onMoveToDone, movingToDoneId,
+}: {
+  atRiskTasks: TaskData[];
+  pendingReviews: PendingReview[];
+  readyTasks: TaskData[];
+  onApprove: (taskId: string) => Promise<void>;
+  onMoveToDone: (taskId: string) => Promise<void>;
+  movingToDoneId: string | null;
+}) {
   const [approving, setApproving] = useState<string | null>(null);
-  if (reviews.length === 0) return null;
+  if (atRiskTasks.length === 0 && pendingReviews.length === 0 && readyTasks.length === 0) return null;
+
   return (
-    <div className="bg-accent-bg border border-accent/30 rounded-[4px] p-3 mb-3.5">
-      <div className="flex items-center gap-2 mb-2.5">
-        <span className="text-[12.5px] font-semibold text-accent">◆ รอฉัน Review</span>
-        <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{reviews.length}</span>
-      </div>
-      <div className="flex flex-wrap gap-2.5">
-        {reviews.map(r => (
-          <div key={r.id} className="bg-surface-2 border border-accent/20 rounded-[3px] p-2.5 w-[240px] flex-shrink-0">
-            <Link href={`/tasks/${r.id}`}
-              className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug">
-              {r.title}
-            </Link>
-            {r.squad && <p className="text-[10.5px] text-txt-muted mb-0.5">{r.squad.name}</p>}
-            {r.assignee && <p className="text-[10.5px] text-txt-secondary mb-2">ผู้ทำ: {r.assignee.name}</p>}
-            {r.prLink ? (
-              <a href={r.prLink} target="_blank" rel="noopener noreferrer"
-                className="block text-[10.5px] text-accent underline truncate mb-2" title={r.prLink}>
-                {r.prLink}
-              </a>
-            ) : (
-              <p className="text-[10.5px] text-txt-muted italic mb-2">ไม่มี PR link แนบมา</p>
-            )}
-            <button
-              disabled={approving === r.id}
-              onClick={async () => {
-                setApproving(r.id);
-                await onApprove(r.id);
-                setApproving(null);
-              }}
-              className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-[3px] hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
-            >
-              {approving === r.id ? '...' : '✓ Approve Review'}
-            </button>
+    <div className="w-[260px] flex-shrink-0 flex flex-col gap-4">
+      {atRiskTasks.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10.5px] font-semibold tracking-[.04em] text-warning">▲ ต้องจัดการด่วน · {atRiskTasks.length}</span>
           </div>
-        ))}
-      </div>
+          <div className="flex flex-col gap-2">
+            {atRiskTasks.map(t => (
+              <Link key={t.id} href={`/tasks/${t.id}`}
+                className="block bg-warning-bg border border-warning/30 rounded-[4px] px-3 py-2.5 hover:border-warning/60 transition-colors">
+                <p className="text-[12.5px] text-txt-primary leading-snug mb-1">{t.title}</p>
+                <span className="text-[11px] text-txt-muted">{t.riskReason}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pendingReviews.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10.5px] font-semibold tracking-[.04em] text-accent">◆ รอฉัน REVIEW · {pendingReviews.length}</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {pendingReviews.map(r => (
+              <div key={r.id} className="bg-accent-bg border border-accent/20 rounded-[4px] p-2.5">
+                <Link href={`/tasks/${r.id}`}
+                  className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug">
+                  {r.title}
+                </Link>
+                <p className="text-[11px] text-txt-muted mb-2">
+                  {r.squad ? `${r.squad.name} · ` : ''}ส่งโดย {r.assignee?.name ?? '—'}
+                  {r.prLink ? ' · มี PR link' : ' · ไม่มี PR link'}
+                </p>
+                <button
+                  disabled={approving === r.id}
+                  onClick={async () => { setApproving(r.id); await onApprove(r.id); setApproving(null); }}
+                  className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-[3px] hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
+                >
+                  {approving === r.id ? '...' : '✓ Review ผ่าน'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {readyTasks.length > 0 && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10.5px] font-semibold tracking-[.04em] text-success">✓ พร้อมปิดงาน · {readyTasks.length}</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {readyTasks.map(t => (
+              <div key={t.id} className="bg-success-bg border border-success/30 rounded-[4px] p-2.5">
+                <Link href={`/tasks/${t.id}`}
+                  className="block text-[12.5px] text-txt-primary mb-1 hover:text-success transition-colors leading-snug">
+                  {t.title}
+                </Link>
+                {t.reviewerName && <p className="text-[11px] text-txt-muted mb-2">Review ผ่านโดย {t.reviewerName}</p>}
+                <button
+                  disabled={movingToDoneId === t.id}
+                  onClick={() => onMoveToDone(t.id)}
+                  className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-[3px] hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
+                >
+                  {movingToDoneId === t.id ? '...' : 'ย้ายไป Done'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1114,6 +1158,27 @@ export default function MyBoardClient({
     }
   }
 
+  /* ─── Move a review-approved task straight to Done (queue rail quick action) ─── */
+  const [movingToDoneId, setMovingToDoneId] = useState<string | null>(null);
+  async function moveToDone(taskId: string) {
+    const doneLane = lanesRef.current.find(l => l.name === 'Done');
+    if (!doneLane) return;
+    setMovingToDoneId(taskId);
+    const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === taskId);
+    if (!task) { setMovingToDoneId(null); return; }
+    const next = lanesRef.current.map(l => {
+      const cleaned = l.tasks.filter(t => t.id !== taskId);
+      return l.id === doneLane.id ? { ...l, tasks: [...cleaned, task] } : { ...l, tasks: cleaned };
+    });
+    setLanes(next);
+    await saveOrder(next);
+    setMovingToDoneId(null);
+  }
+
+  /* ─── Queue rail data ─────────────────────────────────── */
+  const atRiskTasks = normalLanes.flatMap(l => l.tasks.filter(t => t.isAtRisk));
+  const readyTasks   = normalLanes.find(l => l.name === 'Review')?.tasks.filter(t => t.reviewApprovedAt) ?? [];
+
   /* ─── Render ─────────────────────────────────────────── */
   return (
     <div className="px-7 py-6 pb-16">
@@ -1148,11 +1213,19 @@ export default function MyBoardClient({
         </div>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
-        onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+      <div className="flex gap-4 items-start">
+        <QueueRail
+          atRiskTasks={atRiskTasks}
+          pendingReviews={pendingReviewsList}
+          readyTasks={readyTasks}
+          onApprove={approveReview}
+          onMoveToDone={moveToDone}
+          movingToDoneId={movingToDoneId}
+        />
 
-        {/* Pending reviews section (tasks where I'm the reviewer) */}
-        <PendingReviewSection reviews={pendingReviewsList} onApprove={approveReview} />
+        <div className="flex-1 min-w-0">
+        <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
+          onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
 
         <div
           className={`grid gap-3.5 pb-5 items-start ${editMode ? 'edit-mode-on' : ''}`}
@@ -1245,7 +1318,9 @@ export default function MyBoardClient({
         <DragOverlay>
           {activeTask && <SortableCard task={activeTask} overlay />}
         </DragOverlay>
-      </DndContext>
+        </DndContext>
+        </div>
+      </div>
 
       {/* ── Review block alert ────────────────────────── */}
       {reviewBlockMsg && (
