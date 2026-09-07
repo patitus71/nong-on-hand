@@ -96,6 +96,34 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
     return true;
   }), [tasks, search, filterSquad, filterAssignee, filterLane, issueOnly, flaggedOnly]);
 
+  // ── Pagination ───────────────────────────────────────────────────────────────
+  const PER_PAGE_OPTIONS = [25, 50, 100] as const;
+  const [perPage, setPerPage] = useState<number>(25);
+  const [page,    setPage]    = useState(1);
+
+  // Read the persisted choice after mount (avoids an SSR/client hydration mismatch).
+  useEffect(() => {
+    try {
+      const stored = Number(localStorage.getItem('tasksPerPage'));
+      if (PER_PAGE_OPTIONS.includes(stored as 25 | 50 | 100)) setPerPage(stored);
+    } catch {}
+  }, []);
+
+  function handlePerPageChange(n: number) {
+    setPerPage(n);
+    setPage(1);
+    try { localStorage.setItem('tasksPerPage', String(n)); } catch {}
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  // Clamp back onto the last page if filtering shrinks the result set past it.
+  useEffect(() => { setPage(p => Math.min(p, totalPages)); }, [totalPages]);
+
+  const paged = useMemo(
+    () => filtered.slice((page - 1) * perPage, page * perPage),
+    [filtered, page, perPage],
+  );
+
   const stats = {
     total:      tasks.length,
     inProgress: tasks.filter(t => t.laneName?.toLowerCase().includes('progress')).length,
@@ -107,8 +135,8 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const selectableInFiltered = useMemo(
-    () => filtered.filter(t => isBulkSelectable(t, userRole, userSquadId)),
-    [filtered, userRole, userSquadId],
+    () => paged.filter(t => isBulkSelectable(t, userRole, userSquadId)),
+    [paged, userRole, userSquadId],
   );
 
   function toggleSelect(id: string) {
@@ -128,7 +156,16 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
   const allSelectableSelected =
     selectableInFiltered.length > 0 && selectableInFiltered.every(t => selectedIds.has(t.id));
 
-  useEffect(() => { setSelectedIds(new Set()); }, [search, filterSquad, filterAssignee, filterLane, issueOnly, flaggedOnly]);
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterSquad, filterAssignee, filterLane, issueOnly, flaggedOnly]);
+
+  // selectableInFiltered/toggleSelectAll are page-scoped (see paged above), so a
+  // selection must never outlive the page it was made on — otherwise the bulk bar
+  // count and the header checkbox desync from what's actually selected.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [search, filterSquad, filterAssignee, filterLane, issueOnly, flaggedOnly, page]);
 
   // ── Row action menu (⋯) ──────────────────────────────────────────────────────
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -410,7 +447,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                 </td>
               </tr>
             )}
-            {filtered.map(t => {
+            {paged.map(t => {
               const av          = t.assignee ? avatarColor(t.assignee.name) : null;
               const normalFmt   = fmt(t.totalNormalMin);
               const otFmt       = fmt(t.totalOtMin);
@@ -581,9 +618,40 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       </div>
 
       {filtered.length > 0 && (
-        <p className="mt-4 text-center text-[12.5px] text-txt-muted">
-          แสดง {filtered.length} จาก {tasks.length} งาน
-        </p>
+        <div className="mt-4 flex items-center justify-between flex-wrap gap-3">
+          <p className="text-[12.5px] text-txt-muted">
+            แสดง {(page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} จาก {filtered.length} งาน
+          </p>
+          <div className="flex items-center gap-2">
+            <label className="text-[12.5px] text-txt-muted">แสดงต่อหน้า</label>
+            <select
+              className={selCls}
+              value={perPage}
+              onChange={e => handlePerPageChange(Number(e.target.value))}
+            >
+              {PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  disabled={page === 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  className={`${btnCls} px-2.5 disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  ‹ ก่อนหน้า
+                </button>
+                <span className="text-[12.5px] text-txt-secondary px-2">{page} / {totalPages}</span>
+                <button
+                  disabled={page === totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  className={`${btnCls} px-2.5 disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  ถัดไป ›
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Pull-in modal ── */}
