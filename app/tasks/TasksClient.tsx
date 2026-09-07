@@ -367,7 +367,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
           )}
           <button
             onClick={() => openDeleteModal(Array.from(selectedIds))}
-            className="bg-danger border border-danger text-white text-[12.5px] px-3 py-1.5 rounded-[3px] font-medium hover:bg-[#B91C1C] transition-colors"
+            className="bg-danger border border-danger text-white text-[12.5px] px-3 py-1.5 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors"
           >
             🗑 ลบ ({selectedIds.size} งาน)
           </button>
@@ -548,7 +548,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                             {unflagEnabled && (
                               <button
                                 onClick={() => submitUnflag(t.id)}
-                                className="w-full text-left text-[12.5px] px-3 py-2 hover:bg-surface-0 transition-colors text-txt-secondary flex items-center gap-2"
+                                className="w-full text-left text-[12.5px] px-3 py-2 hover:bg-surface-3 transition-colors text-txt-secondary flex items-center gap-2"
                               >
                                 ↩ ยกเลิก flag (เก็บงานนี้ไว้)
                               </button>
@@ -724,7 +724,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
               <button
                 onClick={submitDelete}
                 disabled={deleting}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${deleting ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${deleting ? 'btn-loading' : ''}`}
               >
                 ลบงานนี้ถาวร
               </button>

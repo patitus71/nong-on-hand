@@ -450,7 +450,7 @@ export default function SquadBoardClient({
                   e.nativeEvent.stopImmediatePropagation();
                   setOpenMenuId(menuOpen ? null : t.id);
                 }}
-                className="text-txt-muted hover:text-txt-primary text-[14px] leading-none px-1 py-0.5 rounded hover:bg-surface-0 flex-shrink-0"
+                className="text-txt-muted hover:text-txt-primary text-[14px] leading-none px-1 py-0.5 rounded hover:bg-surface-3 flex-shrink-0"
               >
                 ⋯
               </button>
@@ -544,7 +544,7 @@ export default function SquadBoardClient({
             ) : (
               <button
                 onClick={() => submitUnflag(t.id)}
-                className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-surface-0 text-txt-secondary transition-colors"
+                className="w-full text-left text-[12px] px-3 py-2 rounded-[3px] hover:bg-surface-3 text-txt-secondary transition-colors"
               >
                 ↩ ยกเลิก flag (เก็บงานนี้ไว้)
               </button>
@@ -825,7 +825,7 @@ export default function SquadBoardClient({
               <button
                 onClick={submitFlag}
                 disabled={flagging}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${flagging ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${flagging ? 'btn-loading' : ''}`}
               >
                 ยืนยัน Flag
               </button>
@@ -1039,7 +1039,7 @@ export default function SquadBoardClient({
               <button
                 onClick={() => submitCloseSprint(unfinishedCount !== null)}
                 disabled={closingLoading}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
               >
                 {unfinishedCount !== null ? 'ยืนยันปิด (มีงานค้าง)' : 'ปิด Sprint'}
               </button>

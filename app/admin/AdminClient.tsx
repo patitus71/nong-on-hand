@@ -682,7 +682,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                   setDeletingSquad(false);
                 }}
                 disabled={deletingSquad}
-                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${deletingSquad ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${deletingSquad ? 'btn-loading' : ''}`}
               >
                 ยืนยันลบ
               </button>
@@ -717,7 +717,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <button
                 onClick={submitDeleteUser}
                 disabled={deleteConfirming}
-                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${deleteConfirming ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${deleteConfirming ? 'btn-loading' : ''}`}
               >
                 ยืนยันลบ
               </button>
