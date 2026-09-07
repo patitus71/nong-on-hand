@@ -28,6 +28,7 @@ module.exports = {
       },
       fontFamily: {
         sans: ['"IBM Plex Sans Thai"', '"IBM Plex Sans"', 'Inter', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
       },
     },
   },

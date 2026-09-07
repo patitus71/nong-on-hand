@@ -6,6 +6,9 @@
    bg-x/NN opacity-modifier syntax (rgb(var(--x) / <alpha-value>) in
    tailwind.config.js) works — a plain hex var would make every /NN
    utility in the app (bg-success/10, border-danger/40, ...) render nothing. */
+/* Depth tiers are monotonic in both palettes: bg (darkest/page) < surface-3
+   (recessed — matrix cells, nested wells) < surface-2 (mid — lane/column
+   containers) < surface-1 (lightest — cards; they float above their lane). */
 :root {
   --bg: 238 240 244;
   --surface-1: 255 255 255;
@@ -18,10 +21,10 @@
   --accent: 19 85 224;
   --accent-hover: 11 68 184;
   --accent-bg: 231 238 252;
-  --danger: 154 78 0;
-  --danger-bg: 254 243 231;
-  --warning: 154 78 0;
-  --warning-bg: 254 243 231;
+  --danger: 220 38 38;
+  --danger-bg: 254 242 242;
+  --warning: 217 119 6;
+  --warning-bg: 255 251 235;
   --success: 11 102 80;
   --success-bg: 227 241 236;
 }
@@ -33,9 +36,9 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: 15 17 21;
-    --surface-1: 27 30 38;
+    --surface-1: 42 46 58;
     --surface-2: 34 37 47;
-    --surface-3: 42 46 58;
+    --surface-3: 27 30 38;
     --border: 42 46 57;
     --text-primary: 236 238 242;
     --text-secondary: 154 160 172;
@@ -53,9 +56,9 @@
 }
 :root[data-theme="dark"] {
   --bg: 15 17 21;
-  --surface-1: 27 30 38;
+  --surface-1: 42 46 58;
   --surface-2: 34 37 47;
-  --surface-3: 42 46 58;
+  --surface-3: 27 30 38;
   --border: 42 46 57;
   --text-primary: 236 238 242;
   --text-secondary: 154 160 172;
