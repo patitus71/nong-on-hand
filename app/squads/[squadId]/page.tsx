@@ -128,11 +128,31 @@ export default async function SquadPage({
     }),
   }));
 
-  const members = squad.users.map(u => ({
-    id:        u.id,
-    name:      u.name,
-    taskCount: tasks.filter(t => t.assignee?.id === u.id).length,
-  }));
+  // Squad Board matrix เรนเดอร์ตาม (assignee × status) — task ของใครก็ตามที่ไม่มีแถวใน
+  // matrix จะหายไปเงียบๆ ไม่ขึ้นทั้งในแถวและใน "กองกลาง" (กองกลางโชว์เฉพาะ assignee === null)
+  // เพิ่มแถวสำรองให้ assignee ที่ไม่ได้อยู่ใน squad.users (เช่น ADMIN claim ไปเอง, หรือ
+  // floating pool member ที่ย้าย squad ไปแล้วแต่ยังมีงานค้างจากตอนอยู่ squad นี้)
+  const memberIds      = new Set(squad.users.map(u => u.id));
+  const extraAssignees = new Map<string, string>();
+  for (const t of tasks) {
+    if (t.assignee && !memberIds.has(t.assignee.id)) {
+      extraAssignees.set(t.assignee.id, t.assignee.name);
+    }
+  }
+
+  const members = [
+    ...squad.users.map(u => ({
+      id:        u.id,
+      name:      u.name,
+      taskCount: tasks.filter(t => t.assignee?.id === u.id).length,
+      external:  false,
+    })),
+    ...Array.from(extraAssignees, ([id, name]) => ({
+      id, name,
+      taskCount: tasks.filter(t => t.assignee?.id === id).length,
+      external:  true,
+    })),
+  ];
 
   return (
     <>

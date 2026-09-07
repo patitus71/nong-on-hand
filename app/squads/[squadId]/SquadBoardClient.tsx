@@ -24,7 +24,7 @@ type TaskCard = {
 };
 
 type LaneData  = { name: string; tasks: TaskCard[] };
-type Member    = { id: string; name: string; taskCount: number };
+type Member    = { id: string; name: string; taskCount: number; external?: boolean };
 type SquadOpt  = { id: string; name: string };
 
 type SprintInfo = {
@@ -676,6 +676,9 @@ export default function SquadBoardClient({
                       {initials(m.name)}
                     </div>
                     <span className="text-[13px] font-medium text-txt-primary truncate">{m.name}</span>
+                    {m.external && (
+                      <span className="text-[10px] text-txt-muted flex-shrink-0" title="ไม่ใช่สมาชิก squad นี้ในปัจจุบัน — มีงานค้างจากตอนที่ยังเกี่ยวข้องอยู่">(นอกทีม)</span>
+                    )}
                     <span className="ml-auto text-[11px] text-txt-muted flex-shrink-0">{m.taskCount} งาน</span>
                   </div>,
                   ...STATUS_COLS.map(col => {
