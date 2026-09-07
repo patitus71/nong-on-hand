@@ -70,7 +70,7 @@ function QueueRail({
           <div className="flex flex-col gap-2">
             {atRiskTasks.map(t => (
               <Link key={t.id} href={`/tasks/${t.id}`}
-                className="block bg-warning-bg border border-warning/30 rounded-[4px] px-3 py-2.5 hover:border-warning/60 transition-colors">
+                className="block bg-warning-bg border border-warning/30 rounded-[9px] px-3 py-2.5 hover:border-warning/60 transition-colors">
                 <p className="text-[12.5px] text-txt-primary leading-snug mb-1">{t.title}</p>
                 <span className="text-[11px] text-txt-muted">{t.riskReason}</span>
               </Link>
@@ -86,7 +86,7 @@ function QueueRail({
           </div>
           <div className="flex flex-col gap-2">
             {pendingReviews.map(r => (
-              <div key={r.id} className="bg-accent-bg border border-accent/20 rounded-[4px] p-2.5">
+              <div key={r.id} className="bg-accent-bg border border-accent/20 rounded-[9px] p-2.5">
                 <Link href={`/tasks/${r.id}`}
                   className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug">
                   {r.title}
@@ -115,7 +115,7 @@ function QueueRail({
           </div>
           <div className="flex flex-col gap-2">
             {readyTasks.map(t => (
-              <div key={t.id} className="bg-success-bg border border-success/30 rounded-[4px] p-2.5">
+              <div key={t.id} className="bg-success-bg border border-success/30 rounded-[9px] p-2.5">
                 <Link href={`/tasks/${t.id}`}
                   className="block text-[12.5px] text-txt-primary mb-1 hover:text-success transition-colors leading-snug">
                   {t.title}
@@ -202,14 +202,22 @@ function SortableCard({
     setReviewerSaving(false);
   }
 
+  const stripeColor = isReviewApprovedBanner ? undefined
+    : task.hasIssue && !task.isCancelled ? 'rgb(var(--danger))'
+    : task.isAtRisk ? 'rgb(var(--warning))'
+    : LANE_ACCENT[laneName ?? ''] ?? 'rgb(var(--border))';
+
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        transform: CSS.Transform.toString(transform), transition,
+        ...(stripeColor ? { borderLeftWidth: 4, borderLeftColor: stripeColor } : {}),
+      }}
       {...attributes} {...listeners}
-      className={`bg-surface-2 border rounded-[3px] p-2.5 transition-colors select-none relative
+      className={`bg-surface-1 border rounded-[9px] p-2.5 transition-colors select-none relative
         ${task.isCancelled ? 'grayscale-[0.4] opacity-75 cursor-default' : 'cursor-grab active:cursor-grabbing'}
-        ${isReviewApprovedBanner ? 'card-review-approved border-success' : task.hasIssue && !task.isCancelled ? 'border-danger/40' : task.isAtRisk ? 'border-warning/40' : 'border-app-border'}
+        ${isReviewApprovedBanner ? 'card-review-approved border-success' : 'border-app-border'}
         ${isDragging && !overlay ? 'opacity-40' : ''}
         ${overlay ? 'shadow-xl rotate-1' : 'hover:border-[#B4BCC8]'}
         ${task.isAtRisk && !isDragging && !overlay ? 'card-at-risk' : ''}
@@ -241,7 +249,7 @@ function SortableCard({
       </Link>
       <div className="flex items-center justify-between">
         {task.squad
-          ? <span className="text-[10.5px] text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full">{task.squad.name}</span>
+          ? <span className="text-[10.5px] font-mono text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full">{task.squad.name}</span>
           : <span />}
         {av && task.assignee && (
           <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
@@ -251,7 +259,7 @@ function SortableCard({
         )}
       </div>
       {(normalFmt || otFmt) && (
-        <div className={`text-[11px] mt-1.5 flex items-center gap-1 ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
+        <div className={`text-[11px] font-mono mt-1.5 flex items-center gap-1 ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
           {normalFmt && <span>รวม {normalFmt}</span>}
           {otFmt     && <span>· OT {otFmt}</span>}
         </div>
@@ -277,7 +285,7 @@ function SortableCard({
                 value={task.reviewerId ?? ''}
                 onChange={handleReviewerSelectChange}
                 disabled={reviewerSaving}
-                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
+                className="w-full bg-surface-2 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
               >
                 <option value="">— ยังไม่เลือก —</option>
                 {reviewerOptions.map(r => (
@@ -301,7 +309,7 @@ function SortableCard({
                 onChange={e => { setPrLinkDraft(e.target.value); setPrLinkError(''); }}
                 onBlur={handlePrLinkBlur}
                 placeholder="https://github.com/..."
-                className="w-full bg-surface-1 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent placeholder-txt-muted"
+                className="w-full bg-surface-2 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent placeholder-txt-muted"
               />
             )}
             {prLinkError && <p className="text-[10px] text-danger mt-0.5">{prLinkError}</p>}
@@ -331,7 +339,7 @@ function SortableFlaggedCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes} {...listeners}
-      className={`bg-surface-2 border border-danger/45 rounded-[3px] p-2.5 w-[220px] flex-shrink-0 cursor-grab active:cursor-grabbing select-none ${
+      className={`bg-surface-1 border border-danger/45 rounded-[9px] p-2.5 w-[220px] flex-shrink-0 cursor-grab active:cursor-grabbing select-none ${
         isDragging ? 'opacity-40' : ''
       }`}
     >
@@ -496,6 +504,12 @@ const PROTECTED_LANES = new Set(['To Do', 'In Progress', 'Review', 'Done', 'Canc
 const LANE_GLYPH: Record<string, string> = {
   'To Do': '○', 'In Progress': '◐', 'Review': '◆', 'Done': '✓', 'Cancel': '⊘',
 };
+/* Left-accent stripe color per lane — same status-color scheme as LANE_GLYPH's
+   text-color siblings above, just exposed as a raw value for inline styles. */
+const LANE_ACCENT: Record<string, string> = {
+  'To Do': 'rgb(var(--text-muted))', 'In Progress': 'rgb(var(--accent))',
+  'Review': 'rgb(var(--warning))', 'Done': 'rgb(var(--success))', 'Cancel': 'rgb(var(--danger))',
+};
 const PROTECTED_TOOLTIP = 'เลนนี้ผูกกับ Squad Board — แก้ไข/ลบไม่ได้';
 
 /* ปิดไว้ชั่วคราว — auto-start timer ตอนลากเข้า In Progress เรียก 2 endpoint
@@ -532,6 +546,7 @@ export default function MyBoardClient({
   const lanes = lanesRef.current;
 
   const [activeTask, setActiveTask] = useState<TaskData | null>(null);
+  const [activeLaneName, setActiveLaneName] = useState<string | undefined>(undefined);
   const [editMode,   setEditMode]   = useState(false);
 
   /* ── Drag-and-drop save state: per-card "saving" overlay + error/success toast ── */
@@ -657,7 +672,9 @@ export default function MyBoardClient({
   /* ─── DND handlers ──────────────────────────────────── */
   function onDragStart({ active }: DragStartEvent) {
     const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === active.id);
+    const lane = lanesRef.current.find(l => l.tasks.some(t => t.id === active.id));
     setActiveTask(task ?? null);
+    setActiveLaneName(lane?.name);
     preDragRef.current = JSON.parse(JSON.stringify(lanesRef.current));
   }
 
@@ -1233,11 +1250,13 @@ export default function MyBoardClient({
         >
           {normalLanes.map(lane => (
             <div key={lane.id}
-              className={`bg-surface-1 border rounded-[4px] p-2.5 flex flex-col transition-colors ${
+              className={`bg-surface-2 border rounded-[11px] p-2.5 flex flex-col transition-colors overflow-hidden ${
                 editMode ? 'border-accent' : 'border-app-border'
               }`}
               style={{ height: 'calc(100vh - 220px)' }}
             >
+              <div className="h-[3px] -mx-2.5 -mt-2.5 mb-2.5 flex-shrink-0"
+                style={{ background: LANE_ACCENT[lane.name] ?? 'rgb(var(--border))' }} />
               <div className="flex items-center justify-between px-1 pb-2.5">
                 <div className="flex items-center gap-1.5">
                   <span className={`text-[13px] font-semibold ${
@@ -1250,7 +1269,7 @@ export default function MyBoardClient({
                     {LANE_GLYPH[lane.name] && <span className="mr-1">{LANE_GLYPH[lane.name]}</span>}
                     {lane.name}
                   </span>
-                  <span className="text-[11px] text-txt-muted bg-surface-2 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
+                  <span className="text-[11px] font-mono text-txt-muted bg-surface-3 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
                 </div>
                 {editMode && (() => {
                   const isProtected = PROTECTED_LANES.has(lane.name);
@@ -1281,7 +1300,7 @@ export default function MyBoardClient({
           {editMode && (
             addingLane ? (
               <form onSubmit={submitLane}
-                className="bg-surface-1 border border-accent rounded-[4px] p-3">
+                className="bg-surface-2 border border-accent rounded-[11px] p-3">
                 <input autoFocus value={newLaneName} onChange={e => setNewLaneName(e.target.value)}
                   placeholder="ชื่อเลนใหม่..."
                   className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-2" />
@@ -1292,7 +1311,7 @@ export default function MyBoardClient({
               </form>
             ) : (
               <button onClick={() => setAddingLane(true)}
-                className="border-[1.5px] border-dashed border-accent rounded-[4px] flex items-center justify-center gap-1.5 text-[13px] text-accent h-11 hover:bg-accent/5 transition-colors">
+                className="border-[1.5px] border-dashed border-accent rounded-[11px] flex items-center justify-center gap-1.5 text-[13px] text-accent h-11 hover:bg-accent/5 transition-colors">
                 + เพิ่มเลน
               </button>
             )
@@ -1300,7 +1319,7 @@ export default function MyBoardClient({
 
           {!editMode && (
             <button onClick={() => setEditMode(true)}
-              className="border-[1.5px] border-dashed border-app-border rounded-[4px] flex items-center justify-center gap-1.5 text-[13px] text-txt-muted hover:border-accent hover:text-accent transition-colors h-11">
+              className="border-[1.5px] border-dashed border-app-border rounded-[11px] flex items-center justify-center gap-1.5 text-[13px] text-txt-muted hover:border-accent hover:text-accent transition-colors h-11">
               + เพิ่มเลน
             </button>
           )}
@@ -1316,7 +1335,7 @@ export default function MyBoardClient({
         <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
         <DragOverlay>
-          {activeTask && <SortableCard task={activeTask} overlay />}
+          {activeTask && <SortableCard task={activeTask} laneName={activeLaneName} overlay />}
         </DragOverlay>
         </DndContext>
         </div>

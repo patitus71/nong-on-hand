@@ -272,6 +272,12 @@ export default function SquadBoardClient({
     { key: 'Done',                  label: 'Done',        glyph: '✓', color: 'text-success' },
     { key: 'มีปัญหา',              label: 'มีปัญหา',     glyph: '▲', color: 'text-danger' },
   ];
+  /* Left-accent card stripe per status — same scheme as STATUS_COLS' text colors above. */
+  const STATUS_ACCENT: Record<string, string> = {
+    'On-Board': 'rgb(var(--text-muted))', 'On-Board In Progress': 'rgb(var(--accent))',
+    'Wait for review': 'rgb(var(--warning))', 'Done': 'rgb(var(--success))',
+    'มีปัญหา': 'rgb(var(--danger))', 'To do list': 'rgb(var(--text-muted))',
+  };
 
   // ── Card ⋯ menu ──────────────────────────────────────────────────────────────
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -405,10 +411,17 @@ export default function SquadBoardClient({
             title={t.riskReason}
           >▲</span>
         )}
-        <div className={`bg-surface-1 border rounded-[3px] p-2.5 ${
-          t.isCancelled ? 'grayscale-[0.4] opacity-80 border-app-border'
-          : t.hasIssue ? 'border-danger/40' : t.flaggedForDeletion ? 'border-danger/30' : t.isAtRisk ? 'border-warning/40' : 'border-app-border'
-        }`}>
+        <div
+          className={`bg-surface-1 border border-app-border rounded-[9px] p-2.5 ${
+            t.isCancelled ? 'grayscale-[0.4] opacity-80' : ''
+          }`}
+          style={t.isCancelled ? undefined : {
+            borderLeftWidth: 4,
+            borderLeftColor: t.hasIssue || t.flaggedForDeletion ? 'rgb(var(--danger))'
+              : t.isAtRisk ? 'rgb(var(--warning))'
+              : STATUS_ACCENT[laneName] ?? 'rgb(var(--border))',
+          }}
+        >
 
           {/* Title row */}
           <div className="flex items-start gap-1 mb-2">
@@ -479,7 +492,7 @@ export default function SquadBoardClient({
               </div>
             ) : <span />}
             {(normalFmt || otFmt) && (
-              <span className={`text-[11px] ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
+              <span className={`text-[11px] font-mono ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
                 {normalFmt && <>รวม {normalFmt}</>}
                 {otFmt     && <> · OT {otFmt}</>}
               </span>
@@ -668,7 +681,7 @@ export default function SquadBoardClient({
               {members.flatMap(m => {
                 const av = avatarColor(m.name);
                 return [
-                  <div key={`m-${m.id}`} className="flex items-center gap-2 bg-surface-1 border border-app-border rounded-[4px] px-3 py-2.5">
+                  <div key={`m-${m.id}`} className="flex items-center gap-2 bg-surface-2 border border-app-border rounded-[11px] px-3 py-2.5">
                     <div
                       className="w-6 h-6 rounded-full text-[10px] font-semibold flex items-center justify-center flex-shrink-0"
                       style={{ background: av.bg, color: av.fg }}
@@ -679,12 +692,12 @@ export default function SquadBoardClient({
                     {m.external && (
                       <span className="text-[10px] text-txt-muted flex-shrink-0" title="ไม่ใช่สมาชิก squad นี้ในปัจจุบัน — มีงานค้างจากตอนที่ยังเกี่ยวข้องอยู่">(นอกทีม)</span>
                     )}
-                    <span className="ml-auto text-[11px] text-txt-muted flex-shrink-0">{m.taskCount} งาน</span>
+                    <span className="ml-auto text-[11px] font-mono text-txt-muted flex-shrink-0">{m.taskCount} งาน</span>
                   </div>,
                   ...STATUS_COLS.map(col => {
                     const cellTasks = (laneByName.get(col.key) ?? []).filter(t => t.assignee?.id === m.id);
                     return (
-                      <div key={`${m.id}-${col.key}`} className="bg-surface-3 rounded-[4px] p-2 flex flex-col gap-1.5 min-h-[52px]">
+                      <div key={`${m.id}-${col.key}`} className="bg-surface-3 rounded-[11px] p-2 flex flex-col gap-1.5 min-h-[52px]">
                         {cellTasks.map(t => renderCard(t, col.key))}
                       </div>
                     );
@@ -696,7 +709,7 @@ export default function SquadBoardClient({
         )}
 
         {/* Pool: unclaimed tasks — ยังไม่มีเจ้าของ */}
-        <div className="bg-surface-1 border border-app-border rounded-[5px] p-3.5 flex flex-col gap-2.5">
+        <div className="bg-surface-2 border border-app-border rounded-[11px] p-3.5 flex flex-col gap-2.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[12.5px] font-semibold text-txt-secondary">○ กองกลาง — ยังไม่มีเจ้าของ · {poolTasks.length}</span>
             {canAssign && poolTasks.length > 0 && (
@@ -812,7 +825,7 @@ export default function SquadBoardClient({
               <button
                 onClick={submitFlag}
                 disabled={flagging}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${flagging ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${flagging ? 'btn-loading' : ''}`}
               >
                 ยืนยัน Flag
               </button>
@@ -1026,7 +1039,7 @@ export default function SquadBoardClient({
               <button
                 onClick={() => submitCloseSprint(unfinishedCount !== null)}
                 disabled={closingLoading}
-                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#7A3D00] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
+                className={`bg-danger border border-danger text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-[#B91C1C] transition-colors disabled:opacity-50 ${closingLoading ? 'btn-loading' : ''}`}
               >
                 {unfinishedCount !== null ? 'ยืนยันปิด (มีงานค้าง)' : 'ปิด Sprint'}
               </button>
