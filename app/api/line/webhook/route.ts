@@ -379,19 +379,19 @@ export async function POST(req: Request) {
         };
 
         const SEP = '━━━━━━━━━━━━━━';
-        const formatCategory = (emoji: string, label: string, items: MyTaskItem[], showIssueNote = false): string | null => {
+        const formatCategory = (label: string, items: MyTaskItem[], showIssueNote = false): string | null => {
           if (items.length === 0) return null;
           const ticketsText = items.map(it => formatTicket(it, showIssueNote)).join('\n\n');
-          return [SEP, `${emoji} ${label} (${items.length})`, SEP, '', ticketsText].join('\n');
+          return [SEP, `[${label}] (${items.length})`, SEP, '', ticketsText].join('\n');
         };
 
         const categoryBlocks = [
-          formatCategory('✅', 'Done', buckets.done),
-          formatCategory('🟡', 'In Review', buckets.review),
-          formatCategory('🔵', 'In Progress', buckets.inProgress),
-          formatCategory('⚪', 'To Do', buckets.todo),
-          formatCategory('🚩', 'มีปัญหา', buckets.issue, true),
-          formatCategory('🚫', 'Cancel', buckets.cancel),
+          formatCategory('Done', buckets.done),
+          formatCategory('In Review', buckets.review),
+          formatCategory('In Progress', buckets.inProgress),
+          formatCategory('To Do', buckets.todo),
+          formatCategory('มีปัญหา', buckets.issue, true),
+          formatCategory('Cancel', buckets.cancel),
         ].filter((b): b is string => b !== null);
 
         let finalText = header;

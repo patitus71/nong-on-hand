@@ -77,8 +77,8 @@ function formatStandupSquadSection(
       ? ctx.slot(person.displayName, person.lineUserId)
       : `@${person.displayName}`;
     lines.push(nameTag);
-    for (const item of person.doing) lines.push(`In Progress: ${item.title}`);
-    for (const item of person.queue) lines.push(`Next up: ${item.title}`);
+    for (const item of person.doing) lines.push(`[In Progress] ${item.title}`);
+    for (const item of person.queue) lines.push(`[Next up] ${item.title}`);
   }
   return lines.join('\n');
 }
@@ -91,7 +91,7 @@ export async function buildStandupText(
 ): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const todayTH    = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-  const header     = `Standup — (${todayTH})\nIn Progress · Next up`;
+  const header     = `Standup — (${todayTH})\n[In Progress] · [Next up]`;
   const section    = formatStandupSquadSection(squadName, byAssignee, ctx);
   return `${header}\n\n${section}`;
 }
@@ -134,7 +134,7 @@ export function mergeIntoChunks(parts: string[]): string[] {
 // Task.cancelNote — so isCancelled MUST be checked before hasIssue, else every
 // cancelled task would show up as an "unresolved" issue forever):
 //   1. isCancelled  → Cancel (today) bucket, only if cancelledAt falls in today's ICT range
-//   2. hasIssue     → squad-level 🚩 Issues (unresolved) list, no date filter, not per-person
+//   2. hasIssue     → squad-level [Issues] (unresolved) list, no date filter, not per-person
 //   3. else         → lane.name (today-filtered only for Done)
 
 type EodPerson = {
@@ -230,18 +230,18 @@ function formatEodPersonBlock(person: EodPerson, ctx?: MentionContext): string |
     for (const title of items) lines.push(`- ${title}`);
     lines.push('');
   };
-  sub('Todo', person.todo);
-  sub('In Progress', person.inProgress);
-  sub('Review', person.review);
-  sub('Done (today)', person.doneToday);
-  sub('Cancel (today)', person.cancelToday);
+  sub('[Todo]', person.todo);
+  sub('[In Progress]', person.inProgress);
+  sub('[Review]', person.review);
+  sub('[Done] (today)', person.doneToday);
+  sub('[Cancel] (today)', person.cancelToday);
 
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines.join('\n');
 }
 
 function formatEodIssuesBlock(issues: string[]): string {
-  return ['🚩 Issues (unresolved)', ...issues.map(title => `- ${title}`)].join('\n');
+  return ['[Issues] (unresolved)', ...issues.map(title => `- ${title}`)].join('\n');
 }
 
 /**
@@ -453,7 +453,7 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     `${startedTH} – ${closedTH} (${durationDays} วัน)`,
   ].join('\n');
 
-  const doneLines = [`✅ Done (${doneCount})`];
+  const doneLines = [`[Done] (${doneCount})`];
   if (doneByAssignee.size === 0) {
     doneLines.push('_ไม่มี_');
   } else {
@@ -463,7 +463,7 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     }
   }
 
-  const cancelLines = [`🚫 Cancelled (${cancelCount})`];
+  const cancelLines = [`[Cancelled] (${cancelCount})`];
   if (cancelByAssignee.size === 0) {
     cancelLines.push('_ไม่มี_');
   } else {
@@ -473,7 +473,7 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     }
   }
 
-  const issueLines = [`🚩 Issues encountered (${issueLogs.length})`];
+  const issueLines = [`[Issues] (${issueLogs.length})`];
   if (issueLogs.length === 0) {
     issueLines.push('_ไม่มี_');
   } else {
@@ -482,7 +482,7 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     }
   }
 
-  const carriedLines = [`➡️ Carried to next sprint (${carriedCount})`];
+  const carriedLines = [`[Carried to next sprint] (${carriedCount})`];
   const carriedSub = (label: string, items: string[]) => {
     carriedLines.push(`${label}:`);
     if (items.length === 0) carriedLines.push('_ไม่มี_');
