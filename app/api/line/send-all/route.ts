@@ -63,7 +63,7 @@ export async function POST(req: Request) {
 
     if (type === 'standup') {
       const todayTH = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-      const parts: string[] = [`Standup — (${todayTH})\nIn Progress · Next up`];
+      const parts: string[] = [`Standup — (${todayTH})\nIn Progress · To Do · Issues`];
       for (const sq of groupSquads) {
         parts.push(await buildStandupBlock(sq.id, sq.name, ctx));
       }

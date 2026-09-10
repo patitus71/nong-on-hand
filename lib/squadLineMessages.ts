@@ -2,7 +2,6 @@
 // Shared standup/EOD message builders — imported by both per-squad and all-squads LINE send routes
 
 import { prisma } from '@/lib/prisma';
-import { computeSquadBoardStatus } from '@/lib/importTasks';
 import { thaiDate, MentionContext } from '@/lib/lineNotify';
 import { calcSprintDurationDays } from '@/lib/sprint';
 
@@ -11,23 +10,26 @@ export const LINE_CHAR_LIMIT = 4800;
 
 // ─── Standup ──────────────────────────────────────────────────────────────────
 
-type TaskItem = { title: string; hasIssue: boolean; issueNote: string | null };
+type InProgressItem = { title: string; hasIssue: boolean; issueNote: string | null };
 
 type StandupPerson = {
   displayName: string;
   lineUserId:  string | null;
-  doing:       TaskItem[];
-  queue:       TaskItem[];
+  inProgress:  InProgressItem[];
+  todo:        string[];
+  issues:      string[];
 };
 
 async function fetchStandupPersons(squadId: string): Promise<Map<string, StandupPerson>> {
-  // laneId, not pulledIntoBoardAt, is the "on board" signal — pulledIntoBoardAt is set
-  // only by the import pull-in flow, so tasks created directly on a board never have it.
+  // No laneId filter here — [Issues] (unresolved) must catch a flagged task regardless
+  // of what lane it physically sits in (mirrors fetchEodData's squad-wide issues list,
+  // which is also not lane-filtered). Only the [In Progress]/[To Do] board buckets below
+  // require laneId to be set — laneId, not pulledIntoBoardAt, is the "on board" signal,
+  // since pulledIntoBoardAt is set only by the import pull-in flow.
   const tasks = await prisma.task.findMany({
     where: {
       squadId,
       deletedAt:   null,
-      laneId:      { not: null },
       isCancelled: false,
     },
     select: {
@@ -39,26 +41,63 @@ async function fetchStandupPersons(squadId: string): Promise<Map<string, Standup
   });
 
   const byAssignee = new Map<string, StandupPerson>();
-  for (const task of tasks) {
-    if (!task.assigneeId || !task.assignee) continue;
-    const status = computeSquadBoardStatus(task);
-    if (status === 'Done') continue;
-    if (!byAssignee.has(task.assigneeId)) {
-      byAssignee.set(task.assigneeId, {
-        displayName: task.assignee.lineDisplayName ?? task.assignee.name,
-        lineUserId:  task.assignee.lineUserId,
-        doing: [], queue: [],
+  const personEntry = (task: (typeof tasks)[number]): StandupPerson => {
+    const key = task.assigneeId!;
+    if (!byAssignee.has(key)) {
+      byAssignee.set(key, {
+        displayName: task.assignee!.lineDisplayName ?? task.assignee!.name,
+        lineUserId:  task.assignee!.lineUserId,
+        inProgress: [], todo: [], issues: [],
       });
     }
-    const entry = byAssignee.get(task.assigneeId)!;
-    const item: TaskItem = { title: task.title, hasIssue: task.hasIssue, issueNote: task.issueNote };
-    if (status === 'On-Board In Progress' || status === 'มีปัญหา') {
-      entry.doing.push(item);
-    } else {
-      entry.queue.push(item);
+    return byAssignee.get(key)!;
+  };
+
+  for (const task of tasks) {
+    if (!task.assigneeId || !task.assignee) continue;
+
+    // hasIssue=true always means assigneeId is the person who flagged it — no null case.
+    if (task.hasIssue) personEntry(task).issues.push(task.title);
+
+    if (!task.laneId) continue;
+    const laneName = task.lane?.name?.toLowerCase();
+    if (laneName === 'in progress') {
+      personEntry(task).inProgress.push({ title: task.title, hasIssue: task.hasIssue, issueNote: task.issueNote });
+    } else if (laneName !== 'done') {
+      personEntry(task).todo.push(task.title);
     }
   }
   return byAssignee;
+}
+
+/** One person's block — null if In Progress/To Do/Issues are all empty (rule: omit entirely). */
+function formatStandupPersonBlock(person: StandupPerson, ctx?: MentionContext): string | null {
+  if (person.inProgress.length === 0 && person.todo.length === 0 && person.issues.length === 0) return null;
+
+  const nameTag = ctx ? ctx.slot(person.displayName, person.lineUserId) : `@${person.displayName}`;
+  const lines: string[] = [nameTag];
+
+  if (person.inProgress.length > 0) {
+    lines.push('[In Progress]');
+    for (const item of person.inProgress) {
+      lines.push(`- ${item.title}`);
+      if (item.hasIssue && item.issueNote) lines.push(`  🚨 ${item.issueNote}`);
+    }
+    lines.push('');
+  }
+  if (person.todo.length > 0) {
+    lines.push('[To Do]');
+    for (const title of person.todo) lines.push(`- ${title}`);
+    lines.push('');
+  }
+  if (person.issues.length > 0) {
+    lines.push('[Issues] (unresolved)');
+    for (const title of person.issues) lines.push(`- ${title}`);
+    lines.push('');
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
 }
 
 function formatStandupSquadSection(
@@ -66,21 +105,19 @@ function formatStandupSquadSection(
   byAssignee: Map<string, StandupPerson>,
   ctx?:       MentionContext,
 ): string {
-  const total = Array.from(byAssignee.values()).reduce(
-    (n, p) => n + p.doing.length + p.queue.length, 0,
-  );
-  if (total === 0) return `📍 ${squadName} — No tasks today`;
-
-  const lines: string[] = [`📍 ${squadName} — ${total} ${total === 1 ? 'task' : 'tasks'}`];
+  // total = In Progress + To Do only — unresolved issues aren't counted again (rule:
+  // matches the EOD header, which also excludes its squad-wide issues from the count).
+  let total = 0;
+  const personBlocks: string[] = [];
   for (const [, person] of Array.from(byAssignee)) {
-    const nameTag = ctx
-      ? ctx.slot(person.displayName, person.lineUserId)
-      : `@${person.displayName}`;
-    lines.push(nameTag);
-    for (const item of person.doing) lines.push(`[In Progress] ${item.title}`);
-    for (const item of person.queue) lines.push(`[Next up] ${item.title}`);
+    total += person.inProgress.length + person.todo.length;
+    const block = formatStandupPersonBlock(person, ctx);
+    if (block) personBlocks.push(block);
   }
-  return lines.join('\n');
+  if (personBlocks.length === 0) return `📍 ${squadName} — No tasks today`;
+
+  const header = `📍 ${squadName} — ${total} ${total === 1 ? 'task' : 'tasks'}`;
+  return [header, ...personBlocks].join('\n\n');
 }
 
 /** Per-squad: full standup with date header + legend */
@@ -91,7 +128,7 @@ export async function buildStandupText(
 ): Promise<string> {
   const byAssignee = await fetchStandupPersons(squadId);
   const todayTH    = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-  const header     = `Standup — (${todayTH})\n[In Progress] · [Next up]`;
+  const header     = `Standup — (${todayTH})\n[In Progress] · [To Do] · [Issues]`;
   const section    = formatStandupSquadSection(squadName, byAssignee, ctx);
   return `${header}\n\n${section}`;
 }

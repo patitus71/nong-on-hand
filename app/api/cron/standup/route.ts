@@ -73,7 +73,7 @@ export async function GET(req: Request) {
   for (const [groupId, groupSquads] of Array.from(byGroup)) {
     const ctx      = new MentionContext();
     const todayTH  = thaiDate(new Date(Date.now() + 7 * 60 * 60 * 1000));
-    const parts: string[] = [`Standup — (${todayTH})\nIn Progress · Next up`];
+    const parts: string[] = [`Standup — (${todayTH})\nIn Progress · To Do · Issues`];
 
     for (const sq of groupSquads) {
       parts.push(await buildStandupBlock(sq.id, sq.name, ctx));
