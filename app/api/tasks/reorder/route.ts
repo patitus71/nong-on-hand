@@ -35,7 +35,7 @@ export async function PATCH(req: Request) {
   const tasksRaw = await prisma.task.findMany({
     where:  { id: { in: taskIds } },
     select: {
-      id: true, squadId: true, laneId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true,
+      id: true, squadId: true, laneId: true, reviewApprovedAt: true, isCancelled: true,
       reviewerId: true, title: true,
     },
   });
@@ -117,7 +117,7 @@ export async function PATCH(req: Request) {
       approvalResets.add(id);
     }
 
-    return { id, laneId: finalLaneId, order, itemReviewerId, moved };
+    return { id, laneId: finalLaneId, order, itemReviewerId, moved, oldLaneName };
   });
 
   // Guard: เลน "Cancel" เข้าได้ทางเดียวผ่าน /api/tasks/[taskId]/flag (resolve-to-cancel)
@@ -139,14 +139,13 @@ export async function PATCH(req: Request) {
   // task เก่าที่ค้างอยู่ใน Done โดยไม่มี approval (เช่น ถูก QA_LEAD/ADMIN ย้ายเข้าตรงๆ) จะ
   // ทำให้ลากการ์ดอื่นบนบอร์ดไม่ได้เลยสักใบ เพราะ item ของมันติดมาด้วยทุกครั้ง
   //
-  // requiresReview === false: งานแยกที่ไม่จำเป็นต้อง review — อนุญาตย้าย In Progress → Done
-  // ตรงได้เลยโดยไม่ต้องผ่าน approval แต่ถ้าใครลากงานนี้เข้า Review lane เองก็ยังใช้ logic เดิม
-  // ทุกอย่าง (approval reset, ต้อง QA_LEAD approve ก่อนออกจาก Review ตามปกติ) — flag นี้แค่ปลด
-  // เงื่อนไข "ต้องผ่าน Review ก่อนถึงจะเข้า Done ได้" สำหรับงานที่ไม่จำเป็นต้อง review เท่านั้น
+  // Review is opt-in, not mandatory: only a task actually leaving the Review lane
+  // (oldLaneName === 'Review') needs approval first. A task promoted straight from
+  // In Progress (or anywhere else) to Done never needed a reviewer to begin with.
   if (user.role === 'QA_ENGINEER') {
-    for (const { id, laneId: resolvedLaneId, moved } of resolved) {
+    for (const { id, laneId: resolvedLaneId, moved, oldLaneName } of resolved) {
       const task = taskById.get(id);
-      if (!task?.squadId || !task.requiresReview || task.reviewApprovedAt || !moved) continue;
+      if (!task?.squadId || oldLaneName !== 'Review' || task.reviewApprovedAt || !moved) continue;
       const squadDoneLaneId = squadLaneMap.get(`${task.squadId}:Done`);
       if (squadDoneLaneId && squadDoneLaneId === resolvedLaneId) {
         return new Response('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้', { status: 403 });

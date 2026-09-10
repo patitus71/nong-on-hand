@@ -17,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     prisma.task.findUnique({
       where:  { id: params.taskId },
       select: {
-        id: true, squadId: true, assigneeId: true, reviewApprovedAt: true, requiresReview: true, isCancelled: true,
+        id: true, squadId: true, assigneeId: true, reviewApprovedAt: true, isCancelled: true,
         lane: { select: { name: true } },
       },
     }),
@@ -50,9 +50,10 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     return new Response('ย้ายเข้าเลน Cancel โดยตรงไม่ได้ — ต้องกด "จัดการปัญหานี้" แล้วเลือกปลายทาง Cancel เท่านั้น', { status: 403 });
   }
 
-  // QA_ENGINEER moving squad task to Done requires review approval — ยกเว้นงานที่ตั้ง
-  // requiresReview: false ไว้ (งานแยกที่ไม่จำเป็นต้อง review)
-  if (task.squadId && task.requiresReview && user.role === 'QA_ENGINEER' && newLaneName === 'Done' && !task.reviewApprovedAt) {
+  // Review is opt-in, not mandatory: QA_ENGINEER can drag In Progress → Done directly with
+  // no reviewer/approval needed. The only gate left is leaving the Review lane itself — a
+  // task actually sitting in Review still needs QA_LEAD approval before it can reach Done.
+  if (task.squadId && oldLaneName === 'Review' && user.role === 'QA_ENGINEER' && newLaneName === 'Done' && !task.reviewApprovedAt) {
     return new Response('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้', { status: 403 });
   }
 

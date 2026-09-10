@@ -16,13 +16,12 @@ export async function PATCH(
 
   const body = await req.json() as {
     title?: string; description?: string; reviewerId?: string | null; prLink?: string | null;
-    requiresReview?: boolean;
   };
-  const { title, description, reviewerId, prLink, requiresReview } = body;
+  const { title, description, reviewerId, prLink } = body;
 
   if (
     title === undefined && description === undefined && reviewerId === undefined &&
-    prLink === undefined && requiresReview === undefined
+    prLink === undefined
   ) {
     return new Response('Bad Request', { status: 400 });
   }
@@ -52,12 +51,11 @@ export async function PATCH(
   if (description !== undefined) data.description = description.trim() || null;
   if (reviewerId !== undefined) data.reviewerId = reviewerId;
   if (prLink !== undefined) data.prLink = prLink ? prLink.trim() : null;
-  if (requiresReview !== undefined) data.requiresReview = requiresReview;
 
   const updated = await prisma.task.update({
     where: { id: task.id },
     data,
-    select: { id: true, title: true, description: true, reviewerId: true, prLink: true, requiresReview: true },
+    select: { id: true, title: true, description: true, reviewerId: true, prLink: true },
   });
 
   // สร้าง in-app notification ตอนตั้ง reviewer ใหม่จริง (ไม่ใช่ unset หรือค่าเดิม) — ไม่ส่ง LINE แล้ว

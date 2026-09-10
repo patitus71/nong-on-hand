@@ -18,7 +18,6 @@ import { fmt, initials, avatarColor, renderReportMarkdown, markdownToPlainText }
 type TaskData = {
   id: string; title: string; hasIssue: boolean; order: number;
   reviewApprovedAt: string | null;
-  requiresReview: boolean;
   isCancelled: boolean;
   cancelNote: string | null;
   reviewerId: string | null;
@@ -467,7 +466,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
       const task = await res.json();
       onCreated({
         id: task.id, title: task.title, hasIssue: false, order: task.order,
-        reviewApprovedAt: null, requiresReview: true, isCancelled: false, cancelNote: null,
+        reviewApprovedAt: null, isCancelled: false, cancelNote: null,
         reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
@@ -783,11 +782,14 @@ export default function MyBoardClient({
     const overId  = String(over.id);
     let current = lanesRef.current;
 
-    /* Review approval guard: block QA_ENGINEER from dragging squad task to Done without approval */
+    /* Review approval guard: Review is opt-in, not mandatory — dragging In Progress → Done
+       directly needs no reviewer/approval. Only a task actually leaving the Review lane
+       still needs QA_LEAD approval before it can land in Done. */
     const landedLane = current.find(l => l.tasks.some(t => t.id === activeId));
     if (landedLane?.name === 'Done') {
       const task = landedLane.tasks.find(t => t.id === activeId);
-      if (task?.squad && task.requiresReview && !task.reviewApprovedAt) {
+      const srcLaneName = preDragRef.current.find(l => l.tasks.some(t => t.id === activeId))?.name;
+      if (task?.squad && srcLaneName === 'Review' && !task.reviewApprovedAt) {
         setReviewBlockMsg('ต้องรอ QA_LEAD approve review ก่อนจึงจะย้ายงานไป Done ได้');
         setLanes(preDragRef.current);
         return;

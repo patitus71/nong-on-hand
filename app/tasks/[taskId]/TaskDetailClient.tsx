@@ -17,7 +17,6 @@ type IssueLog = {
 type Task = {
   id: string; title: string; description: string | null;
   hasIssue: boolean; issueNote: string | null; source: string;
-  requiresReview: boolean;
   squad: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
   laneName: string | null;
@@ -83,9 +82,6 @@ export default function TaskDetailClient({
   const [descDraft,    setDescDraft]    = useState('');
   const [descSaving,   setDescSaving]   = useState(false);
 
-  // "ต้อง review ก่อนปิด" toggle state
-  const [requiresReviewSaving, setRequiresReviewSaving] = useState(false);
-
   // Toast
   const [toast, setToast] = useState<string | null>(null);
 
@@ -129,21 +125,6 @@ export default function TaskDetailClient({
       showToast('บันทึก description แล้ว');
     }
     setDescSaving(false);
-  }
-
-  async function toggleRequiresReview(checked: boolean) {
-    setRequiresReviewSaving(true);
-    const res = await fetch(`/api/tasks/${task.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requiresReview: checked }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setTask(t => ({ ...t, requiresReview: data.requiresReview }));
-      showToast(checked ? 'ต้อง review ก่อนปิดงาน' : 'ไม่ต้อง review ก่อนปิดงาน — ย้ายเข้า Done ตรงได้เลย');
-    }
-    setRequiresReviewSaving(false);
   }
 
   // Flag state
@@ -400,24 +381,6 @@ export default function TaskDetailClient({
             {task.laneName && <span className="text-[11.5px] bg-warning-bg text-warning px-2.5 py-1 rounded-full">{task.laneName}</span>}
             <span className="text-[11.5px] bg-surface-2 text-txt-secondary px-2.5 py-1 rounded-full">{task.source === 'IMPORTED' ? 'Imported' : 'Manual'}</span>
           </div>
-
-          {task.squad && (
-            <div className="mb-5">
-              <label className={`inline-flex items-center gap-1.5 text-[12px] text-txt-secondary ${canEdit ? 'cursor-pointer' : 'opacity-60'}`}>
-                <input
-                  type="checkbox"
-                  checked={task.requiresReview}
-                  disabled={!canEdit || requiresReviewSaving}
-                  onChange={e => toggleRequiresReview(e.target.checked)}
-                  className="accent-accent"
-                />
-                งานนี้ต้อง review ก่อนปิด
-                {!task.requiresReview && (
-                  <span className="text-[10.5px] text-txt-muted">(ย้าย In Progress → Done ตรงได้เลย)</span>
-                )}
-              </label>
-            </div>
-          )}
 
           {/* Description */}
           <div className="flex items-center gap-2 mb-2">
