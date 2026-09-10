@@ -407,9 +407,11 @@ export default function SquadBoardClient({
       <div key={t.id} className={`relative ${t.isAtRisk ? 'card-at-risk' : ''}`}>
         {t.isAtRisk && (
           <span
-            className="absolute top-1.5 right-2 text-[12px] leading-none z-10 pointer-events-none text-warning"
+            className="absolute top-1.5 right-2 text-[12px] leading-none z-10 pointer-events-none"
             title={t.riskReason}
-          >▲</span>
+            role="img"
+            aria-label={`งานด่วน: ${t.riskReason}`}
+          >🔥</span>
         )}
         <div
           className={`bg-surface-1 border border-app-border rounded-[9px] p-2.5 ${

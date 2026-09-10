@@ -47,9 +47,8 @@ type Reviewer = { id: string; name: string };
 
 /* ─── Queue rail (left sidebar): urgent / pending-review / ready-to-close ── */
 function QueueRail({
-  atRiskTasks, pendingReviews, readyTasks, onApprove, onMoveToDone, movingToDoneId,
+  pendingReviews, readyTasks, onApprove, onMoveToDone, movingToDoneId,
 }: {
-  atRiskTasks: TaskData[];
   pendingReviews: PendingReview[];
   readyTasks: TaskData[];
   onApprove: (taskId: string) => Promise<void>;
@@ -57,27 +56,10 @@ function QueueRail({
   movingToDoneId: string | null;
 }) {
   const [approving, setApproving] = useState<string | null>(null);
-  if (atRiskTasks.length === 0 && pendingReviews.length === 0 && readyTasks.length === 0) return null;
+  if (pendingReviews.length === 0 && readyTasks.length === 0) return null;
 
   return (
     <div className="w-[260px] flex-shrink-0 flex flex-col gap-4">
-      {atRiskTasks.length > 0 && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-[10.5px] font-semibold tracking-[.04em] text-warning">▲ ต้องจัดการด่วน · {atRiskTasks.length}</span>
-          </div>
-          <div className="flex flex-col gap-2">
-            {atRiskTasks.map(t => (
-              <Link key={t.id} href={`/tasks/${t.id}`}
-                className="block bg-warning-bg border border-warning/30 rounded-[9px] px-3 py-2.5 hover:border-warning/60 transition-colors">
-                <p className="text-[12.5px] text-txt-primary leading-snug mb-1">{t.title}</p>
-                <span className="text-[11px] text-txt-muted">{t.riskReason}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
       {pendingReviews.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-2">
@@ -230,7 +212,7 @@ function SortableCard({
         />
       )}
       {task.isAtRisk && !saving && (
-        <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10 text-warning" title={task.riskReason}>▲</span>
+        <span className="absolute top-1.5 right-1.5 text-[12px] leading-none pointer-events-none z-10" title={task.riskReason} aria-label={`งานด่วน: ${task.riskReason}`} role="img">🔥</span>
       )}
       {isReviewApprovedBanner && (
         <div className="review-approved-banner">
@@ -1195,7 +1177,6 @@ export default function MyBoardClient({
   }
 
   /* ─── Queue rail data ─────────────────────────────────── */
-  const atRiskTasks = normalLanes.flatMap(l => l.tasks.filter(t => t.isAtRisk));
   const readyTasks   = normalLanes.find(l => l.name === 'Review')?.tasks.filter(t => t.reviewApprovedAt) ?? [];
 
   /* ─── Render ─────────────────────────────────────────── */
@@ -1234,7 +1215,6 @@ export default function MyBoardClient({
 
       <div className="flex gap-4 items-start">
         <QueueRail
-          atRiskTasks={atRiskTasks}
           pendingReviews={pendingReviewsList}
           readyTasks={readyTasks}
           onApprove={approveReview}
