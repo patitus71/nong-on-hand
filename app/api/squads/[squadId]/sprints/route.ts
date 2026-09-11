@@ -4,7 +4,7 @@ import { getSession } from '@/lib/session';
 import { prisma } from '@/lib/prisma';
 import type { SessionUser } from '@/lib/rbac';
 import { canManageSprint } from '@/lib/rbac';
-import { canOpenNewSprint } from '@/lib/sprint';
+import { canOpenNewSprint, carryOverUnfinishedTasks } from '@/lib/sprint';
 
 export async function POST(req: NextRequest, { params }: { params: { squadId: string } }) {
   const session = await getSession();
@@ -36,16 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: { squadId: st
   // ดึงงานค้างจาก sprint เก่าที่ปิดแล้วเข้า sprint ใหม่นี้ — set sprintId อย่างเดียว ห้ามแตะ laneId
   // (สเปค 2.17 เส้นทาง B step 3/5) เฉพาะ Todo/In Progress/Review เท่านั้น (ไม่รวม Done/Cancel —
   // isCancelled ต้อง exclude เพราะ hasIssue ยังเป็น true แต่เป็น terminal state ไม่ใช่งานค้างจริง)
-  const carried = await prisma.task.updateMany({
-    where: {
-      squadId:    params.squadId,
-      deletedAt:  null,
-      isCancelled: false,
-      sprint:     { status: 'CLOSED' },
-      NOT:        { lane: { name: 'Done' } },
-    },
-    data: { sprintId: sprint.id },
-  });
+  const carriedCount = await carryOverUnfinishedTasks(prisma, params.squadId, sprint.id);
 
-  return NextResponse.json({ ...sprint, carriedCount: carried.count }, { status: 201 });
+  return NextResponse.json({ ...sprint, carriedCount }, { status: 201 });
 }

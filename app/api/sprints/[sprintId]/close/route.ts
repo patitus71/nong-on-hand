@@ -4,7 +4,7 @@ import { getSession } from '@/lib/session';
 import { prisma } from '@/lib/prisma';
 import type { SessionUser } from '@/lib/rbac';
 import { canManageSprint } from '@/lib/rbac';
-import { countUnfinishedTasks } from '@/lib/sprint';
+import { countUnfinishedTasks, carryOverUnfinishedTasks } from '@/lib/sprint';
 import { buildEndOfSprintReport } from '@/lib/squadLineMessages';
 import { sendLineTextMessage } from '@/lib/lineNotify';
 
@@ -35,10 +35,26 @@ export async function PATCH(req: NextRequest, { params }: { params: { sprintId: 
     return NextResponse.json({ unfinishedCount: unfinished, requiresConfirm: true }, { status: 200 });
   }
 
-  const closed = await prisma.sprint.update({
-    where: { id: sprint.id },
-    data: { status: 'CLOSED', closedAt: new Date(), closedById: user.id },
-    select: { id: true, name: true, status: true, closedAt: true },
+  // ปิด sprint เดิม + เปิด sprint ใหม่ทันที + ดึงงานค้าง (รวมงานกองกลางที่ยังไม่มีเจ้าของ)
+  // เข้า sprint ใหม่ ในธุรกรรมเดียว — กันไม่ให้ squad ไม่มี OPEN sprint แม้แต่ชั่วขณะ
+  const { closed, newSprint, carriedCount } = await prisma.$transaction(async (tx) => {
+    const closed = await tx.sprint.update({
+      where: { id: sprint.id },
+      data: { status: 'CLOSED', closedAt: new Date(), closedById: user.id },
+      select: { id: true, name: true, status: true, closedAt: true },
+    });
+
+    const newSprint = await tx.sprint.create({
+      data: {
+        squadId: sprint.squadId,
+        name:    `Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`,
+      },
+      select: { id: true, name: true, status: true, startedAt: true, plannedEndDate: true },
+    });
+
+    const carriedCount = await carryOverUnfinishedTasks(tx, sprint.squadId, newSprint.id);
+
+    return { closed, newSprint, carriedCount };
   });
 
   // End of Sprint report — best-effort, must not fail the close itself
@@ -54,5 +70,5 @@ export async function PATCH(req: NextRequest, { params }: { params: { sprintId: 
     }
   }
 
-  return NextResponse.json(closed);
+  return NextResponse.json({ ...closed, newSprint, carriedCount });
 }

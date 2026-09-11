@@ -144,6 +144,9 @@ export default function SquadBoardClient({
     }
     setShowCloseSprint(false);
     setUnfinishedCount(null);
+    if (data.carriedCount > 0) {
+      alert(`ปิด Sprint แล้ว — เปิด "${data.newSprint.name}" ต่อทันที และดึงงานค้าง ${data.carriedCount} งาน (รวมงานกองกลาง) เข้ามาด้วย`);
+    }
     router.refresh();
     setClosingLoading(false);
   }
@@ -1014,16 +1017,16 @@ export default function SquadBoardClient({
           <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[440px] shadow-2xl p-5">
             <h2 className="text-[15px] font-semibold text-danger mb-1">🔴 ปิด Sprint</h2>
             <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">
-              ยืนยันการปิด <b>{activeSprint.name}</b> — หลังปิดแล้วบอร์ดจะเป็น read-only และเปิด Sprint ใหม่ได้
+              ยืนยันการปิด <b>{activeSprint.name}</b> — sprint นี้จะเป็น read-only และระบบจะเปิด Sprint ใหม่ให้ต่อทันที
             </p>
 
             {unfinishedCount !== null && unfinishedCount > 0 && (
               <div className="bg-warning-bg border border-warning/30 rounded-[3px] px-3 py-2.5 mb-4">
                 <p className="text-[12.5px] text-warning font-medium">
-                  ▲ ยังมีงานที่ยังไม่เสร็จ {unfinishedCount} งาน
+                  ▲ ยังมีงานที่ยังไม่เสร็จ {unfinishedCount} งาน (รวมงานกองกลาง)
                 </p>
                 <p className="text-[11.5px] text-txt-secondary mt-1">
-                  งานเหล่านี้จะยังอยู่ใน Sprint นี้ (read-only) ไม่ถูก carry over อัตโนมัติ
+                  งานเหล่านี้จะถูกย้ายไป Sprint ใหม่ให้อัตโนมัติ (คงเลนเดิม ยังไม่มีเจ้าของเหมือนเดิมถ้ายังไม่มี)
                 </p>
               </div>
             )}
