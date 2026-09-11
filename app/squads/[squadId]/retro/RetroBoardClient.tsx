@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { initials, avatarColor, renderReportMarkdown, markdownToPlainText } from '@/lib/ui';
 
@@ -200,16 +200,42 @@ export default function RetroBoardClient({
     await fetch(`/api/retro/${selectedRetro.id}/items/${itemId}/vote`, { method: 'POST' });
   }
 
-  async function convertToTask(itemId: string) {
-    if (!selectedRetro) return;
-    const res = await fetch(`/api/retro/${selectedRetro.id}/items/${itemId}/convert`, { method: 'POST' });
+  // ── Convert to task — ต้องเลือก Task Point ก่อนเสมอ ──────────────────────────
+  const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
+  useEffect(() => {
+    fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
+  }, []);
+
+  const [convertTarget, setConvertTarget] = useState<{ itemId: string; content: string } | null>(null);
+  const [convertPoint,  setConvertPoint]  = useState('');
+  const [converting,    setConverting]    = useState(false);
+  const [convertError,  setConvertError]  = useState('');
+
+  function openConvert(itemId: string, content: string) {
+    setConvertTarget({ itemId, content });
+    setConvertPoint('');
+    setConvertError('');
+  }
+
+  async function submitConvert() {
+    if (!selectedRetro || !convertTarget || convertPoint === '') return;
+    setConverting(true); setConvertError('');
+    const res = await fetch(`/api/retro/${selectedRetro.id}/items/${convertTarget.itemId}/convert`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ taskPoint: Number(convertPoint) }),
+    });
     if (res.ok) {
       const data = await res.json();
       updateSelected(r => ({
         ...r,
-        items: r.items.map(item => item.id === itemId ? { ...item, linkedTaskId: data.taskId } : item),
+        items: r.items.map(item => item.id === convertTarget.itemId ? { ...item, linkedTaskId: data.taskId } : item),
       }));
+      setConvertTarget(null);
+    } else {
+      setConvertError(await res.text());
     }
+    setConverting(false);
   }
 
   async function openExport() {
@@ -419,7 +445,7 @@ export default function RetroBoardClient({
                         colKey={col.key}
                         isOpen={isOpen}
                         onVote={() => toggleVote(item.id)}
-                        onConvert={() => convertToTask(item.id)}
+                        onConvert={() => openConvert(item.id, item.content)}
                       />
                     ))}
 
@@ -535,6 +561,50 @@ export default function RetroBoardClient({
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Convert to task modal — ต้องเลือก Task Point ก่อนเสมอ ── */}
+      {convertTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          onClick={e => { if (e.target === e.currentTarget) setConvertTarget(null); }}
+        >
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[380px] shadow-2xl p-5 mx-4">
+            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">แปลงเป็นงาน</h3>
+            <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">{convertTarget.content}</p>
+
+            <label className="block text-[12px] text-txt-secondary mb-1.5">
+              Task Point <span className="text-danger">*</span>
+            </label>
+            <select
+              value={convertPoint}
+              onChange={e => setConvertPoint(e.target.value)}
+              className={`w-full bg-surface-2 border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-3 ${convertPoint === '' ? 'border-danger/50' : 'border-app-border'}`}
+            >
+              <option value="">— เลือก (จำเป็น) —</option>
+              {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
+            </select>
+
+            {convertError && <p className="text-[12px] text-danger mb-3">{convertError}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConvertTarget(null)}
+                disabled={converting}
+                className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-4 py-2 rounded-[3px] hover:bg-surface-3 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={submitConvert}
+                disabled={converting || convertPoint === ''}
+                className={`bg-accent text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 ${converting ? 'btn-loading' : ''}`}
+              >
+                แปลงเป็นงาน
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -16,17 +16,26 @@ export async function PATCH(
 
   const body = await req.json() as {
     title?: string; description?: string; reviewerId?: string | null; prLink?: string | null;
+    taskPoint?: number;
   };
-  const { title, description, reviewerId, prLink } = body;
+  const { title, description, reviewerId, prLink, taskPoint } = body;
 
   if (
     title === undefined && description === undefined && reviewerId === undefined &&
-    prLink === undefined
+    prLink === undefined && taskPoint === undefined
   ) {
     return new Response('Bad Request', { status: 400 });
   }
   if (title !== undefined && !title.trim()) {
     return new Response('ชื่องานต้องมีอย่างน้อย 1 ตัวอักษร', { status: 400 });
+  }
+  let pointMapping: { point: number; hours: number } | null = null;
+  if (taskPoint !== undefined) {
+    if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
+      return new Response('taskPoint ต้องเป็นตัวเลข', { status: 400 });
+    }
+    pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
+    if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
   }
   if (prLink !== undefined && prLink !== null) {
     try {
@@ -51,11 +60,18 @@ export async function PATCH(
   if (description !== undefined) data.description = description.trim() || null;
   if (reviewerId !== undefined) data.reviewerId = reviewerId;
   if (prLink !== undefined) data.prLink = prLink ? prLink.trim() : null;
+  if (pointMapping) {
+    data.taskPoint      = pointMapping.point;
+    data.estimatedHours = pointMapping.hours;
+  }
 
   const updated = await prisma.task.update({
     where: { id: task.id },
     data,
-    select: { id: true, title: true, description: true, reviewerId: true, prLink: true },
+    select: {
+      id: true, title: true, description: true, reviewerId: true, prLink: true,
+      taskPoint: true, estimatedHours: true,
+    },
   });
 
   // สร้าง in-app notification ตอนตั้ง reviewer ใหม่จริง (ไม่ใช่ unset หรือค่าเดิม) — ไม่ส่ง LINE แล้ว

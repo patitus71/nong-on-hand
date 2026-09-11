@@ -19,6 +19,7 @@ export default async function TasksPage() {
         lane:     { select: { name: true } },
         timeLogs: { select: { normalMinutes: true, otMinutes: true } },
       },
+      // taskPoint, estimatedHours ดึงมาด้วยเป็น scalar field เริ่มต้นของ findMany อยู่แล้ว
       orderBy: { createdAt: 'desc' },
     }),
     prisma.squad.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
@@ -55,6 +56,8 @@ export default async function TasksPage() {
     squad:               t.squad,
     assignee:            t.assignee,
     laneName:            t.lane?.name ?? null,
+    taskPoint:           t.taskPoint ?? null,
+    estimatedHours:      t.estimatedHours ?? null,
     totalNormalMin:      t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
     totalOtMin:          t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
   }));

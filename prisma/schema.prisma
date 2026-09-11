@@ -54,6 +54,7 @@ model Squad {
   id                       String        @id @default(cuid())
   name                     String        @unique
   isFloatingPool           Boolean       @default(false)
+  capacityHours            Int           @default(80) // เป้า Estimate Man-Hour ต่อคนต่อ sprint — ใช้คำนวณแผงโหลดของฉัน/โหลดรวม squad
   lineGroupId              String?       // LINE group chat ID (ได้มาตอนบอทถูกเชิญเข้ากลุ่ม — ดู /api/line/webhook)
   eodReportRecipientEmails String?       // ทางเลือกเสริม: อีเมลรับ EOD report ควบคู่ LINE (comma-separated)
   users                    User[]
@@ -166,6 +167,8 @@ model Task {
   completedAt           DateTime? // set ตอนย้ายเข้าเลน Done (update ถ้าเข้า Done ซ้ำ)
   sprintId              String?   // Sprint ที่ task นี้อยู่ — null ถ้ายังไม่ถูก pull-in หรือ pull-in ก่อนมี Sprint
   sprint                Sprint?   @relation(fields: [sprintId], references: [id])
+  taskType              String?   // จาก TaskTypeOption.label ตอน import — free string ไม่ใช่ FK เพื่อกัน list เปลี่ยนแล้วงานเก่าพัง
+  taskPoint             Float?    // จาก TaskPointMapping.point ตอน import — ใช้ auto-fill estimatedHours ตอนเลือก ไม่ผูก FK ด้วยเหตุผลเดียวกัน
   timeLogs      TimeLog[]
   taskLogs      TaskLog[]
   retroItems    RetroItem[]
@@ -216,6 +219,21 @@ model Sprint {
   createdAt   DateTime     @default(now())
 
   @@index([squadId, status])
+}
+
+// Global config (ไม่ผูก squad) สำหรับหน้า import งาน — ตั้งค่าได้ที่ Admin Panel เท่านั้น
+model TaskPointMapping {
+  id    String @id @default(cuid())
+  point Float  @unique // เช่น 0.5, 1, 2, 3, 5, 8, 13
+  hours Float  // เช่น 2, 4, 8, 16, 24, 40, 80
+}
+
+model TaskTypeOption {
+  id    String @id @default(cuid())
+  label String // เช่น "[create test case]", "[automation][create automation script]"
+  order Int    @default(0)
+
+  @@index([order])
 }
 
 model WeeklyReport {

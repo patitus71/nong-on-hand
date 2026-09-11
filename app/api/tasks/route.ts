@@ -8,8 +8,13 @@ export async function POST(req: Request) {
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser;
 
-  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId } = await req.json();
+  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId, taskPoint } = await req.json();
   if (!title?.trim()) return new Response('title required', { status: 400 });
+  if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
+    return new Response('taskPoint required — ทุก task ต้องมี Task Point เสมอ', { status: 400 });
+  }
+  const pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
+  if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
 
   // assigneeParam: undefined = ไม่ส่งมา (My Board create, default เป็น creator), key ปรากฏ (แม้เป็น
   // null) = Squad Board create — ใช้สัญญาณเดียวกันนี้แยกว่าต้องเช็คสิทธิ์ไหน (ดู resolvedAssigneeId ด้านล่าง)
@@ -43,12 +48,14 @@ export async function POST(req: Request) {
 
   const task = await prisma.task.create({
     data: {
-      title:      title.trim(),
-      laneId:     laneId ?? null,
-      squadId:    targetSquadId,
-      assigneeId: resolvedAssigneeId,
-      sprintId:   resolvedSprintId,
-      order:      (maxOrder._max.order ?? -1) + 1,
+      title:          title.trim(),
+      laneId:         laneId ?? null,
+      squadId:        targetSquadId,
+      assigneeId:     resolvedAssigneeId,
+      sprintId:       resolvedSprintId,
+      taskPoint:      pointMapping.point,
+      estimatedHours: pointMapping.hours,
+      order:          (maxOrder._max.order ?? -1) + 1,
     },
     include: {
       squad:    { select: { name: true } },

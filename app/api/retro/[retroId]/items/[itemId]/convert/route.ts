@@ -14,12 +14,21 @@ export async function POST(req: Request, { params }: { params: { retroId: string
   if (!item) return new Response('Not Found', { status: 404 });
   if (item.linkedTaskId) return Response.json({ taskId: item.linkedTaskId }); // already converted
 
+  const { taskPoint } = await req.json().catch(() => ({})) as { taskPoint?: number };
+  if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
+    return new Response('taskPoint required — ทุก task ต้องมี Task Point เสมอ', { status: 400 });
+  }
+  const pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
+  if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
+
   const task = await prisma.task.create({
     data: {
-      title:      item.content,
-      squadId:    item.retro.squadId,
-      assigneeId: item.ownerId ?? user.id,
-      source:     'MANUAL',
+      title:          item.content,
+      squadId:        item.retro.squadId,
+      assigneeId:     item.ownerId ?? user.id,
+      source:         'MANUAL',
+      taskPoint:      pointMapping.point,
+      estimatedHours: pointMapping.hours,
     },
   });
 

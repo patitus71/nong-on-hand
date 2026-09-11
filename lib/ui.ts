@@ -5,6 +5,20 @@ export function fmt(minutes: number): string | null {
   return `${h}:${String(m).padStart(2, '0')}`;
 }
 
+// H:MM ไม่ตัดค่า 0 ทิ้งเหมือน fmt() — ใช้กับ burn bar ที่ต้องโชว์ "0:00" ตอน idle
+export function fmtHM(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+// สีแถบ burn bar ตาม threshold ของ Task Card Burn Bar design — <70% เขียว, 70–100% เหลือง, >100% แดง
+export function burnColorCls(ratio: number): string {
+  if (ratio > 1)    return 'bg-danger';
+  if (ratio >= 0.7) return 'bg-warning';
+  return 'bg-success';
+}
+
 export function initials(name: string) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 }

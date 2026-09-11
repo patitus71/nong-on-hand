@@ -35,6 +35,7 @@ export async function PATCH(req: Request, { params }: { params: { squadId: strin
   const body = await req.json() as {
     name?: string;
     isFloatingPool?: boolean;
+    capacityHours?: number;
     notificationSettings?: {
       standupAutoSendEnabled: boolean;
       standupSendTime: string | null;
@@ -46,7 +47,7 @@ export async function PATCH(req: Request, { params }: { params: { squadId: strin
   const squad = await prisma.squad.findUnique({ where: { id: params.squadId } });
   if (!squad) return new Response('Not found', { status: 404 });
 
-  const data: { name?: string; isFloatingPool?: boolean } = {};
+  const data: { name?: string; isFloatingPool?: boolean; capacityHours?: number } = {};
 
   if (body.name !== undefined) {
     const trimmed = body.name.trim();
@@ -60,6 +61,13 @@ export async function PATCH(req: Request, { params }: { params: { squadId: strin
 
   if (body.isFloatingPool !== undefined) {
     data.isFloatingPool = body.isFloatingPool;
+  }
+
+  if (body.capacityHours !== undefined) {
+    if (typeof body.capacityHours !== 'number' || !Number.isInteger(body.capacityHours) || body.capacityHours <= 0) {
+      return new Response('capacityHours ต้องเป็นจำนวนเต็มบวก', { status: 400 });
+    }
+    data.capacityHours = body.capacityHours;
   }
 
   if (body.notificationSettings !== undefined) {
@@ -85,7 +93,7 @@ export async function PATCH(req: Request, { params }: { params: { squadId: strin
       const updated = await prisma.squad.findUnique({
         where: { id: params.squadId },
         select: {
-          id: true, name: true, isFloatingPool: true,
+          id: true, name: true, isFloatingPool: true, capacityHours: true,
           _count: { select: { users: true } },
           notificationSettings: {
             select: {
@@ -107,7 +115,7 @@ export async function PATCH(req: Request, { params }: { params: { squadId: strin
     where: { id: params.squadId },
     data,
     select: {
-      id: true, name: true, isFloatingPool: true,
+      id: true, name: true, isFloatingPool: true, capacityHours: true,
       _count: { select: { users: true } },
       notificationSettings: {
         select: {

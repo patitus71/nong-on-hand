@@ -10,7 +10,7 @@ export async function GET() {
 
   const squads = await prisma.squad.findMany({
     select: {
-      id: true, name: true, isFloatingPool: true,
+      id: true, name: true, isFloatingPool: true, capacityHours: true,
       _count: { select: { users: true } },
       notificationSettings: {
         select: {
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
   const squad = await prisma.squad.create({
     data: { name: trimmed },
-    select: { id: true, name: true, _count: { select: { users: true } } },
+    select: { id: true, name: true, isFloatingPool: true, capacityHours: true, _count: { select: { users: true } } },
   });
 
   return Response.json(squad, { status: 201 });

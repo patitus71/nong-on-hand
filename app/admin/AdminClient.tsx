@@ -21,6 +21,7 @@ type SquadRow = {
   id: string;
   name: string;
   isFloatingPool: boolean;
+  capacityHours: number;
   _count: { users: number };
   notificationSettings: NotifSettings | null;
 };
@@ -48,7 +49,7 @@ function genPassword() {
 type Props = { actorRole: string; actorId: string };
 
 export default function AdminClient({ actorRole, actorId }: Props) {
-  const [activeTab, setActiveTab] = useState<'users' | 'squads'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'squads' | 'points'>('users');
 
   // ── Squads (shared between tabs) ─────────────────────────────
   const [squads, setSquads] = useState<SquadRow[]>([]);
@@ -249,6 +250,34 @@ export default function AdminClient({ actorRole, actorId }: Props) {
     }
   }
 
+  // ── Capacity hours (Board Point Capacity — โควตา ชม./คน/sprint) ──
+  const [editingCapId, setEditingCapId] = useState<string | null>(null);
+  const [editingCap,   setEditingCap]   = useState('');
+  const [capSaving,    setCapSaving]    = useState(false);
+  const [capError,     setCapError]     = useState('');
+
+  function openEditCap(sq: SquadRow) {
+    setEditingCapId(sq.id); setEditingCap(String(sq.capacityHours)); setCapError('');
+  }
+
+  async function saveCap(squadId: string) {
+    const hours = Number(editingCap);
+    if (!Number.isInteger(hours) || hours <= 0) { setCapError('ต้องเป็นจำนวนเต็มบวก'); return; }
+    setCapSaving(true); setCapError('');
+    const res = await fetch(`/api/admin/squads/${squadId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capacityHours: hours }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setSquads(sq => sq.map(s => s.id === squadId ? { ...s, capacityHours: updated.capacityHours } : s));
+      setEditingCapId(null);
+    } else {
+      setCapError(await res.text());
+    }
+    setCapSaving(false);
+  }
+
   // ── Notification settings modal ──────────────────────────────
   const [notifTarget, setNotifTarget] = useState<SquadRow | null>(null);
   const [notifForm, setNotifForm] = useState<NotifSettings & { standupSendTime: string; eodSendTime: string }>({
@@ -330,6 +359,160 @@ export default function AdminClient({ actorRole, actorId }: Props) {
     setApplyingAll(false);
   }
 
+  // ── Task Point Config tab (global — ไม่ผูก squad) ───────────────
+  type PointRow = { id: string; point: number; hours: number };
+  type TypeRow  = { id: string; label: string; order: number };
+
+  const [pointMappings, setPointMappings] = useState<PointRow[]>([]);
+  const [taskTypes,     setTaskTypes]     = useState<TypeRow[]>([]);
+  const [loadingPoints, setLoadingPoints] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'points') return;
+    setLoadingPoints(true);
+    Promise.all([
+      fetch('/api/admin/task-point-mapping').then(r => r.json()),
+      fetch('/api/admin/task-type-options').then(r => r.json()),
+    ]).then(([pm, tt]) => { setPointMappings(pm); setTaskTypes(tt); setLoadingPoints(false); });
+  }, [activeTab]);
+
+  // Point mapping CRUD
+  const [editingPointId, setEditingPointId] = useState<string | null>(null);
+  const [editingPoint,   setEditingPoint]   = useState({ point: '', hours: '' });
+  const [pointSaving,    setPointSaving]    = useState(false);
+  const [pointError,     setPointError]     = useState('');
+  const [newPoint,       setNewPoint]       = useState({ point: '', hours: '' });
+  const [addingPoint,    setAddingPoint]    = useState(false);
+  const [addPointError,  setAddPointError]  = useState('');
+
+  function openEditPoint(row: PointRow) {
+    setEditingPointId(row.id);
+    setEditingPoint({ point: String(row.point), hours: String(row.hours) });
+    setPointError('');
+  }
+
+  async function savePoint(id: string) {
+    const point = Number(editingPoint.point);
+    const hours = Number(editingPoint.hours);
+    if (editingPoint.point === '' || editingPoint.hours === '' || isNaN(point) || isNaN(hours)) {
+      setPointError('point และ hours ต้องเป็นตัวเลข'); return;
+    }
+    setPointSaving(true); setPointError('');
+    const res = await fetch(`/api/admin/task-point-mapping/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ point, hours }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setPointMappings(prev => prev.map(p => p.id === id ? updated : p).sort((a, b) => a.point - b.point));
+      setEditingPointId(null);
+    } else {
+      setPointError(await res.text());
+    }
+    setPointSaving(false);
+  }
+
+  async function addPointMapping() {
+    const point = Number(newPoint.point);
+    const hours = Number(newPoint.hours);
+    if (newPoint.point === '' || newPoint.hours === '' || isNaN(point) || isNaN(hours)) {
+      setAddPointError('กรอก point และ hours เป็นตัวเลข'); return;
+    }
+    setAddingPoint(true); setAddPointError('');
+    const res = await fetch('/api/admin/task-point-mapping', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ point, hours }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      setPointMappings(prev => [...prev, created].sort((a, b) => a.point - b.point));
+      setNewPoint({ point: '', hours: '' });
+    } else {
+      setAddPointError(await res.text());
+    }
+    setAddingPoint(false);
+  }
+
+  async function deletePointMapping(id: string) {
+    if (!confirm('ลบ Point Mapping นี้? งานเก่าที่เคยเลือก point นี้ไปแล้วจะไม่ถูกกระทบ (ค่าที่เคยบันทึกไว้ในงานยังอยู่)')) return;
+    const res = await fetch(`/api/admin/task-point-mapping/${id}`, { method: 'DELETE' });
+    if (res.ok) setPointMappings(prev => prev.filter(p => p.id !== id));
+    else alert(await res.text());
+  }
+
+  // Task Type CRUD
+  const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
+  const [editingLabel,  setEditingLabel]  = useState('');
+  const [typeSaving,    setTypeSaving]    = useState(false);
+  const [typeError,     setTypeError]     = useState('');
+  const [newTypeLabel,  setNewTypeLabel]  = useState('');
+  const [addingType,    setAddingType]    = useState(false);
+  const [addTypeError,  setAddTypeError]  = useState('');
+
+  function openEditType(row: TypeRow) {
+    setEditingTypeId(row.id); setEditingLabel(row.label); setTypeError('');
+  }
+
+  async function saveTypeLabel(id: string) {
+    if (!editingLabel.trim()) { setTypeError('label ต้องไม่ว่าง'); return; }
+    setTypeSaving(true); setTypeError('');
+    const res = await fetch(`/api/admin/task-type-options/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: editingLabel.trim() }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setTaskTypes(prev => prev.map(t => t.id === id ? updated : t));
+      setEditingTypeId(null);
+    } else {
+      setTypeError(await res.text());
+    }
+    setTypeSaving(false);
+  }
+
+  async function addTaskType() {
+    if (!newTypeLabel.trim()) { setAddTypeError('label ต้องไม่ว่าง'); return; }
+    setAddingType(true); setAddTypeError('');
+    const res = await fetch('/api/admin/task-type-options', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: newTypeLabel.trim() }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      setTaskTypes(prev => [...prev, created].sort((a, b) => a.order - b.order));
+      setNewTypeLabel('');
+    } else {
+      setAddTypeError(await res.text());
+    }
+    setAddingType(false);
+  }
+
+  async function deleteTaskType(id: string) {
+    if (!confirm('ลบ Task Type นี้? งานเก่าที่เคยเลือก type นี้ไปแล้วจะไม่ถูกกระทบ (ค่าที่เคยบันทึกไว้ในงานยังอยู่)')) return;
+    const res = await fetch(`/api/admin/task-type-options/${id}`, { method: 'DELETE' });
+    if (res.ok) setTaskTypes(prev => prev.filter(t => t.id !== id));
+    else alert(await res.text());
+  }
+
+  async function moveTaskType(id: string, direction: 'up' | 'down') {
+    const idx = taskTypes.findIndex(t => t.id === id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= taskTypes.length) return;
+    const a = taskTypes[idx], b = taskTypes[swapIdx];
+    const [ra, rb] = await Promise.all([
+      fetch(`/api/admin/task-type-options/${a.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: b.order }),
+      }),
+      fetch(`/api/admin/task-type-options/${b.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: a.order }),
+      }),
+    ]);
+    if (ra.ok && rb.ok) {
+      const [ua, ub] = await Promise.all([ra.json(), rb.json()]) as [TypeRow, TypeRow];
+      setTaskTypes(prev => prev.map(t => t.id === ua.id ? ua : t.id === ub.id ? ub : t).sort((x, y) => x.order - y.order));
+    }
+  }
+
   async function addSquad() {
     if (!newSquadName.trim()) return;
     setAddingSquad(true); setAddSquadError('');
@@ -364,6 +547,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
       <div className="flex gap-1 mb-0 border-b border-app-border">
         <button className={tabCls(activeTab === 'users')}  onClick={() => setActiveTab('users')}>ผู้ใช้</button>
         <button className={tabCls(activeTab === 'squads')} onClick={() => setActiveTab('squads')}>Squads</button>
+        <button className={tabCls(activeTab === 'points')} onClick={() => setActiveTab('points')}>Task Point Config</button>
       </div>
 
       {/* ── Users tab ──────────────────────────────────────────── */}
@@ -555,7 +739,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <table className="w-full border-collapse bg-surface-1">
                 <thead>
                   <tr className="border-b border-app-border">
-                    {['ชื่อ Squad', 'Floating Pool', 'สมาชิก', 'LINE Auto-Send', ''].map(h => (
+                    {['ชื่อ Squad', 'Floating Pool', 'สมาชิก', 'โควตา (ชม./คน/sprint)', 'LINE Auto-Send', ''].map(h => (
                       <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3.5 py-2.5">{h}</th>
                     ))}
                   </tr>
@@ -592,6 +776,31 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                         </button>
                       </td>
                       <td className="px-3.5 py-2.5 text-[13px] text-txt-secondary whitespace-nowrap">{sq._count.users} คน</td>
+                      <td className="px-3.5 py-2.5 whitespace-nowrap">
+                        {editingCapId === sq.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number" min="1" step="1" autoFocus
+                              value={editingCap}
+                              onChange={e => setEditingCap(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') saveCap(sq.id); if (e.key === 'Escape') setEditingCapId(null); }}
+                              className="w-16 bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-[3px] focus:outline-none"
+                            />
+                            <button onClick={() => saveCap(sq.id)} disabled={capSaving}
+                              className="text-[11px] bg-accent text-white px-2 py-1 rounded-[3px] disabled:opacity-50">
+                              {capSaving ? '...' : 'บันทึก'}
+                            </button>
+                            <button onClick={() => setEditingCapId(null)} disabled={capSaving}
+                              className="text-[11px] text-txt-muted hover:text-txt-primary">ยกเลิก</button>
+                            {capError && <span className="text-[10.5px] text-danger">{capError}</span>}
+                          </div>
+                        ) : (
+                          <button onClick={() => openEditCap(sq)}
+                            className="text-[12.5px] text-txt-secondary hover:text-txt-primary flex items-center gap-1">
+                            {sq.capacityHours} ชม. <span className="text-[10px] text-txt-muted">✎</span>
+                          </button>
+                        )}
+                      </td>
                       <td className="px-3.5 py-2.5 whitespace-nowrap">
                         <button
                           onClick={() => openNotif(sq)}
@@ -643,6 +852,203 @@ export default function AdminClient({ actorRole, actorId }: Props) {
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Task Point Config tab ─────────────────────────────── */}
+      {activeTab === 'points' && (
+        <div className="pt-5 flex flex-col gap-8">
+          <p className="text-[12px] text-txt-muted -mt-1 leading-relaxed">
+            ตั้งค่าเดียวกันทุก squad — ใช้เป็น dropdown ที่หน้า Import งาน (Task Point จะ auto-fill Estimate Man-Hour ให้ทันที)
+          </p>
+
+          {loadingPoints ? (
+            <p className="text-txt-muted text-[13px]">กำลังโหลด...</p>
+          ) : (
+            <>
+              {/* Task Point Mapping */}
+              <div>
+                <p className="text-[13px] font-semibold text-txt-primary mb-3">Task Point Mapping</p>
+                <div className="overflow-hidden border border-app-border rounded-[4px]">
+                  <table className="w-full border-collapse bg-surface-1">
+                    <thead>
+                      <tr className="border-b border-app-border">
+                        {['Point', 'Estimate Hours', ''].map(h => (
+                          <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3.5 py-2.5">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pointMappings.map(row => (
+                        <tr key={row.id} className="border-b border-app-border last:border-0">
+                          {editingPointId === row.id ? (
+                            <>
+                              <td className="px-3.5 py-2 w-32">
+                                <input type="number" step="any" autoFocus value={editingPoint.point}
+                                  onChange={e => setEditingPoint(p => ({ ...p, point: e.target.value }))}
+                                  className="w-24 bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-[3px] focus:outline-none" />
+                              </td>
+                              <td className="px-3.5 py-2 w-40">
+                                <input type="number" step="any" value={editingPoint.hours}
+                                  onChange={e => setEditingPoint(p => ({ ...p, hours: e.target.value }))}
+                                  onKeyDown={e => { if (e.key === 'Enter') savePoint(row.id); if (e.key === 'Escape') setEditingPointId(null); }}
+                                  className="w-24 bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-[3px] focus:outline-none" />
+                              </td>
+                              <td className="px-3.5 py-2">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => savePoint(row.id)} disabled={pointSaving}
+                                    className="text-[11px] bg-accent text-white px-2.5 py-1.5 rounded-[3px] disabled:opacity-50">
+                                    {pointSaving ? '...' : 'บันทึก'}
+                                  </button>
+                                  <button onClick={() => setEditingPointId(null)} disabled={pointSaving}
+                                    className="text-[11px] text-txt-muted hover:text-txt-primary">ยกเลิก</button>
+                                  {pointError && <span className="text-[11px] text-danger">{pointError}</span>}
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-3.5 py-2.5 text-[13px] text-txt-primary font-medium">{row.point}</td>
+                              <td className="px-3.5 py-2.5 text-[13px] text-txt-secondary">{row.hours} ชม.</td>
+                              <td className="px-3.5 py-2.5">
+                                <div className="flex gap-2">
+                                  <button onClick={() => openEditPoint(row)}
+                                    className="text-[11.5px] text-txt-secondary hover:text-txt-primary border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-1 rounded-[3px] transition-colors">
+                                    ✎ แก้ไข
+                                  </button>
+                                  <button onClick={() => deletePointMapping(row.id)}
+                                    className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1 rounded-[3px] hover:bg-danger hover:text-white transition-colors">
+                                    🗑 ลบ
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                      {/* Add row */}
+                      <tr>
+                        <td className="px-3.5 py-2 w-32">
+                          <input type="number" step="any" placeholder="เช่น 1" value={newPoint.point}
+                            onChange={e => setNewPoint(p => ({ ...p, point: e.target.value }))}
+                            className="w-24 bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
+                        </td>
+                        <td className="px-3.5 py-2 w-40">
+                          <input type="number" step="any" placeholder="เช่น 4" value={newPoint.hours}
+                            onChange={e => setNewPoint(p => ({ ...p, hours: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter') addPointMapping(); }}
+                            className="w-24 bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
+                        </td>
+                        <td className="px-3.5 py-2">
+                          <div className="flex items-center gap-2">
+                            <button onClick={addPointMapping} disabled={addingPoint}
+                              className="text-[11.5px] bg-accent hover:bg-accent-hover text-white px-2.5 py-1.5 rounded-[3px] disabled:opacity-50 transition-colors">
+                              {addingPoint ? 'กำลังเพิ่ม...' : '+ เพิ่ม'}
+                            </button>
+                            {addPointError && <span className="text-[11px] text-danger">{addPointError}</span>}
+                          </div>
+                        </td>
+                      </tr>
+                      {pointMappings.length === 0 && (
+                        <tr><td colSpan={3} className="px-3.5 py-6 text-center text-[13px] text-txt-muted">ยังไม่มี Point Mapping</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Task Type */}
+              <div>
+                <p className="text-[13px] font-semibold text-txt-primary mb-3">Task Type</p>
+                <div className="overflow-hidden border border-app-border rounded-[4px]">
+                  <table className="w-full border-collapse bg-surface-1">
+                    <thead>
+                      <tr className="border-b border-app-border">
+                        {['ลำดับ', 'Label', ''].map(h => (
+                          <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3.5 py-2.5">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {taskTypes.map((row, i) => (
+                        <tr key={row.id} className="border-b border-app-border last:border-0">
+                          <td className="px-3.5 py-2.5 w-24">
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => moveTaskType(row.id, 'up')} disabled={i === 0}
+                                title="เลื่อนขึ้น"
+                                className="text-[11px] text-txt-muted hover:text-txt-primary disabled:opacity-25 disabled:cursor-not-allowed px-1">▲</button>
+                              <button onClick={() => moveTaskType(row.id, 'down')} disabled={i === taskTypes.length - 1}
+                                title="เลื่อนลง"
+                                className="text-[11px] text-txt-muted hover:text-txt-primary disabled:opacity-25 disabled:cursor-not-allowed px-1">▼</button>
+                            </div>
+                          </td>
+                          {editingTypeId === row.id ? (
+                            <>
+                              <td className="px-3.5 py-2">
+                                <input autoFocus value={editingLabel}
+                                  onChange={e => setEditingLabel(e.target.value)}
+                                  onKeyDown={e => { if (e.key === 'Enter') saveTypeLabel(row.id); if (e.key === 'Escape') setEditingTypeId(null); }}
+                                  className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2 py-1 rounded-[3px] focus:outline-none" />
+                              </td>
+                              <td className="px-3.5 py-2">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => saveTypeLabel(row.id)} disabled={typeSaving}
+                                    className="text-[11px] bg-accent text-white px-2.5 py-1.5 rounded-[3px] disabled:opacity-50">
+                                    {typeSaving ? '...' : 'บันทึก'}
+                                  </button>
+                                  <button onClick={() => setEditingTypeId(null)} disabled={typeSaving}
+                                    className="text-[11px] text-txt-muted hover:text-txt-primary">ยกเลิก</button>
+                                  {typeError && <span className="text-[11px] text-danger">{typeError}</span>}
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-3.5 py-2.5 text-[13px] text-txt-primary font-mono">{row.label}</td>
+                              <td className="px-3.5 py-2.5">
+                                <div className="flex gap-2">
+                                  <button onClick={() => openEditType(row)}
+                                    className="text-[11.5px] text-txt-secondary hover:text-txt-primary border border-app-border bg-surface-2 hover:bg-surface-3 px-2.5 py-1 rounded-[3px] transition-colors">
+                                    ✎ แก้ไข
+                                  </button>
+                                  <button onClick={() => deleteTaskType(row.id)}
+                                    className="text-danger border border-danger/40 bg-danger-bg text-[11.5px] px-2.5 py-1 rounded-[3px] hover:bg-danger hover:text-white transition-colors">
+                                    🗑 ลบ
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                      {/* Add row */}
+                      <tr>
+                        <td className="px-3.5 py-2 w-24" />
+                        <td className="px-3.5 py-2">
+                          <input placeholder="เช่น [create test case]" value={newTypeLabel}
+                            onChange={e => setNewTypeLabel(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') addTaskType(); }}
+                            className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
+                        </td>
+                        <td className="px-3.5 py-2">
+                          <div className="flex items-center gap-2">
+                            <button onClick={addTaskType} disabled={addingType}
+                              className="text-[11.5px] bg-accent hover:bg-accent-hover text-white px-2.5 py-1.5 rounded-[3px] disabled:opacity-50 transition-colors">
+                              {addingType ? 'กำลังเพิ่ม...' : '+ เพิ่ม'}
+                            </button>
+                            {addTypeError && <span className="text-[11px] text-danger">{addTypeError}</span>}
+                          </div>
+                        </td>
+                      </tr>
+                      {taskTypes.length === 0 && (
+                        <tr><td colSpan={3} className="px-3.5 py-6 text-center text-[13px] text-txt-muted">ยังไม่มี Task Type</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}

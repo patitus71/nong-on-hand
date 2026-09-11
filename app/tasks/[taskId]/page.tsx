@@ -47,6 +47,8 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
     squad:       task.squad,
     assignee:    task.assignee,
     laneName:    task.lane?.name ?? null,
+    taskPoint:      task.taskPoint,
+    estimatedHours: task.estimatedHours,
     timeLogs: task.timeLogs.map(l => ({
       normalMinutes: l.normalMinutes ?? 0,
       otMinutes:     l.otMinutes ?? 0,

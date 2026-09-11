@@ -12,7 +12,7 @@ import {
   verticalListSortingStrategy, horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { fmt, initials, avatarColor, renderReportMarkdown, markdownToPlainText } from '@/lib/ui';
+import { fmt, fmtHM, burnColorCls, initials, avatarColor, renderReportMarkdown, markdownToPlainText } from '@/lib/ui';
 
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
@@ -27,10 +27,13 @@ type TaskData = {
   squadId: string | null;
   assignee: { name: string } | null;
   assigneeId: string | null;
+  taskPoint: number | null;
+  estimatedHours: number | null;
   totalNormalMin: number; totalOtMin: number;
   isAtRisk: boolean; riskReason: string;
 };
 type LaneData = { id: string; name: string; tasks: TaskData[] };
+type PointMapping = { id: string; point: number; hours: number };
 
 type ProblemTask = {
   id: string; title: string; hasIssue: boolean; laneName: string;
@@ -121,19 +124,20 @@ function QueueRail({
 /* ─── Sortable card (normal lane) ────────────────────── */
 function SortableCard({
   task, overlay = false, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave, saving = false,
+  pointMappings = [], onTaskPointChange,
 }: {
   task: TaskData; overlay?: boolean; laneName?: string;
   reviewersBySquad?: Record<string, Reviewer[]>;
   onReviewerChange?: (taskId: string, reviewerId: string | null) => Promise<void>;
   onPrLinkSave?: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
   saving?: boolean;
+  pointMappings?: PointMapping[];
+  onTaskPointChange?: (taskId: string, point: number) => Promise<{ error: string | null }>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id, disabled: saving || task.isCancelled });
 
   const av = task.assignee ? avatarColor(task.assignee.name) : null;
-  const normalFmt = fmt(task.totalNormalMin);
-  const otFmt     = fmt(task.totalOtMin);
 
   const isReviewLane = laneName === 'Review' && !overlay;
   const isReviewApprovedBanner = isReviewLane && !!task.reviewApprovedAt;
@@ -188,6 +192,27 @@ function SortableCard({
     : task.isAtRisk ? 'rgb(var(--warning))'
     : LANE_ACCENT[laneName ?? ''] ?? 'rgb(var(--border))';
 
+  /* ── Point block / Burn bar (design handoff: Task Card Burn Bar) ── */
+  const [pointSaving, setPointSaving] = useState(false);
+  const [pointError,  setPointError]  = useState('');
+
+  async function handlePointSelect(e: React.ChangeEvent<HTMLSelectElement>) {
+    const point = Number(e.target.value);
+    setPointSaving(true); setPointError('');
+    const result = await onTaskPointChange?.(task.id, point);
+    if (result?.error) setPointError('บันทึกไม่สำเร็จ');
+    setPointSaving(false);
+  }
+
+  const isDoneLane   = laneName === 'Done';
+  const actMinutes   = task.totalNormalMin + task.totalOtMin;
+  const estMinutes   = task.estimatedHours ? task.estimatedHours * 60 : 0;
+  const burnRatio    = estMinutes > 0 ? actMinutes / estMinutes : 0;
+  const overageMin   = actMinutes > estMinutes ? actMinutes - estMinutes : 0;
+  const velocity     = isDoneLane && actMinutes > 0 && task.estimatedHours
+    ? task.estimatedHours / (actMinutes / 60)
+    : null;
+
   return (
     <div
       ref={setNodeRef}
@@ -228,26 +253,72 @@ function SortableCard({
         {task.hasIssue && !task.isCancelled && <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>}
         {task.title}
       </Link>
-      <div className="flex items-center justify-between">
-        {task.squad
-          ? <span className="text-[10.5px] font-mono text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full">{task.squad.name}</span>
-          : <span />}
+
+      {/* Meta row: squad tag + point chip + estimate + avatar */}
+      <div className="flex items-center gap-1.5 mb-2">
+        {task.squad && (
+          <span className="text-[10.5px] font-mono text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full flex-shrink-0">{task.squad.name}</span>
+        )}
+        <div onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
+          <select
+            value={task.taskPoint ?? ''}
+            onChange={handlePointSelect}
+            disabled={pointSaving || !onTaskPointChange || task.isCancelled}
+            className={`appearance-none text-center font-mono text-[10.5px] font-semibold rounded-full px-2 py-0.5 border cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-default ${
+              task.taskPoint !== null ? 'bg-accent-bg text-accent border-accent/30' : 'bg-surface-3 text-txt-muted border-app-border'
+            }`}
+          >
+            {task.taskPoint === null && <option value="" disabled>– PT</option>}
+            {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} PT</option>)}
+          </select>
+        </div>
+        <span className={`font-mono text-[10.5px] text-txt-secondary flex-shrink-0 ${task.isCancelled ? 'line-through' : ''}`}>
+          {task.estimatedHours !== null ? `${task.estimatedHours} ชม.` : '—'}
+        </span>
+        {pointError && <span className="text-[9px] text-danger flex-shrink-0">{pointError}</span>}
         {av && task.assignee && (
-          <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
+          <div className="ml-auto w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
             style={{ background: av.bg, color: av.fg }}>
             {initials(task.assignee.name)}
           </div>
         )}
       </div>
-      {(normalFmt || otFmt) && (
-        <div className={`text-[11px] font-mono mt-1.5 flex items-center gap-1 ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
-          {normalFmt && <span>รวม {normalFmt}</span>}
-          {otFmt     && <span>· OT {otFmt}</span>}
+
+      {/* Burn bar — ACT ÷ EST (ไม่โชว์ถ้าการ์ดถูกยกเลิก) */}
+      {!task.isCancelled && (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between font-mono text-[11px]">
+            <span className={
+              actMinutes === 0 ? 'text-txt-muted'
+                : estMinutes === 0 ? 'text-txt-secondary'
+                : burnRatio > 1 ? 'text-danger' : burnRatio >= 0.7 ? 'text-warning' : 'text-success'
+            }>
+              {fmtHM(actMinutes)}{' '}
+              <span className="text-txt-muted font-sans">
+                {isDoneLane && task.totalOtMin > 0 ? `· OT ${fmtHM(task.totalOtMin)}` : !isDoneLane ? 'ใช้ไป' : ''}
+              </span>
+            </span>
+            <span className={isDoneLane ? (velocity !== null && velocity >= 1 ? 'text-success' : 'text-danger') : 'text-txt-secondary'}>
+              {isDoneLane && velocity !== null
+                ? `Velocity ${velocity.toFixed(2)}`
+                : estMinutes > 0
+                  ? (overageMin > 0 ? <span className="text-danger">เกิน EST · +{fmtHM(overageMin)}</span> : `${Math.round(Math.min(burnRatio, 1) * 100)}% ของ EST`)
+                  : 'EST —'}
+            </span>
+          </div>
+          {estMinutes > 0 && (
+            <div className="h-1 rounded-full bg-surface-3 overflow-hidden">
+              <div
+                className={`h-full transition-[width] duration-[250ms] ease-out ${burnColorCls(burnRatio)}`}
+                style={{ width: `${Math.min(burnRatio, 1) * 100}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
       {task.isCancelled && task.cancelNote && (
         <div className="text-[10.5px] text-danger mt-1.5 leading-relaxed">
-          🚫 ยกเลิก: {task.cancelNote}
+          🚫 ยกเลิก: {task.cancelNote} — ตัดออกจากโหลดแล้ว
         </div>
       )}
 
@@ -348,12 +419,15 @@ function SortableFlaggedCard({
 /* ─── Droppable lane card area ──────────────────────── */
 function DroppableLaneCards({
   laneId, tasks, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave, savingTaskIds,
+  pointMappings, onTaskPointChange,
 }: {
   laneId: string; tasks: TaskData[]; laneName: string;
   reviewersBySquad: Record<string, Reviewer[]>;
   onReviewerChange: (taskId: string, reviewerId: string | null) => Promise<void>;
   onPrLinkSave: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
   savingTaskIds: Set<string>;
+  pointMappings: PointMapping[];
+  onTaskPointChange: (taskId: string, point: number) => Promise<{ error: string | null }>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: laneId });
   return (
@@ -371,6 +445,8 @@ function DroppableLaneCards({
             onReviewerChange={onReviewerChange}
             onPrLinkSave={onPrLinkSave}
             saving={savingTaskIds.has(task.id)}
+            pointMappings={pointMappings}
+            onTaskPointChange={onTaskPointChange}
           />
         ))}
       </div>
@@ -434,15 +510,21 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 }) {
   const [open, setOpen]   = useState(false);
   const [title, setTitle] = useState('');
+  const [taskPoint, setTaskPoint] = useState<string>('');
   const [saving, setSaving] = useState(false);
+
+  const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
+  useEffect(() => {
+    fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || taskPoint === '') return;
     setSaving(true);
     const res = await fetch('/api/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, laneId, squadId }),
+      body: JSON.stringify({ title, laneId, squadId, taskPoint: Number(taskPoint) }),
     });
     if (res.ok) {
       const task = await res.json();
@@ -451,9 +533,10 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         reviewApprovedAt: null, isCancelled: false, cancelNote: null,
         reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
+        taskPoint: task.taskPoint ?? null, estimatedHours: task.estimatedHours ?? null,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
-      setTitle(''); setOpen(false);
+      setTitle(''); setTaskPoint(''); setOpen(false);
     }
     setSaving(false);
   }
@@ -469,10 +552,15 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
     <form onSubmit={submit} className="mt-2">
       <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="ชื่องาน..."
         className="w-full bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-1.5" />
+      <select value={taskPoint} onChange={e => setTaskPoint(e.target.value)}
+        className={`w-full bg-surface-2 border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-1.5 ${taskPoint === '' ? 'border-danger/50' : 'border-app-border'}`}>
+        <option value="">Task Point — เลือก (จำเป็น)</option>
+        {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
+      </select>
       <div className="flex gap-1.5">
-        <button type="submit" disabled={saving || !title.trim()}
+        <button type="submit" disabled={saving || !title.trim() || taskPoint === ''}
           className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => { setOpen(false); setTitle(''); }}
+        <button type="button" onClick={() => { setOpen(false); setTitle(''); setTaskPoint(''); }}
           className="text-txt-muted text-[12px] px-2 py-1.5 rounded-[3px] hover:text-txt-secondary">ยกเลิก</button>
       </div>
     </form>
@@ -510,11 +598,13 @@ type Props = {
   canCreateTask: boolean;
   reviewersBySquad: Record<string, Reviewer[]>;
   pendingReviews: PendingReview[];
+  capacityHours: number | null;
+  squadName: string | null;
 };
 
 export default function MyBoardClient({
   boardId, initialLanes, userSquadId, canEditLanes, canCreateTask,
-  reviewersBySquad, pendingReviews: initialPendingReviews,
+  reviewersBySquad, pendingReviews: initialPendingReviews, capacityHours, squadName,
 }: Props) {
   const [, setLanesState] = useState<LaneData[]>(initialLanes);
   const lanesRef   = useRef<LaneData[]>(initialLanes);
@@ -543,6 +633,29 @@ export default function MyBoardClient({
   /* ── Review-block alert state ── */
   const [reviewBlockMsg, setReviewBlockMsg] = useState<string | null>(null);
 
+  /* ── Task Point config (global — ใช้ทำ Point block บนการ์ด) ── */
+  const [pointMappings, setPointMappings] = useState<PointMapping[]>([]);
+  useEffect(() => {
+    fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
+  }, []);
+
+  async function handleTaskPointChange(taskId: string, point: number): Promise<{ error: string | null }> {
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskPoint: point }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setLanes(lanesRef.current.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === taskId ? { ...t, taskPoint: updated.taskPoint, estimatedHours: updated.estimatedHours } : t
+        ),
+      })));
+      return { error: null };
+    }
+    return { error: await res.text() };
+  }
+
   /* ── Derived views ──
      งานที่ isCancelled ยังคง hasIssue=true ไว้ (ให้ Squad Board จัดอยู่บัคเก็ต "มีปัญหา" ตามเดิม
      — ดู flag/route.ts) แต่ฝั่ง my-board เองต้องไม่ถือว่ามันเป็น "การ์ดที่มีปัญหา" ที่ยังรอ resolve
@@ -550,6 +663,24 @@ export default function MyBoardClient({
   const flaggedTasks = lanes.flatMap(l => l.tasks.filter(t => t.hasIssue && !t.isCancelled));
   const flaggedIds   = new Set(flaggedTasks.map(t => t.id));
   const normalLanes  = lanes.map(l => ({ ...l, tasks: l.tasks.filter(t => !t.hasIssue || t.isCancelled) }));
+
+  // ── My Load (Board Point Capacity) — รวมทุกเลนยกเว้น Cancel ────────────────────
+  function bucketLoad(laneName: string) {
+    const laneTasks = lanes.find(l => l.name === laneName)?.tasks ?? [];
+    return laneTasks.reduce(
+      (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) }),
+      { hours: 0, points: 0 }
+    );
+  }
+  const loadBuckets = {
+    done:     bucketLoad('Done'),
+    progress: bucketLoad('In Progress'),
+    review:   bucketLoad('Review'),
+    todo:     bucketLoad('To Do'),
+  };
+  const cancelLoad = bucketLoad('Cancel');
+  const myTotalHours  = loadBuckets.done.hours + loadBuckets.progress.hours + loadBuckets.review.hours + loadBuckets.todo.hours;
+  const myTotalPoints = loadBuckets.done.points + loadBuckets.progress.points + loadBuckets.review.points + loadBuckets.todo.points;
 
   /* ── Resolve modal state ── */
   const [resolveTarget,      setResolveTarget]      = useState<TaskData | null>(null);
@@ -1226,6 +1357,60 @@ export default function MyBoardClient({
         <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
           onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
 
+        {capacityHours !== null && (myTotalHours > 0 || myTotalPoints > 0) && (() => {
+          const ratio = myTotalHours / capacityHours;
+          const over  = myTotalHours > capacityHours;
+          const near  = !over && ratio >= 0.9;
+          const statusText  = over ? `เกินเป้า ${myTotalHours - capacityHours} ชม.` : near ? 'ใกล้เต็มโควตา' : 'อยู่ในเป้า';
+          const statusColor = over ? 'text-danger' : near ? 'text-accent' : 'text-success';
+          const statusBg    = over ? 'bg-danger-bg' : near ? 'bg-accent-bg' : 'bg-success-bg';
+          const remain = Math.max(capacityHours - myTotalHours, 0);
+          const legend: { label: string; hours: number; points: number; color: string }[] = [
+            { label: 'Done',        hours: loadBuckets.done.hours,     points: loadBuckets.done.points,     color: 'bg-success' },
+            { label: 'In progress', hours: loadBuckets.progress.hours, points: loadBuckets.progress.points, color: 'bg-accent' },
+            { label: 'Review',      hours: loadBuckets.review.hours,   points: loadBuckets.review.points,   color: 'bg-warning' },
+            { label: 'To do',       hours: loadBuckets.todo.hours,     points: loadBuckets.todo.points,     color: 'bg-surface-3' },
+          ];
+          const segPct = (h: number) => `${myTotalHours > 0 ? Math.min(h / Math.max(myTotalHours, capacityHours), 1) * 100 : 0}%`;
+          return (
+            <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 mb-4 flex flex-col gap-3">
+              <div className="flex items-end justify-between gap-4 flex-wrap">
+                <div className="flex flex-col gap-0.5 flex-shrink-0">
+                  <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">
+                    โหลดของฉัน{squadName ? ` — ${squadName}` : ''}
+                  </div>
+                  <div className="flex items-baseline gap-2 whitespace-nowrap">
+                    <div className="font-mono text-[24px] font-semibold text-txt-primary leading-none">{myTotalHours}</div>
+                    <div className="text-[13px] text-txt-secondary">/ {capacityHours} ชม. · {myTotalPoints} point</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <span className={`text-[12px] px-2.5 py-1 rounded-full whitespace-nowrap ${statusColor} ${statusBg}`}>{statusText}</span>
+                  <span className="text-[12px] text-txt-muted whitespace-nowrap">รับได้อีก {remain} ชม.</span>
+                </div>
+              </div>
+
+              <div className="flex h-2.5 rounded-md overflow-hidden bg-surface-2">
+                {legend.map(seg => seg.hours > 0 && (
+                  <div key={seg.label} className={seg.color} style={{ width: segPct(seg.hours) }} />
+                ))}
+              </div>
+
+              <div className="flex gap-4 flex-wrap text-[11.5px] text-txt-secondary">
+                {legend.map(seg => (
+                  <div key={seg.label} className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-[2px] ${seg.color}`} />
+                    {seg.label} {seg.hours} ชม. · {seg.points} PT
+                  </div>
+                ))}
+                {(cancelLoad.hours > 0 || cancelLoad.points > 0) && (
+                  <div className="text-txt-muted">ไม่นับการ์ดที่ยกเลิก ({cancelLoad.points} PT · {cancelLoad.hours} ชม.)</div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
         <div
@@ -1255,6 +1440,18 @@ export default function MyBoardClient({
                   </span>
                   <span className="text-[11px] font-mono text-txt-muted bg-surface-3 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
                 </div>
+                <div className="flex items-center gap-2">
+                  {lane.name === 'Cancel' ? (
+                    <span className="font-mono text-[11px] font-semibold text-txt-muted">ไม่นับโหลด</span>
+                  ) : (() => {
+                    const sub = lane.tasks.reduce(
+                      (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) }),
+                      { hours: 0, points: 0 }
+                    );
+                    return (sub.hours > 0 || sub.points > 0) ? (
+                      <span className="font-mono text-[11px] font-semibold text-txt-secondary">{sub.points} PT · {sub.hours} ชม.</span>
+                    ) : null;
+                  })()}
                 {editMode && (() => {
                   const isProtected = PROTECTED_LANES.has(lane.name);
                   return isProtected ? (
@@ -1265,6 +1462,7 @@ export default function MyBoardClient({
                       className="text-danger text-[14px] px-1.5 py-0.5 rounded hover:bg-danger-bg transition-colors">✕</button>
                   );
                 })()}
+                </div>
               </div>
               <DroppableLaneCards
                 laneId={lane.id}
@@ -1274,6 +1472,8 @@ export default function MyBoardClient({
                 onReviewerChange={handleReviewerChange}
                 onPrLinkSave={handlePrLinkSave}
                 savingTaskIds={savingTaskIds}
+                pointMappings={pointMappings}
+                onTaskPointChange={handleTaskPointChange}
               />
               {lane.name === 'To Do' && (
                 <AddTaskForm laneId={lane.id} squadId={userSquadId} onCreated={t => onTaskCreated(lane.id, t)} />

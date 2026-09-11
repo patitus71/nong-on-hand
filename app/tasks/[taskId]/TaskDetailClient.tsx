@@ -20,6 +20,8 @@ type Task = {
   squad: { id: string; name: string } | null;
   assignee: { id: string; name: string } | null;
   laneName: string | null;
+  taskPoint: number | null;
+  estimatedHours: number | null;
   timeLogs:   TimeLog[];
   taskLogs:   TaskLogEntry[];
   retroItems: RetroRef[];
@@ -558,6 +560,8 @@ export default function TaskDetailClient({
             )}
             {sbRow('Squad',    task.squad?.name ?? '—')}
             {sbRow('สถานะ',   task.laneName ?? 'ยังไม่ดึง')}
+            {sbRow('Task Point', task.taskPoint !== null ? `${task.taskPoint} pt` : '—')}
+            {sbRow('Estimate',   task.estimatedHours !== null ? `${task.estimatedHours} ชม.` : '—')}
             {sbRow('เวลารวม',
               totalNormal > 0
                 ? <>{fmt(totalNormal)}{totalOt > 0 && <span className="text-warning text-[11px] ml-1.5">+OT {fmt(totalOt)}</span>}</>

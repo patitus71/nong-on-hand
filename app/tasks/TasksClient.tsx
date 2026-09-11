@@ -17,11 +17,13 @@ type TaskRow = {
   squad:               { id: string; name: string } | null;
   assignee:            { id: string; name: string } | null;
   laneName:            string | null;
+  taskPoint:           number | null;
+  estimatedHours:      number | null;
   totalNormalMin:      number;
   totalOtMin:          number;
 };
 
-type PullInEntry = { est: string; due: string; assignee: string };
+type PullInEntry = { due: string; assignee: string };
 
 type OpenSprint = { id: string; name: string; squadId: string };
 
@@ -186,7 +188,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
 
   function openPullIn(taskIds: string[]) {
     const init: Record<string, PullInEntry> = {};
-    taskIds.forEach(id => { init[id] = { est: '', due: '', assignee: '' }; });
+    taskIds.forEach(id => { init[id] = { due: '', assignee: '' }; });
     setPullInData(init);
     setModalTaskIds(taskIds);
     setPullError('');
@@ -213,15 +215,14 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
     setPullSubmitting(true);
     setPullError('');
     for (const id of modalTaskIds) {
-      const f = pullInData[id] ?? { est: '', due: '', assignee: '' };
+      const f = pullInData[id] ?? { due: '', assignee: '' };
       const res = await fetch(`/api/tasks/${id}/pull-in`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          estimatedHours: f.est ? Number(f.est) : undefined,
-          dueDate:        f.due || undefined,
-          assigneeId:     f.assignee || undefined,
-          sprintId:       selectedSprintId,
+          dueDate:    f.due || undefined,
+          assigneeId: f.assignee || undefined,
+          sprintId:   selectedSprintId,
         }),
       });
       if (!res.ok) {
@@ -427,7 +428,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                   />
                 )}
               </th>
-              {[['38%', 'งาน'], ['', 'Squad'], ['', 'สถานะ'], ['', 'ผู้รับผิดชอบ'], ['', 'เวลาที่ใช้']].map(([w, h]) => (
+              {[['34%', 'งาน'], ['', 'Squad'], ['', 'สถานะ'], ['', 'ผู้รับผิดชอบ'], ['', 'Point/Estimate'], ['', 'เวลาที่ใช้']].map(([w, h]) => (
                 <th
                   key={h}
                   style={w ? { width: w } : {}}
@@ -442,7 +443,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-[12.5px] text-txt-muted py-10">
+                <td colSpan={8} className="text-center text-[12.5px] text-txt-muted py-10">
                   ไม่พบงานที่ตรงเงื่อนไข
                 </td>
               </tr>
@@ -541,6 +542,20 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                           {initials(t.assignee.name)}
                         </div>
                         {t.assignee.name}
+                      </div>
+                    ) : (
+                      <span className="text-txt-muted text-[12px]">—</span>
+                    )}
+                  </td>
+
+                  {/* Point / Estimate */}
+                  <td className="px-3.5 py-3">
+                    {t.taskPoint !== null ? (
+                      <div className="flex items-center gap-1.5 text-[12.5px]">
+                        <span className="px-2 py-0.5 rounded-full bg-surface-2 text-txt-primary font-medium whitespace-nowrap">{t.taskPoint} pt</span>
+                        {t.estimatedHours !== null && (
+                          <span className="text-txt-muted whitespace-nowrap">{t.estimatedHours} ชม.</span>
+                        )}
                       </div>
                     ) : (
                       <span className="text-txt-muted text-[12px]">—</span>
@@ -703,18 +718,12 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
               {modalTaskIds.map(id => {
                 const task = tasks.find(t => t.id === id);
                 if (!task) return null;
-                const f = pullInData[id] ?? { est: '', due: '', assignee: '' };
+                const f = pullInData[id] ?? { due: '', assignee: '' };
                 return (
-                  <div key={id} className="py-3 border-b border-app-border last:border-none grid grid-cols-[1.5fr_1fr_1.1fr_1.3fr] gap-2.5 items-end">
+                  <div key={id} className="py-3 border-b border-app-border last:border-none grid grid-cols-[1.5fr_1.1fr_1.3fr] gap-2.5 items-end">
                     <div>
                       <p className="text-[13px] font-medium text-txt-primary truncate" title={task.title}>{task.title}</p>
                       <p className="text-[11px] text-txt-muted mt-0.5">→ เลน "To do"</p>
-                    </div>
-                    <div>
-                      <label className="block text-[10.5px] text-txt-secondary mb-1">Estimate (ชม.)</label>
-                      <input type="number" step="0.5" min="0" placeholder="เช่น 2.5" value={f.est}
-                        onChange={e => setField(id, 'est', e.target.value)}
-                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                     </div>
                     <div>
                       <label className="block text-[10.5px] text-txt-secondary mb-1">วันที่คาดว่าจะเสร็จ</label>
@@ -737,7 +746,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
             </div>
             {pullError && <p className="px-5 py-2 text-[12px] text-danger bg-danger-bg">{pullError}</p>}
             <p className="px-5 py-2 text-[11px] text-txt-muted border-t border-app-border">
-              ℹ️ ทุกงานจะเข้าเลน <b>"To do"</b> เสมอ — estimate, วันที่ และผู้รับผิดชอบกรอกทีหลังได้
+              ℹ️ ทุกงานจะเข้าเลน <b>"To do"</b> เสมอ — วันที่และผู้รับผิดชอบกรอกทีหลังได้
             </p>
             <div className="px-5 pb-5 pt-3 flex justify-end gap-2">
               <button onClick={() => setShowPullInModal(false)} disabled={pullSubmitting}

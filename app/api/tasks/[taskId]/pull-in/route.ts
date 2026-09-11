@@ -13,7 +13,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     return new Response('Forbidden', { status: 403 });
   }
 
-  const { estimatedHours, dueDate, assigneeId, sprintId } = await req.json();
+  const { dueDate, assigneeId, sprintId } = await req.json();
 
   const task = await prisma.task.findUnique({ where: { id: params.taskId } });
   if (!task) return new Response('Not Found', { status: 404 });
@@ -84,7 +84,6 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     data:  {
       laneId:            todoLane.id,
       pulledIntoBoardAt: new Date(),
-      estimatedHours:    estimatedHours ? Number(estimatedHours) : task.estimatedHours,
       dueDate:           dueDate ? new Date(dueDate) : null,
       assigneeId:        assigneeId || null,
       sprintId:          sprintId || null,

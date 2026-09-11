@@ -65,6 +65,10 @@ export default async function MyBoardPage() {
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
+  const mySquad = user.squadId
+    ? await prisma.squad.findUnique({ where: { id: user.squadId }, select: { name: true, capacityHours: true } })
+    : null;
+
   let board = await prisma.board.findFirst({
     where: { ownerId: user.id, type: 'PERSONAL' },
     include: {
@@ -229,6 +233,8 @@ export default async function MyBoardPage() {
           squad:            t.squad ? { name: t.squad.name } : null,
           assigneeId:       t.assignee?.id ?? null,
           assignee:         t.assignee ? { name: t.assignee.name } : null,
+          taskPoint:        t.taskPoint ?? null,
+          estimatedHours:   t.estimatedHours ?? null,
           totalNormalMin,
           totalOtMin,
           isAtRisk,
@@ -259,6 +265,8 @@ export default async function MyBoardPage() {
           squad:            t.squad ? { name: t.squad.name } : null,
           assigneeId:       user.id,
           assignee:         null,
+          taskPoint:        t.taskPoint ?? null,
+          estimatedHours:   t.estimatedHours ?? null,
           totalNormalMin,
           totalOtMin,
           isAtRisk,
@@ -281,6 +289,8 @@ export default async function MyBoardPage() {
         canCreateTask={canCreateTask(user)}
         reviewersBySquad={reviewersBySquad}
         pendingReviews={pendingReviews}
+        capacityHours={mySquad?.capacityHours ?? null}
+        squadName={mySquad?.name ?? null}
       />
     </>
   );

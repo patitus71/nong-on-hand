@@ -116,6 +116,8 @@ export default async function SquadPage({
         deletionFlagNote:   t.deletionFlagNote ?? null,
         assignee:           t.assignee,
         laneName:           t.lane?.name ?? null,
+        taskPoint:          t.taskPoint ?? null,
+        estimatedHours:     t.estimatedHours ?? null,
         reviewApprovedAt:   t.reviewApprovedAt?.toISOString() ?? null,
         isCancelled:        t.isCancelled,
         cancelNote:         t.cancelNote ?? null,
@@ -179,6 +181,7 @@ export default async function SquadPage({
         }))}
         activeSprintId={activeSprint?.id ?? null}
         hasOpenSprint={sprints.some(s => s.status === 'OPEN')}
+        capacityHours={squad.capacityHours}
       />
     </>
   );

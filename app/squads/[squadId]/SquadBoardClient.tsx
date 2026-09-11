@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fmt, initials, avatarColor } from '@/lib/ui';
+import { fmtHM, burnColorCls, initials, avatarColor } from '@/lib/ui';
 
 type TaskCard = {
   id:                 string;
@@ -13,6 +13,8 @@ type TaskCard = {
   deletionFlagNote:   string | null;
   assignee:           { id: string; name: string } | null;
   laneName:           string | null;
+  taskPoint:          number | null;
+  estimatedHours:     number | null;
   reviewApprovedAt:   string | null;
   isCancelled:        boolean;
   cancelNote:         string | null;
@@ -51,14 +53,16 @@ type Props = {
   sprints:           SprintInfo[];
   activeSprintId:    string | null;
   hasOpenSprint:     boolean;
+  capacityHours:     number;
 };
 
-type ClaimTarget = { taskId: string; taskTitle: string };
+type ClaimTarget = { taskId: string; taskTitle: string; taskPoint: number | null; estimatedHours: number | null; currentAssigneeId: string | null };
 type FlagTarget  = { taskId: string; taskTitle: string };
 
 export default function SquadBoardClient({
   currentSquadId, currentSquadName, lanes, members, squads, userId, userName,
   canAssign, canApproveReview, canCreateTask, canManageSprint, sprints, activeSprintId, hasOpenSprint,
+  capacityHours,
 }: Props) {
   const router = useRouter();
   const [sprintNavPending, startSprintNav] = useTransition();
@@ -268,6 +272,14 @@ export default function SquadBoardClient({
   const laneByName = new Map(lanes.map(l => [l.name, l.tasks]));
   const poolTasks  = laneByName.get('To do list') ?? [];
 
+  // นับเฉพาะการ์ดที่ตั้ง point แล้ว และไม่นับการ์ดที่ยกเลิก (Board Point Capacity spec)
+  function laneSubtotal(cardTasks: TaskCard[]) {
+    return cardTasks.reduce(
+      (acc, t) => t.isCancelled ? acc : { hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) },
+      { hours: 0, points: 0 }
+    );
+  }
+
   const STATUS_COLS: { key: string; label: string; glyph: string; color: string }[] = [
     { key: 'On-Board',              label: 'ยังไม่เริ่ม', glyph: '○', color: 'text-txt-secondary' },
     { key: 'On-Board In Progress',  label: 'กำลังทำ',    glyph: '◐', color: 'text-accent' },
@@ -290,20 +302,59 @@ export default function SquadBoardClient({
     return () => document.removeEventListener('click', closeAllMenus);
   }, [closeAllMenus]);
 
+  // ── Member load (Board Point Capacity) — สรุปโหลดรายคนจากงานทั้งหมดบนบอร์ดนี้ ──
+  // (ทุกเลนรวม Done, ไม่นับการ์ดที่ยกเลิก) ใช้ทั้งแผงโหลดรวม squad และเช็คก่อน assign
+  const allBoardTasks = lanes.flatMap(l => l.tasks);
+  const memberLoads = new Map<string, { hours: number; points: number; count: number }>();
+  for (const t of allBoardTasks) {
+    if (t.isCancelled || !t.assignee) continue;
+    const cur = memberLoads.get(t.assignee.id) ?? { hours: 0, points: 0, count: 0 };
+    cur.hours += t.estimatedHours ?? 0;
+    cur.points += t.taskPoint ?? 0;
+    cur.count += 1;
+    memberLoads.set(t.assignee.id, cur);
+  }
+  const unassignedTasks = allBoardTasks.filter(t => !t.assignee && !t.isCancelled);
+  const unassignedLoad = unassignedTasks.reduce(
+    (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) }),
+    { hours: 0, points: 0 }
+  );
+  const unassignedNoPointCount = unassignedTasks.filter(t => t.taskPoint === null).length;
+
   // ── Claim (assign) ───────────────────────────────────────────────────────────
   const [claimTarget, setClaimTarget] = useState<ClaimTarget | null>(null);
   const [assigneeId,  setAssigneeId]  = useState(userId);
   const [claiming,    setClaiming]    = useState(false);
   const [claimError,  setClaimError]  = useState('');
+  const [claimOverConfirm, setClaimOverConfirm] = useState(false);
 
   function openClaim(task: TaskCard) {
-    setClaimTarget({ taskId: task.id, taskTitle: task.title });
+    setClaimTarget({
+      taskId: task.id, taskTitle: task.title,
+      taskPoint: task.taskPoint, estimatedHours: task.estimatedHours,
+      currentAssigneeId: task.assignee?.id ?? null,
+    });
     setAssigneeId(task.assignee?.id ?? userId);
     setClaimError('');
+    setClaimOverConfirm(false);
   }
+
+  // โหลดของผู้รับผิดชอบใหม่ถ้ายืนยัน (ของเดิม + ชม.ของงานนี้ ถ้าเปลี่ยนคนจากเดิม)
+  const claimTargetNewLoad = claimTarget && claimTarget.currentAssigneeId !== assigneeId
+    ? (memberLoads.get(assigneeId)?.hours ?? 0) + (claimTarget.estimatedHours ?? 0)
+    : (memberLoads.get(assigneeId)?.hours ?? 0);
+  const claimWillExceedCapacity = claimTarget !== null && claimTargetNewLoad > capacityHours;
 
   async function submitClaim() {
     if (!claimTarget) return;
+    if (claimTarget.taskPoint === null) {
+      setClaimError('งานนี้ยังไม่ตั้ง Task Point — ต้องตั้ง point ก่อนถึงจะ assign ได้');
+      return;
+    }
+    if (claimWillExceedCapacity && !claimOverConfirm) {
+      setClaimOverConfirm(true);
+      return;
+    }
     setClaiming(true);
     setClaimError('');
     try {
@@ -365,19 +416,47 @@ export default function SquadBoardClient({
   // ── Create task (inline, To do column) ─────────────────────────────────────
   const [showCreate,   setShowCreate]   = useState(false);
   const [createTitle,  setCreateTitle]  = useState('');
+  const [createPoint,  setCreatePoint]  = useState('');
   const [createLoading, setCreateLoading] = useState(false);
+
+  const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
+  useEffect(() => {
+    fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
+  }, []);
+
+  // ── Card Point block (Task Card Burn Bar design) — เปลี่ยน point จากการ์ดได้ตรงๆ ──
+  const [pointSavingId, setPointSavingId] = useState<string | null>(null);
+  const [pointErrorId,  setPointErrorId]  = useState<string | null>(null);
+
+  async function handleCardPointChange(taskId: string, point: number) {
+    setPointSavingId(taskId); setPointErrorId(null);
+    const res = await fetch(`/api/tasks/${taskId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskPoint: point }),
+    });
+    setPointSavingId(null);
+    if (res.ok) {
+      router.refresh();
+    } else {
+      setPointErrorId(taskId);
+      setTimeout(() => setPointErrorId(null), 3000);
+    }
+  }
 
   async function submitCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!createTitle.trim()) return;
+    if (!createTitle.trim() || createPoint === '') return;
     setCreateLoading(true);
     const res = await fetch('/api/tasks', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ title: createTitle.trim(), squadId: currentSquadId, assigneeId: null }),
+      body:    JSON.stringify({
+        title: createTitle.trim(), squadId: currentSquadId, assigneeId: null,
+        taskPoint: Number(createPoint),
+      }),
     });
     if (res.ok) {
-      setCreateTitle('');
+      setCreateTitle(''); setCreatePoint('');
       setShowCreate(false);
       router.refresh();
     }
@@ -401,10 +480,19 @@ export default function SquadBoardClient({
   // ── Card renderer — shared between member matrix cells and the unclaimed pool ──
   function renderCard(t: TaskCard, laneName: string) {
     const av        = t.assignee ? avatarColor(t.assignee.name) : null;
-    const normalFmt = fmt(t.totalNormalMin);
-    const otFmt     = fmt(t.totalOtMin);
     const menuOpen  = openMenuId === t.id;
     const isApproving = approvingId === t.id;
+
+    const isDoneLane  = laneName === 'Done';
+    const actMinutes  = t.totalNormalMin + t.totalOtMin;
+    const estMinutes  = t.estimatedHours ? t.estimatedHours * 60 : 0;
+    const burnRatio   = estMinutes > 0 ? actMinutes / estMinutes : 0;
+    const overageMin  = actMinutes > estMinutes ? actMinutes - estMinutes : 0;
+    const velocity    = isDoneLane && actMinutes > 0 && t.estimatedHours
+      ? t.estimatedHours / (actMinutes / 60)
+      : null;
+    const cardPointSaving = pointSavingId === t.id;
+    const cardPointError  = pointErrorId === t.id;
 
     return (
       <div key={t.id} className={`relative ${t.isAtRisk ? 'card-at-risk' : ''}`}>
@@ -462,6 +550,38 @@ export default function SquadBoardClient({
             )}
           </div>
 
+          {/* Meta row: point chip + estimate + avatar */}
+          {!t.isCancelled && (
+            <div className="flex items-center gap-1.5 mb-2">
+              <div onClick={e => e.stopPropagation()}>
+                <select
+                  value={t.taskPoint ?? ''}
+                  onChange={e => handleCardPointChange(t.id, Number(e.target.value))}
+                  disabled={cardPointSaving || !canAssign || isReadonly}
+                  className={`appearance-none text-center font-mono text-[10.5px] font-semibold rounded-full px-1.5 py-0.5 border cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-default ${
+                    t.taskPoint !== null ? 'bg-accent-bg text-accent border-accent/30' : 'bg-surface-3 text-txt-muted border-app-border'
+                  }`}
+                >
+                  {t.taskPoint === null && <option value="" disabled>– PT</option>}
+                  {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} PT</option>)}
+                </select>
+              </div>
+              <span className="font-mono text-[10.5px] text-txt-secondary flex-shrink-0">
+                {t.taskPoint !== null && t.estimatedHours !== null ? `${t.estimatedHours} ชม.` : 'ยังไม่ตั้ง estimate'}
+              </span>
+              {cardPointError && <span className="text-[9px] text-danger flex-shrink-0">พลาด</span>}
+              {av && t.assignee && (
+                <div
+                  className="ml-auto w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
+                  style={{ background: av.bg, color: av.fg }}
+                  title={t.assignee.name}
+                >
+                  {initials(t.assignee.name)}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Flagged badge */}
           {t.flaggedForDeletion && (
             <div className="mb-2">
@@ -471,38 +591,73 @@ export default function SquadBoardClient({
             </div>
           )}
 
-          {/* Cancelled note */}
+          {/* Cancelled note (การ์ดยกเลิก — ไม่มี meta row/burn bar ด้านบนแล้ว) */}
           {t.isCancelled && (
-            <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
-              ยกเลิกโดย {t.cancelledByName ?? '—'}{t.cancelNote ? ` — ${t.cancelNote}` : ''}
-            </p>
+            <>
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="font-mono text-[10.5px] font-semibold rounded-full px-1.5 py-0.5 bg-surface-3 text-txt-muted">
+                  {t.taskPoint !== null ? `${t.taskPoint} PT` : '– PT'}
+                </span>
+                {t.estimatedHours !== null && (
+                  <span className="font-mono text-[10.5px] text-txt-muted line-through">{t.estimatedHours} ชม.</span>
+                )}
+              </div>
+              <p className="text-[10.5px] text-txt-muted mb-1.5">
+                ยกเลิกโดย {t.cancelledByName ?? '—'}{t.cancelNote ? ` — ${t.cancelNote}` : ''} — ตัดออกจากโหลดแล้ว
+              </p>
+            </>
           )}
 
-          {/* On-Board / On-Board In Progress: show personal lane */}
+          {/* On-Board / On-Board In Progress: show personal lane + capacity context */}
           {(laneName === 'On-Board' || laneName === 'On-Board In Progress') && t.laneName && t.assignee && (
             <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
-              อยู่เลน &ldquo;{t.laneName}&rdquo; ในบอร์ดของ {t.assignee.name}
+              อยู่เลน &ldquo;{t.laneName}&rdquo; ในบอร์ดของ {t.assignee.name} · นับใน {capacityHours} ชม. ของ {t.assignee.name} แล้ว
             </p>
           )}
 
-          {/* Bottom row: assignee + time */}
-          <div className="flex items-center justify-between">
-            {av && t.assignee ? (
-              <div
-                className="w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
-                style={{ background: av.bg, color: av.fg }}
-                title={t.assignee.name}
-              >
-                {initials(t.assignee.name)}
+          {/* To do list / มีปัญหา: capacity context + missing-point warning */}
+          {!t.isCancelled && (laneName === 'To do list' || laneName === 'มีปัญหา') && (
+            t.taskPoint === null ? (
+              <p className="text-[10.5px] text-warning mt-1 mb-1.5">⚠ ต้องตั้ง point ก่อน assign</p>
+            ) : !t.assignee ? (
+              <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">ยังไม่ถูก assign — ยังไม่นับโหลดใคร</p>
+            ) : laneName === 'มีปัญหา' && (
+              <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">ยังนับใน {capacityHours} ชม. ของ {t.assignee.name} (ยังต้องทำต่อ)</p>
+            )
+          )}
+
+          {/* Burn bar — ACT ÷ EST */}
+          {!t.isCancelled && (
+            <div className="flex flex-col gap-1 mt-1.5">
+              <div className="flex items-center justify-between font-mono text-[10.5px]">
+                <span className={
+                  actMinutes === 0 ? 'text-txt-muted'
+                    : estMinutes === 0 ? 'text-txt-secondary'
+                    : burnRatio > 1 ? 'text-danger' : burnRatio >= 0.7 ? 'text-warning' : 'text-success'
+                }>
+                  {fmtHM(actMinutes)}{' '}
+                  <span className="text-txt-muted font-sans">
+                    {isDoneLane && t.totalOtMin > 0 ? `· OT ${fmtHM(t.totalOtMin)}` : !isDoneLane ? 'ใช้ไป' : ''}
+                  </span>
+                </span>
+                <span className={isDoneLane ? (velocity !== null && velocity >= 1 ? 'text-success' : 'text-danger') : 'text-txt-secondary'}>
+                  {isDoneLane && velocity !== null
+                    ? `Velocity ${velocity.toFixed(2)}`
+                    : estMinutes > 0
+                      ? (overageMin > 0 ? <span className="text-danger">เกิน EST · +{fmtHM(overageMin)}</span> : `${Math.round(Math.min(burnRatio, 1) * 100)}% ของ EST`)
+                      : 'EST —'}
+                </span>
               </div>
-            ) : <span />}
-            {(normalFmt || otFmt) && (
-              <span className={`text-[11px] font-mono ${otFmt ? 'text-warning' : 'text-txt-secondary'}`}>
-                {normalFmt && <>รวม {normalFmt}</>}
-                {otFmt     && <> · OT {otFmt}</>}
-              </span>
-            )}
-          </div>
+              {estMinutes > 0 && (
+                <div className="h-1 rounded-full bg-surface-3 overflow-hidden">
+                  <div
+                    className={`h-full transition-[width] duration-[250ms] ease-out ${burnColorCls(burnRatio)}`}
+                    style={{ width: `${Math.min(burnRatio, 1) * 100}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Approve review button — Wait for review column only */}
           {laneName === 'Wait for review' && canApproveReview && !t.reviewApprovedAt && !isReadonly && (
@@ -666,6 +821,78 @@ export default function SquadBoardClient({
         </div>
       )}
 
+      {/* Squad capacity panel (Board Point Capacity) */}
+      {members.length > 0 && (() => {
+        const squadTotalHours  = members.reduce((s, m) => s + (memberLoads.get(m.id)?.hours ?? 0), 0);
+        const squadTotalPoints = members.reduce((s, m) => s + (memberLoads.get(m.id)?.points ?? 0), 0);
+        const squadCap = capacityHours * members.length;
+        const overMembers  = members.filter(m => (memberLoads.get(m.id)?.hours ?? 0) > capacityHours);
+        const underMembers = members.filter(m => (memberLoads.get(m.id)?.hours ?? 0) < capacityHours * 0.9);
+        const summarySentence = overMembers.length > 0
+          ? `เกลี่ยงานให้แต่ละคนไม่เกิน ${capacityHours} ชม./sprint — ตอนนี้ ${overMembers.map(m => m.name).join(', ')} เกินเป้า${
+              underMembers.length > 0 ? ` ส่วน ${underMembers.map(m => m.name).join(', ')} ยังรับได้อีก` : ''
+            }`
+          : `เกลี่ยงานให้แต่ละคนไม่เกิน ${capacityHours} ชม./sprint`;
+        return (
+          <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 mb-4 flex flex-col gap-3.5">
+            <div className="flex items-end justify-between gap-4 flex-wrap">
+              <div className="flex flex-col gap-0.5 flex-shrink-0">
+                <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">โหลดรวมของ SQUAD</div>
+                <div className="flex items-baseline gap-2 whitespace-nowrap">
+                  <div className="font-mono text-[24px] font-semibold text-txt-primary leading-none">{squadTotalHours}</div>
+                  <div className="text-[13px] text-txt-secondary">/ {squadCap} ชม. · {members.length} คน · {squadTotalPoints} point</div>
+                </div>
+              </div>
+              <p className="text-[12px] text-txt-secondary leading-relaxed max-w-[420px]">{summarySentence}</p>
+            </div>
+
+            <div className="flex gap-2.5 flex-wrap">
+              {members.map(m => {
+                const load = memberLoads.get(m.id) ?? { hours: 0, points: 0, count: 0 };
+                const ratio = capacityHours > 0 ? load.hours / capacityHours : 0;
+                const over  = load.hours > capacityHours;
+                const near  = !over && ratio >= 0.9;
+                const barColor = over ? 'bg-danger' : near ? 'bg-accent' : 'bg-success';
+                const statusText = over ? `เกินเป้า ${load.hours - capacityHours} ชม.` : near ? 'ใกล้เต็มโควตา' : load.hours === capacityHours ? 'เต็มพอดี' : `รับได้อีก ${capacityHours - load.hours} ชม.`;
+                const statusColor = over ? 'text-danger' : near ? 'text-accent' : 'text-success';
+                const av = avatarColor(m.name);
+                return (
+                  <div key={m.id} className={`bg-surface-2 border rounded-[10px] px-3 py-2.5 w-[210px] flex flex-col gap-2 ${over ? 'border-danger/45' : 'border-app-border'}`}>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0" style={{ background: av.bg, color: av.fg }}>
+                        {initials(m.name)}
+                      </div>
+                      <span className="text-[12.5px] text-txt-primary truncate">{m.name}</span>
+                      <span className={`ml-auto font-mono text-[11.5px] font-semibold flex-shrink-0 ${over ? 'text-danger' : 'text-txt-primary'}`}>{load.hours} / {capacityHours}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
+                      <div className={`h-full ${barColor}`} style={{ width: `${Math.min(ratio, 1) * 100}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-[10.5px] text-txt-muted">
+                      <span>{load.points} PT · {load.count} งาน</span>
+                      <span className={statusColor}>{statusText}</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {unassignedTasks.length > 0 && (
+                <div className="bg-surface-2 border border-dashed border-app-border rounded-[10px] px-3 py-2.5 w-[210px] flex flex-col gap-1.5">
+                  <div className="text-[11px] font-semibold tracking-[.06em] text-txt-muted">ยังไม่มีเจ้าของ</div>
+                  <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+                    <span className="font-mono text-[16px] font-semibold text-txt-primary">{unassignedLoad.hours}</span>
+                    <span className="text-[11.5px] text-txt-secondary">ชม. · {unassignedLoad.points} PT · {unassignedTasks.length} งาน</span>
+                  </div>
+                  {unassignedNoPointCount > 0 && (
+                    <div className="text-[10.5px] text-txt-muted leading-relaxed">{unassignedNoPointCount} งานยังไม่ตั้ง point</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Board matrix — rows: squad members × columns: 5 derived statuses */}
       <div className={isReadonly ? 'opacity-70 select-none' : ''}>
         {members.length > 0 && (
@@ -676,11 +903,17 @@ export default function SquadBoardClient({
             >
               {/* Header row */}
               <span />
-              {STATUS_COLS.map(col => (
-                <span key={col.key} className={`text-[11.5px] font-semibold flex items-center gap-1.5 ${col.color}`}>
-                  <span>{col.glyph}</span>{col.label}
-                </span>
-              ))}
+              {STATUS_COLS.map(col => {
+                const sub = laneSubtotal(laneByName.get(col.key) ?? []);
+                return (
+                  <span key={col.key} className={`text-[11.5px] font-semibold flex items-center justify-between gap-1.5 ${col.color}`}>
+                    <span className="flex items-center gap-1.5"><span>{col.glyph}</span>{col.label}</span>
+                    {(sub.hours > 0 || sub.points > 0) && (
+                      <span className="font-mono text-[10.5px] font-normal text-txt-secondary whitespace-nowrap">{sub.points} PT · {sub.hours} ชม.</span>
+                    )}
+                  </span>
+                );
+              })}
 
               {/* Member rows */}
               {members.flatMap(m => {
@@ -717,6 +950,9 @@ export default function SquadBoardClient({
         <div className="bg-surface-2 border border-app-border rounded-[11px] p-3.5 flex flex-col gap-2.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[12.5px] font-semibold text-txt-secondary">○ กองกลาง — ยังไม่มีเจ้าของ · {poolTasks.length}</span>
+            {(unassignedLoad.hours > 0 || unassignedLoad.points > 0) && (
+              <span className="font-mono text-[11px] text-txt-secondary">{unassignedLoad.points} PT · {unassignedLoad.hours} ชม.</span>
+            )}
             {canAssign && poolTasks.length > 0 && (
               <span className="ml-auto text-[11.5px] text-txt-muted">assign ให้สมาชิกได้จากปุ่ม &ldquo;+ เพิ่มเข้าบอร์ดของฉัน&rdquo; บนการ์ด</span>
             )}
@@ -743,17 +979,25 @@ export default function SquadBoardClient({
                     placeholder="ชื่องาน..."
                     className="w-full bg-surface-2 border border-accent text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit]"
                   />
+                  <select
+                    value={createPoint}
+                    onChange={e => setCreatePoint(e.target.value)}
+                    className={`w-full bg-surface-2 border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit] ${createPoint === '' ? 'border-danger/50' : 'border-app-border'}`}
+                  >
+                    <option value="">Task Point — เลือก (จำเป็น)</option>
+                    {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
+                  </select>
                   <div className="flex gap-1.5">
                     <button
                       type="submit"
-                      disabled={createLoading || !createTitle.trim()}
+                      disabled={createLoading || !createTitle.trim() || createPoint === ''}
                       className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
                     >
                       เพิ่ม
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setShowCreate(false); setCreateTitle(''); }}
+                      onClick={() => { setShowCreate(false); setCreateTitle(''); setCreatePoint(''); }}
                       disabled={createLoading}
                       className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
                     >
@@ -904,7 +1148,7 @@ export default function SquadBoardClient({
             <label className="block text-[12px] text-txt-muted mt-3 mb-1">ผู้รับผิดชอบ</label>
             <select
               value={assigneeId}
-              onChange={e => setAssigneeId(e.target.value)}
+              onChange={e => { setAssigneeId(e.target.value); setClaimOverConfirm(false); setClaimError(''); }}
               className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent"
             >
               {members.map(m => (
@@ -914,15 +1158,25 @@ export default function SquadBoardClient({
               ))}
             </select>
 
+            {claimTarget?.taskPoint === null && (
+              <p className="text-[12px] text-warning mt-2">⚠ งานนี้ยังไม่ตั้ง Task Point — ต้องตั้ง point ก่อนถึงจะ assign ได้ (แก้ที่การ์ดได้เลย)</p>
+            )}
+            {claimTarget?.taskPoint !== null && claimOverConfirm && (
+              <p className="text-[12px] text-danger mt-2">
+                ⚠ assign แล้ว {members.find(m => m.id === assigneeId)?.name} จะมีโหลด {claimTargetNewLoad} ชม. เกินเป้า {capacityHours} ชม. — ยืนยันต่อไหม?
+              </p>
+            )}
             {claimError && <p className="text-[12px] text-danger mt-2">{claimError}</p>}
 
             <div className="flex gap-2 mt-4">
               <button
                 onClick={submitClaim}
-                disabled={claiming}
-                className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[13px] py-2 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${claiming ? 'btn-loading' : ''}`}
+                disabled={claiming || claimTarget?.taskPoint === null}
+                className={`flex-1 text-white text-[13px] py-2 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${claiming ? 'btn-loading' : ''} ${
+                  claimOverConfirm ? 'bg-danger hover:bg-danger/85' : 'bg-accent hover:bg-accent-hover'
+                }`}
               >
-                ยืนยัน
+                {claimOverConfirm ? 'ยืนยันต่อ (เกินโควตา)' : 'ยืนยัน'}
               </button>
               <button
                 onClick={() => setClaimTarget(null)}
