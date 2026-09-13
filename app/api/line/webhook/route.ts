@@ -295,7 +295,7 @@ export async function POST(req: Request) {
         const tasks = await prisma.task.findMany({
           where:  { assigneeId: sender.id, sprintId: sprint.id, deletedAt: null },
           select: {
-            id: true, title: true, description: true, hasIssue: true, issueNote: true, isCancelled: true,
+            id: true, title: true, description: true, hasIssue: true, issueNote: true, isCancelled: true, taskPoint: true,
             lane:     { select: { name: true } },
             timeLogs: { select: { normalMinutes: true, otMinutes: true, endAt: true } },
           },
@@ -313,6 +313,7 @@ export async function POST(req: Request) {
           title:       string;
           description: string | null;
           issueNote:   string | null;
+          taskPoint:   number | null;
           normalMin:   number;
           otMin:       number;
           hasLog:      boolean;
@@ -331,6 +332,7 @@ export async function POST(req: Request) {
             title:       t.title,
             description: t.description,
             issueNote:   t.issueNote,
+            taskPoint:   t.taskPoint,
             normalMin:   t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
             otMin:       t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
             hasLog:      t.timeLogs.length > 0,
@@ -347,6 +349,7 @@ export async function POST(req: Request) {
         }
 
         const doneCount      = buckets.done.length;
+        const donePoints     = buckets.done.reduce((s, it) => s + (it.taskPoint ?? 0), 0);
         const remainingCount = buckets.review.length + buckets.inProgress.length + buckets.todo.length + buckets.issue.length;
 
         const ictOffset = 7 * 60 * 60 * 1000;
@@ -360,7 +363,7 @@ export async function POST(req: Request) {
           `📋 สรุปงานของ ${mention} — ${sprint.name} (${sprint.squad.name})`,
           `เปิดเมื่อ ${startedTH} · ผ่านมาแล้ว ${daysPassed} วัน`,
           '',
-          `✅ เสร็จแล้ว ${doneCount} งาน · เหลือค้าง ${remainingCount} งาน`,
+          `✅ เสร็จแล้ว ${doneCount} งาน · ${donePoints} PT · เหลือค้าง ${remainingCount} งาน`,
         ].join('\n');
 
         const formatTicket = (item: MyTaskItem, showIssueNote: boolean): string => {
@@ -386,7 +389,7 @@ export async function POST(req: Request) {
         };
 
         const categoryBlocks = [
-          formatCategory('Done', buckets.done),
+          formatCategory(`Done — ${donePoints} PT`, buckets.done),
           formatCategory('In Review', buckets.review),
           formatCategory('In Progress', buckets.inProgress),
           formatCategory('To Do', buckets.todo),

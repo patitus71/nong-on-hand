@@ -181,6 +181,7 @@ type EodPerson = {
   inProgress:  string[];
   review:      string[];
   doneToday:   string[];
+  donePoints:  number;
   cancelToday: string[];
 };
 
@@ -202,7 +203,7 @@ async function fetchEodData(squadId: string): Promise<{
     where:  { squadId, deletedAt: null },
     select: {
       id: true, title: true, hasIssue: true, isCancelled: true,
-      completedAt: true, cancelledAt: true, assigneeId: true,
+      completedAt: true, cancelledAt: true, assigneeId: true, taskPoint: true,
       assignee: { select: { name: true, lineDisplayName: true, lineUserId: true } },
       lane:     { select: { name: true } },
     },
@@ -217,7 +218,7 @@ async function fetchEodData(squadId: string): Promise<{
       byAssignee.set(key, {
         displayName: task.assignee!.lineDisplayName ?? task.assignee!.name,
         lineUserId:  task.assignee!.lineUserId,
-        todo: [], inProgress: [], review: [], doneToday: [], cancelToday: [],
+        todo: [], inProgress: [], review: [], doneToday: [], donePoints: 0, cancelToday: [],
       });
     }
     return byAssignee.get(key)!;
@@ -240,7 +241,9 @@ async function fetchEodData(squadId: string): Promise<{
     const laneName = task.lane?.name?.toLowerCase();
     if (laneName === 'done') {
       if (task.completedAt && task.completedAt >= todayStart && task.completedAt <= todayEnd) {
-        personEntry(task).doneToday.push(task.title);
+        const p = personEntry(task);
+        p.doneToday.push(task.title);
+        p.donePoints += task.taskPoint ?? 0;
       }
     } else if (laneName === 'to do') {
       personEntry(task).todo.push(task.title);
@@ -270,7 +273,7 @@ function formatEodPersonBlock(person: EodPerson, ctx?: MentionContext): string |
   sub('[Todo]', person.todo);
   sub('[In Progress]', person.inProgress);
   sub('[Review]', person.review);
-  sub('[Done] (today)', person.doneToday);
+  sub(`[Done] (today) — ${person.donePoints} PT`, person.doneToday);
   sub('[Cancel] (today)', person.cancelToday);
 
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
@@ -432,13 +435,13 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
   const tasks = await prisma.task.findMany({
     where:  { sprintId, deletedAt: null },
     select: {
-      id: true, title: true, isCancelled: true, assigneeId: true,
+      id: true, title: true, isCancelled: true, assigneeId: true, taskPoint: true,
       assignee: { select: { name: true, lineDisplayName: true } },
       lane:     { select: { name: true } },
     },
   });
 
-  const doneByAssignee   = new Map<string, { name: string; titles: string[] }>();
+  const doneByAssignee   = new Map<string, { name: string; titles: string[]; points: number }>();
   const cancelByAssignee = new Map<string, { name: string; titles: string[] }>();
   const carried = { todo: [] as string[], inProgress: [] as string[], review: [] as string[] };
 
@@ -456,8 +459,10 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     const laneName = task.lane?.name?.toLowerCase();
     if (laneName === 'done') {
       if (task.assigneeId && personName) {
-        if (!doneByAssignee.has(task.assigneeId)) doneByAssignee.set(task.assigneeId, { name: personName, titles: [] });
-        doneByAssignee.get(task.assigneeId)!.titles.push(task.title);
+        if (!doneByAssignee.has(task.assigneeId)) doneByAssignee.set(task.assigneeId, { name: personName, titles: [], points: 0 });
+        const p = doneByAssignee.get(task.assigneeId)!;
+        p.titles.push(task.title);
+        p.points += task.taskPoint ?? 0;
       }
     } else if (laneName === 'to do') {
       carried.todo.push(task.title);
@@ -478,6 +483,7 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
   });
 
   const doneCount    = Array.from(doneByAssignee.values()).reduce((n, p) => n + p.titles.length, 0);
+  const donePoints   = Array.from(doneByAssignee.values()).reduce((n, p) => n + p.points, 0);
   const cancelCount  = Array.from(cancelByAssignee.values()).reduce((n, p) => n + p.titles.length, 0);
   const carriedCount = carried.todo.length + carried.inProgress.length + carried.review.length;
 
@@ -490,12 +496,12 @@ export async function buildEndOfSprintReport(sprintId: string): Promise<string[]
     `${startedTH} – ${closedTH} (${durationDays} วัน)`,
   ].join('\n');
 
-  const doneLines = [`[Done] (${doneCount})`];
+  const doneLines = [`[Done] (${doneCount} งาน · ${donePoints} PT)`];
   if (doneByAssignee.size === 0) {
     doneLines.push('_ไม่มี_');
   } else {
     for (const [, p] of Array.from(doneByAssignee)) {
-      doneLines.push(`@${p.name}`);
+      doneLines.push(`@${p.name} — ${p.points} PT`);
       for (const title of p.titles) doneLines.push(`- ${title}`);
     }
   }
