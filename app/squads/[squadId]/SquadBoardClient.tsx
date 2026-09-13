@@ -54,6 +54,7 @@ type Props = {
   activeSprintId:    string | null;
   hasOpenSprint:     boolean;
   capacityHours:     number;
+  squadDefaultCapacityHours: number;
 };
 
 type ClaimTarget = { taskId: string; taskTitle: string; taskPoint: number | null; estimatedHours: number | null; currentAssigneeId: string | null };
@@ -62,7 +63,7 @@ type FlagTarget  = { taskId: string; taskTitle: string };
 export default function SquadBoardClient({
   currentSquadId, currentSquadName, lanes, members, squads, userId, userName,
   canAssign, canApproveReview, canCreateTask, canManageSprint, sprints, activeSprintId, hasOpenSprint,
-  capacityHours,
+  capacityHours, squadDefaultCapacityHours,
 }: Props) {
   const router = useRouter();
   const [sprintNavPending, startSprintNav] = useTransition();
@@ -95,8 +96,34 @@ export default function SquadBoardClient({
   const [showOpenSprint,   setShowOpenSprint]   = useState(false);
   const [newSprintName,    setNewSprintName]    = useState('');
   const [newSprintEndDate, setNewSprintEndDate] = useState('');
+  const [newSprintCapacity, setNewSprintCapacity] = useState('');
   const [openingLoading,   setOpeningLoading]   = useState(false);
   const [openSprintError,  setOpenSprintError]  = useState('');
+
+  // ── แก้โควตา ชม./คน ของ sprint ที่กำลังเปิดอยู่ (Board Point Capacity — ต่อ sprint) ──
+  const [editingSprintCap, setEditingSprintCap] = useState(false);
+  const [sprintCapInput,   setSprintCapInput]   = useState('');
+  const [sprintCapSaving,  setSprintCapSaving]  = useState(false);
+  const [sprintCapError,   setSprintCapError]   = useState('');
+
+  async function saveSprintCapacity() {
+    if (!activeSprint) return;
+    const hours = Number(sprintCapInput);
+    if (!Number.isInteger(hours) || hours <= 0) { setSprintCapError('ต้องเป็นจำนวนเต็มบวก'); return; }
+    setSprintCapSaving(true); setSprintCapError('');
+    const res = await fetch(`/api/sprints/${activeSprint.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capacityHours: hours }),
+    });
+    if (res.ok) {
+      setEditingSprintCap(false);
+      router.refresh();
+    } else {
+      const data = await res.json().catch(() => null);
+      setSprintCapError(data?.error ?? 'เกิดข้อผิดพลาด');
+    }
+    setSprintCapSaving(false);
+  }
 
   const [showCloseSprint,   setShowCloseSprint]   = useState(false);
   const [closingLoading,    setClosingLoading]    = useState(false);
@@ -110,7 +137,11 @@ export default function SquadBoardClient({
     const res = await fetch(`/api/squads/${currentSquadId}/sprints`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name, ...(newSprintEndDate ? { plannedEndDate: newSprintEndDate } : {}) }),
+      body:    JSON.stringify({
+        name,
+        ...(newSprintEndDate ? { plannedEndDate: newSprintEndDate } : {}),
+        ...(newSprintCapacity ? { capacityHours: Number(newSprintCapacity) } : {}),
+      }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -305,14 +336,17 @@ export default function SquadBoardClient({
   // ── Member load (Board Point Capacity) — สรุปโหลดรายคนจากงานทั้งหมดบนบอร์ดนี้ ──
   // (ทุกเลนรวม Done, ไม่นับการ์ดที่ยกเลิก) ใช้ทั้งแผงโหลดรวม squad และเช็คก่อน assign
   const allBoardTasks = lanes.flatMap(l => l.tasks);
-  const memberLoads = new Map<string, { hours: number; points: number; count: number }>();
-  for (const t of allBoardTasks) {
-    if (t.isCancelled || !t.assignee) continue;
-    const cur = memberLoads.get(t.assignee.id) ?? { hours: 0, points: 0, count: 0 };
-    cur.hours += t.estimatedHours ?? 0;
-    cur.points += t.taskPoint ?? 0;
-    cur.count += 1;
-    memberLoads.set(t.assignee.id, cur);
+  const memberLoads = new Map<string, { hours: number; points: number; count: number; donePoints: number }>();
+  for (const l of lanes) {
+    for (const t of l.tasks) {
+      if (t.isCancelled || !t.assignee) continue;
+      const cur = memberLoads.get(t.assignee.id) ?? { hours: 0, points: 0, count: 0, donePoints: 0 };
+      cur.hours += t.estimatedHours ?? 0;
+      cur.points += t.taskPoint ?? 0;
+      cur.count += 1;
+      if (l.name === 'Done') cur.donePoints += t.taskPoint ?? 0;
+      memberLoads.set(t.assignee.id, cur);
+    }
   }
   const unassignedTasks = allBoardTasks.filter(t => !t.assignee && !t.isCancelled);
   const unassignedLoad = unassignedTasks.reduce(
@@ -769,7 +803,7 @@ export default function SquadBoardClient({
           )}
           {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
             <button
-              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setOpenSprintError(''); }}
+              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setNewSprintCapacity(String(squadDefaultCapacityHours)); setOpenSprintError(''); }}
               className="bg-surface-2 border border-success/40 text-success text-[13px] px-3 py-[7px] rounded-[3px] flex items-center gap-1.5 hover:bg-success-bg transition-colors"
             >
               🟢 เปิด Sprint ใหม่
@@ -812,7 +846,7 @@ export default function SquadBoardClient({
           </span>
           {canManageSprint && !sprints.some(s => s.status === 'OPEN') && (
             <button
-              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setOpenSprintError(''); }}
+              onClick={() => { setShowOpenSprint(true); setNewSprintName(''); setNewSprintEndDate(''); setNewSprintCapacity(String(squadDefaultCapacityHours)); setOpenSprintError(''); }}
               className="ml-auto bg-success-bg border border-success/40 text-success text-[12px] px-3 py-1 rounded-[3px] hover:bg-success/15 transition-colors"
             >
               🟢 เปิด Sprint ใหม่
@@ -825,6 +859,7 @@ export default function SquadBoardClient({
       {members.length > 0 && (() => {
         const squadTotalHours  = members.reduce((s, m) => s + (memberLoads.get(m.id)?.hours ?? 0), 0);
         const squadTotalPoints = members.reduce((s, m) => s + (memberLoads.get(m.id)?.points ?? 0), 0);
+        const squadDonePoints  = members.reduce((s, m) => s + (memberLoads.get(m.id)?.donePoints ?? 0), 0);
         const squadCap = capacityHours * members.length;
         const overMembers  = members.filter(m => (memberLoads.get(m.id)?.hours ?? 0) > capacityHours);
         const underMembers = members.filter(m => (memberLoads.get(m.id)?.hours ?? 0) < capacityHours * 0.9);
@@ -837,10 +872,40 @@ export default function SquadBoardClient({
           <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 mb-4 flex flex-col gap-3.5">
             <div className="flex items-end justify-between gap-4 flex-wrap">
               <div className="flex flex-col gap-0.5 flex-shrink-0">
-                <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">โหลดรวมของ SQUAD</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">โหลดรวมของ SQUAD</div>
+                  {canManageSprint && activeSprint && !isReadonly && (
+                    editingSprintCap ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number" min="1" step="1" autoFocus
+                          value={sprintCapInput}
+                          onChange={e => setSprintCapInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveSprintCapacity(); if (e.key === 'Escape') setEditingSprintCap(false); }}
+                          className="w-14 bg-surface-2 border border-accent text-txt-primary text-[11px] px-1.5 py-0.5 rounded-[3px] focus:outline-none"
+                        />
+                        <button onClick={saveSprintCapacity} disabled={sprintCapSaving}
+                          className="text-[10px] bg-accent text-white px-1.5 py-0.5 rounded-[3px] disabled:opacity-50">
+                          {sprintCapSaving ? '...' : 'บันทึก'}
+                        </button>
+                        <button onClick={() => setEditingSprintCap(false)} disabled={sprintCapSaving}
+                          className="text-[10px] text-txt-muted hover:text-txt-primary">ยกเลิก</button>
+                        {sprintCapError && <span className="text-[10px] text-danger">{sprintCapError}</span>}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setEditingSprintCap(true); setSprintCapInput(String(capacityHours)); setSprintCapError(''); }}
+                        className="text-[10px] text-txt-muted hover:text-accent"
+                        title="แก้โควตา ชม./คน ของ sprint นี้"
+                      >
+                        ✎ แก้โควตา
+                      </button>
+                    )
+                  )}
+                </div>
                 <div className="flex items-baseline gap-2 whitespace-nowrap">
                   <div className="font-mono text-[24px] font-semibold text-txt-primary leading-none">{squadTotalHours}</div>
-                  <div className="text-[13px] text-txt-secondary">/ {squadCap} ชม. · {members.length} คน · {squadTotalPoints} point</div>
+                  <div className="text-[13px] text-txt-secondary">/ {squadCap} ชม. · {members.length} คน · {squadTotalPoints} point · <span className="text-success">เสร็จแล้ว {squadDonePoints} PT</span></div>
                 </div>
               </div>
               <p className="text-[12px] text-txt-secondary leading-relaxed max-w-[420px]">{summarySentence}</p>
@@ -848,7 +913,7 @@ export default function SquadBoardClient({
 
             <div className="flex gap-2.5 flex-wrap">
               {members.map(m => {
-                const load = memberLoads.get(m.id) ?? { hours: 0, points: 0, count: 0 };
+                const load = memberLoads.get(m.id) ?? { hours: 0, points: 0, count: 0, donePoints: 0 };
                 const ratio = capacityHours > 0 ? load.hours / capacityHours : 0;
                 const over  = load.hours > capacityHours;
                 const near  = !over && ratio >= 0.9;
@@ -872,6 +937,9 @@ export default function SquadBoardClient({
                       <span>{load.points} PT · {load.count} งาน</span>
                       <span className={statusColor}>{statusText}</span>
                     </div>
+                    {load.donePoints > 0 && (
+                      <div className="text-[10.5px] text-success">✓ เสร็จแล้ว {load.donePoints} PT</div>
+                    )}
                   </div>
                 );
               })}
@@ -1242,6 +1310,14 @@ export default function SquadBoardClient({
               type="date"
               value={newSprintEndDate}
               onChange={e => setNewSprintEndDate(e.target.value)}
+              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-3 font-[inherit]"
+            />
+            <label className="block text-[12px] text-txt-secondary mb-1.5">โควตา ชม./คน ของ sprint นี้</label>
+            <input
+              type="number" min="1" step="1"
+              value={newSprintCapacity}
+              onChange={e => setNewSprintCapacity(e.target.value)}
+              placeholder={String(squadDefaultCapacityHours)}
               className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-3 font-[inherit]"
             />
             {openSprintError && <p className="text-[12px] text-danger mb-3">{openSprintError}</p>}

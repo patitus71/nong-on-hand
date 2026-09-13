@@ -16,8 +16,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { sprintId: 
   const sprint = await prisma.sprint.findUnique({
     where: { id: params.sprintId },
     select: {
-      id: true, squadId: true, status: true,
-      squad: { select: { lineGroupId: true } },
+      id: true, squadId: true, status: true, capacityHours: true,
+      squad: { select: { lineGroupId: true, capacityHours: true } },
     },
   });
   if (!sprint) return NextResponse.json({ error: 'Sprint not found' }, { status: 404 });
@@ -46,10 +46,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { sprintId: 
 
     const newSprint = await tx.sprint.create({
       data: {
-        squadId: sprint.squadId,
-        name:    `Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`,
+        squadId:       sprint.squadId,
+        name:          `Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`,
+        // สืบทอด capacityHours จาก sprint ที่เพิ่งปิด (ไม่ reset กลับไปเป็นค่า default ของ squad เฉยๆ)
+        capacityHours: sprint.capacityHours ?? sprint.squad.capacityHours,
       },
-      select: { id: true, name: true, status: true, startedAt: true, plannedEndDate: true },
+      select: { id: true, name: true, status: true, startedAt: true, plannedEndDate: true, capacityHours: true },
     });
 
     const carriedCount = await carryOverUnfinishedTasks(tx, sprint.squadId, newSprint.id);

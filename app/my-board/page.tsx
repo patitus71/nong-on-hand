@@ -65,9 +65,15 @@ export default async function MyBoardPage() {
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
-  const mySquad = user.squadId
-    ? await prisma.squad.findUnique({ where: { id: user.squadId }, select: { name: true, capacityHours: true } })
-    : null;
+  const [mySquad, myOpenSprint] = await Promise.all([
+    user.squadId
+      ? prisma.squad.findUnique({ where: { id: user.squadId }, select: { name: true, capacityHours: true } })
+      : Promise.resolve(null),
+    user.squadId
+      ? prisma.sprint.findFirst({ where: { squadId: user.squadId, status: 'OPEN' }, select: { capacityHours: true } })
+      : Promise.resolve(null),
+  ]);
+  const effectiveCapacityHours = myOpenSprint?.capacityHours ?? mySquad?.capacityHours ?? null;
 
   let board = await prisma.board.findFirst({
     where: { ownerId: user.id, type: 'PERSONAL' },
@@ -289,7 +295,7 @@ export default async function MyBoardPage() {
         canCreateTask={canCreateTask(user)}
         reviewersBySquad={reviewersBySquad}
         pendingReviews={pendingReviews}
-        capacityHours={mySquad?.capacityHours ?? null}
+        capacityHours={effectiveCapacityHours}
         squadName={mySquad?.name ?? null}
       />
     </>

@@ -739,7 +739,7 @@ export default function AdminClient({ actorRole, actorId }: Props) {
               <table className="w-full border-collapse bg-surface-1">
                 <thead>
                   <tr className="border-b border-app-border">
-                    {['ชื่อ Squad', 'Floating Pool', 'สมาชิก', 'โควตา (ชม./คน/sprint)', 'LINE Auto-Send', ''].map(h => (
+                    {['ชื่อ Squad', 'Floating Pool', 'สมาชิก', 'โควตา default (ชม./คน/sprint)', 'LINE Auto-Send', ''].map(h => (
                       <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3.5 py-2.5">{h}</th>
                     ))}
                   </tr>

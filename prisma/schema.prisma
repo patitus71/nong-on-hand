@@ -209,6 +209,7 @@ model Sprint {
   squad          Squad        @relation(fields: [squadId], references: [id])
   name           String
   status         SprintStatus @default(OPEN)
+  capacityHours  Int?         // override ชม./คน/sprint นี้โดยเฉพาะ — null = ใช้ Squad.capacityHours (ค่า default)
   startedAt      DateTime     @default(now())
   plannedEndDate DateTime?
   closedAt       DateTime?

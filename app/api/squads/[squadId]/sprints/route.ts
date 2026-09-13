@@ -15,7 +15,7 @@ export async function POST(req: NextRequest, { params }: { params: { squadId: st
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const squad = await prisma.squad.findUnique({ where: { id: params.squadId }, select: { id: true } });
+  const squad = await prisma.squad.findUnique({ where: { id: params.squadId }, select: { id: true, capacityHours: true } });
   if (!squad) return NextResponse.json({ error: 'Squad not found' }, { status: 404 });
 
   if (!(await canOpenNewSprint(params.squadId))) {
@@ -28,9 +28,18 @@ export async function POST(req: NextRequest, { params }: { params: { squadId: st
     : `Sprint ${new Date().toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}`;
   const plannedEndDate = body.plannedEndDate ? new Date(body.plannedEndDate) : null;
 
+  let capacityHours = squad.capacityHours;
+  if (body.capacityHours !== undefined && body.capacityHours !== null && body.capacityHours !== '') {
+    const hours = Number(body.capacityHours);
+    if (!Number.isInteger(hours) || hours <= 0) {
+      return NextResponse.json({ error: 'capacityHours ต้องเป็นจำนวนเต็มบวก' }, { status: 400 });
+    }
+    capacityHours = hours;
+  }
+
   const sprint = await prisma.sprint.create({
-    data: { squadId: params.squadId, name, ...(plannedEndDate ? { plannedEndDate } : {}) },
-    select: { id: true, name: true, status: true, startedAt: true, plannedEndDate: true },
+    data: { squadId: params.squadId, name, capacityHours, ...(plannedEndDate ? { plannedEndDate } : {}) },
+    select: { id: true, name: true, status: true, startedAt: true, plannedEndDate: true, capacityHours: true },
   });
 
   // ดึงงานค้างจาก sprint เก่าที่ปิดแล้วเข้า sprint ใหม่นี้ — set sprintId อย่างเดียว ห้ามแตะ laneId

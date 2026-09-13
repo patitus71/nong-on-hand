@@ -38,7 +38,7 @@ export default async function SquadPage({
       : Promise.resolve(null),
     prisma.sprint.findMany({
       where:   { squadId: params.squadId },
-      select:  { id: true, name: true, status: true, startedAt: true, closedAt: true, plannedEndDate: true },
+      select:  { id: true, name: true, status: true, startedAt: true, closedAt: true, plannedEndDate: true, capacityHours: true },
       orderBy: { startedAt: 'desc' },
     }),
   ]);
@@ -52,6 +52,7 @@ export default async function SquadPage({
   const activeSprint = requestedId
     ? (sprints.find(s => s.id === requestedId) ?? openSprint)
     : openSprint;
+  const effectiveCapacityHours = activeSprint?.capacityHours ?? squad.capacityHours;
 
   // Only show tasks that belong to the active sprint (null sprint = legacy pre-sprint tasks, hidden)
   const tasks = activeSprint
@@ -181,7 +182,8 @@ export default async function SquadPage({
         }))}
         activeSprintId={activeSprint?.id ?? null}
         hasOpenSprint={sprints.some(s => s.status === 'OPEN')}
-        capacityHours={squad.capacityHours}
+        capacityHours={effectiveCapacityHours}
+        squadDefaultCapacityHours={squad.capacityHours}
       />
     </>
   );

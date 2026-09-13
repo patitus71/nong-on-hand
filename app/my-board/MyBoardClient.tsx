@@ -50,13 +50,12 @@ type Reviewer = { id: string; name: string };
 
 /* ─── Queue rail (left sidebar): urgent / pending-review / ready-to-close ── */
 function QueueRail({
-  pendingReviews, readyTasks, onApprove, onMoveToDone, movingToDoneId,
+  pendingReviews, readyTasks, onApprove, onMoveToDone,
 }: {
   pendingReviews: PendingReview[];
   readyTasks: TaskData[];
   onApprove: (taskId: string) => Promise<void>;
-  onMoveToDone: (taskId: string) => Promise<void>;
-  movingToDoneId: string | null;
+  onMoveToDone: (taskId: string) => void;
 }) {
   const [approving, setApproving] = useState<string | null>(null);
   if (pendingReviews.length === 0 && readyTasks.length === 0) return null;
@@ -106,11 +105,10 @@ function QueueRail({
                 </Link>
                 {t.reviewerName && <p className="text-[11px] text-txt-muted mb-2">Review ผ่านโดย {t.reviewerName}</p>}
                 <button
-                  disabled={movingToDoneId === t.id}
                   onClick={() => onMoveToDone(t.id)}
                   className="w-full bg-success/10 border border-success/30 text-success text-[11px] py-1.5 rounded-[3px] hover:bg-success/20 disabled:opacity-50 transition-colors font-medium"
                 >
-                  {movingToDoneId === t.id ? '...' : 'ย้ายไป Done'}
+                  ย้ายไป Done
                 </button>
               </div>
             ))}
@@ -704,21 +702,23 @@ export default function MyBoardClient({
   type ReviewerModalData = { taskId: string; taskTitle: string; taskSquadId: string; pendingLanes: LaneData[] };
   const [reviewerModal,      setReviewerModal]      = useState<ReviewerModalData | null>(null);
   const [selectedReviewerId, setSelectedReviewerId] = useState<string>('');
-  const pendingReviewerRef = useRef<{ taskId: string; reviewerId: string | null } | null>(null);
 
-  /* ── Review-time modal (any → Review) ── */
-  type ReviewTimeModalData = {
-    taskId: string; taskTitle: string; pendingLanes: LaneData[];
+  /* ── Time modal (any → Done) — forced once, regardless of whether the task passed through Review ── */
+  type DoneTimeModalData = {
+    taskId: string; taskTitle: string; pendingLanes: LaneData[]; revertLanes: LaneData[];
     hasTime: boolean; totalNormalMin: number; totalOtMin: number;
+    /** Runs on confirm instead of the default saveOrder — used by flows (e.g. issue resolve)
+     *  that need to call a different endpoint before the card actually lands in Done. */
+    onConfirm?: () => Promise<void>;
   };
-  const [reviewTimeModal,   setReviewTimeModal]   = useState<ReviewTimeModalData | null>(null);
-  const [reviewMode,        setReviewMode]        = useState<'auto' | 'manual' | null>(null);
-  const [reviewNormalHrs,   setReviewNormalHrs]   = useState('');
-  const [reviewOtHrs,       setReviewOtHrs]       = useState('');
-  const [reviewReplace,     setReviewReplace]     = useState(false);
-  const [reviewTimeAdded,   setReviewTimeAdded]   = useState(false);
-  const [reviewTimeSaving,  setReviewTimeSaving]  = useState(false);
-  const [reviewTimeError,   setReviewTimeError]   = useState('');
+  const [doneTimeModal,   setDoneTimeModal]   = useState<DoneTimeModalData | null>(null);
+  const [timeMode,        setTimeMode]        = useState<'auto' | 'manual' | null>(null);
+  const [normalHrs,   setNormalHrs]   = useState('');
+  const [otHrs,       setOtHrs]       = useState('');
+  const [timeReplace,     setTimeReplace]     = useState(false);
+  const [timeAdded,   setTimeAdded]   = useState(false);
+  const [timeSaving,  setTimeSaving]  = useState(false);
+  const [timeError,   setTimeError]   = useState('');
 
   /* ── Pending reviews (I'm the reviewer) ── */
   const [pendingReviewsList, setPendingReviewsList] = useState<PendingReview[]>(initialPendingReviews);
@@ -935,7 +935,9 @@ export default function MyBoardClient({
         if (dstName === 'Review') {
           const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
 
-          // Squad tasks: show reviewer modal first (chained before time modal)
+          // Squad tasks: pick a reviewer before entering the lane. Time entry is no
+          // longer forced here — it's forced once at Done instead (below), for every
+          // task regardless of whether it passed through Review.
           if (t.squadId) {
             setReviewerModal({
               taskId: activeId,
@@ -946,15 +948,12 @@ export default function MyBoardClient({
             setSelectedReviewerId('');
             return;
           }
+          // Personal task (no squad): nothing to gate on entering Review anymore.
+        }
 
-          // Personal task (no squad): go straight to time modal
-          setReviewTimeModal({
-            taskId: activeId, taskTitle: t.title, pendingLanes: current,
-            hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
-            totalNormalMin: t.totalNormalMin, totalOtMin: t.totalOtMin,
-          });
-          setReviewMode(null); setReviewNormalHrs(''); setReviewOtHrs('');
-          setReviewReplace(false); setReviewTimeAdded(false); setReviewTimeError('');
+        if (dstName === 'Done') {
+          const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
+          openDoneTimeModal(activeId, t.title, current, preDragRef.current);
           return;
         }
 
@@ -1027,19 +1026,48 @@ export default function MyBoardClient({
       return;
     }
     if (!resolveTarget) return;
+
+    // Resolving straight to Done still needs the forced time-entry gate — same as any other
+    // move into Done. The actual /flag call (which clears hasIssue) is deferred into onConfirm
+    // so it only fires once time has been logged.
+    if (resolveDestination === 'done') {
+      const task = resolveTarget;
+      const note = resolutionNote.trim();
+      setResolveTarget(null);
+      openDoneTimeModal(task.id, task.title, lanesRef.current, lanesRef.current, async () => {
+        const res = await fetch(`/api/tasks/${task.id}/flag`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ hasIssue: false, resolutionNote: note, destination: 'done' }),
+        });
+        if (res.ok) {
+          const doneLane = lanesRef.current.find(l => l.name === 'Done');
+          const firstLane = lanesRef.current[0];
+          const targetLane = doneLane ?? firstLane;
+          const next = lanesRef.current.map(l => {
+            const cleaned = l.tasks.filter(t => t.id !== task.id);
+            return targetLane && l.id === targetLane.id
+              ? { ...l, tasks: [...cleaned, { ...task, hasIssue: false }] }
+              : { ...l, tasks: cleaned };
+          });
+          setLanes(next);
+          setResolutionNote('');
+          setResolveDestination('todo');
+        } else {
+          showToast('error', await res.text());
+        }
+      });
+      return;
+    }
+
     setResolving(true);
     const res = await fetch(`/api/tasks/${resolveTarget.id}/flag`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ hasIssue: false, resolutionNote: resolutionNote.trim(), destination: resolveDestination }),
     });
     if (res.ok) {
-      const doneLane   = lanesRef.current.find(l => l.name === 'Done');
       const cancelLane = lanesRef.current.find(l => l.name === 'Cancel');
       const firstLane  = lanesRef.current[0];
-      const targetLane =
-        resolveDestination === 'done'   ? (doneLane ?? firstLane) :
-        resolveDestination === 'cancel' ? (cancelLane ?? firstLane) :
-        firstLane;
+      const targetLane = resolveDestination === 'cancel' ? (cancelLane ?? firstLane) : firstLane;
       const resolvedTask = resolveDestination === 'cancel'
         ? { ...resolveTarget, isCancelled: true, cancelNote: resolutionNote.trim() } // hasIssue คงเดิม (true)
         : { ...resolveTarget, hasIssue: false };
@@ -1050,7 +1078,7 @@ export default function MyBoardClient({
             ...l,
             tasks: resolveDestination === 'todo'
               ? [resolvedTask, ...cleaned]  // prepend หัว To Do
-              : [...cleaned, resolvedTask], // append ท้าย Done/Cancel
+              : [...cleaned, resolvedTask], // append ท้าย Cancel
           };
         }
         return { ...l, tasks: cleaned };
@@ -1125,21 +1153,25 @@ export default function MyBoardClient({
   }
 
   /* ─── Reviewer modal handlers ─── */
-  function openReviewTimeModal(taskId: string, taskTitle: string, pendingLanes: LaneData[]) {
-    const t = pendingLanes.flatMap(l => l.tasks).find(t => t.id === taskId)!;
-    setReviewTimeModal({
-      taskId, taskTitle, pendingLanes,
-      hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
-      totalNormalMin: t.totalNormalMin, totalOtMin: t.totalOtMin,
-    });
-    setReviewMode(null); setReviewNormalHrs(''); setReviewOtHrs('');
-    setReviewReplace(false); setReviewTimeAdded(false); setReviewTimeError('');
-  }
-
-  function confirmReviewerModal(reviewerId: string | null) {
+  async function confirmReviewerModal(reviewerId: string | null) {
     if (!reviewerModal) return;
-    pendingReviewerRef.current = { taskId: reviewerModal.taskId, reviewerId };
-    openReviewTimeModal(reviewerModal.taskId, reviewerModal.taskTitle, reviewerModal.pendingLanes);
+    const { taskId, pendingLanes } = reviewerModal;
+    const task = pendingLanes.flatMap(l => l.tasks).find(t => t.id === taskId);
+    const squadId = task?.squadId;
+    const reviewerName = reviewerId && squadId
+      ? (reviewersBySquad[squadId] ?? []).find(r => r.id === reviewerId)?.name ?? null
+      : null;
+    const ok = await saveOrder(pendingLanes, { [taskId]: reviewerId });
+    if (ok) {
+      // เข้าเลน Review รอบใหม่เสมอต้อง reset review approval (shouldResetReviewApproval ฝั่ง
+      // server ก็ทำแบบนี้ใน /api/tasks/reorder) — ต้อง sync local state ด้วยไม่งั้น banner
+      // "Review ผ่านแล้ว" เดิมจะค้างอยู่บนการ์ดทั้งที่ DB reset ไปแล้วจริง
+      setLanes(pendingLanes.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === taskId ? { ...t, reviewerId, reviewerName, reviewApprovedAt: null } : t
+        ),
+      })));
+    }
     setReviewerModal(null);
     setSelectedReviewerId('');
   }
@@ -1150,95 +1182,89 @@ export default function MyBoardClient({
     setSelectedReviewerId('');
   }
 
-  /* ─── Review-time modal handlers ─── */
-  async function submitReviewAuto() {
-    if (!reviewTimeModal) return;
-    setReviewTimeSaving(true); setReviewTimeError('');
-    const res = await fetch(`/api/tasks/${reviewTimeModal.taskId}/timelog/stop`, { method: 'POST' });
+  /* ─── Done-time modal handlers ─── */
+  function openDoneTimeModal(
+    taskId: string, taskTitle: string, pendingLanes: LaneData[], revertLanes: LaneData[],
+    onConfirm?: () => Promise<void>,
+  ) {
+    const t = pendingLanes.flatMap(l => l.tasks).find(t => t.id === taskId)!;
+    setDoneTimeModal({
+      taskId, taskTitle, pendingLanes, revertLanes, onConfirm,
+      hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
+      totalNormalMin: t.totalNormalMin, totalOtMin: t.totalOtMin,
+    });
+    setTimeMode(null); setNormalHrs(''); setOtHrs('');
+    setTimeReplace(false); setTimeAdded(false); setTimeError('');
+  }
+
+  async function submitTimeAuto() {
+    if (!doneTimeModal) return;
+    setTimeSaving(true); setTimeError('');
+    const res = await fetch(`/api/tasks/${doneTimeModal.taskId}/timelog/stop`, { method: 'POST' });
     if (res.ok) {
       const log = await res.json();
-      const updatedLanes = reviewTimeModal.pendingLanes.map(l => ({
+      const updatedLanes = doneTimeModal.pendingLanes.map(l => ({
         ...l, tasks: l.tasks.map(t =>
-          t.id === reviewTimeModal.taskId
+          t.id === doneTimeModal.taskId
             ? { ...t, totalNormalMin: t.totalNormalMin + log.normalMinutes, totalOtMin: t.totalOtMin + log.otMinutes }
             : t
         ),
       }));
       setLanes(updatedLanes);
-      setReviewTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true } : m);
-      setReviewTimeAdded(true);
+      setDoneTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true } : m);
+      setTimeAdded(true);
     } else {
-      setReviewTimeError(
+      setTimeError(
         res.status === 404
           ? 'ไม่มีตัวจับเวลาที่กำลังทำงานอยู่ — กรุณาเลือกบันทึก manual'
           : await res.text()
       );
     }
-    setReviewTimeSaving(false);
+    setTimeSaving(false);
   }
 
-  async function submitReviewManual() {
-    if (!reviewTimeModal) return;
-    const n = parseFloat(reviewNormalHrs);
-    if (!n || n <= 0) { setReviewTimeError('กรุณากรอกชั่วโมงที่ทำงาน'); return; }
-    setReviewTimeSaving(true); setReviewTimeError('');
-    const res = await fetch(`/api/tasks/${reviewTimeModal.taskId}/timelog`, {
+  async function submitTimeManual() {
+    if (!doneTimeModal) return;
+    const n = parseFloat(normalHrs);
+    if (!n || n <= 0) { setTimeError('กรุณากรอกชั่วโมงที่ทำงาน'); return; }
+    setTimeSaving(true); setTimeError('');
+    const res = await fetch(`/api/tasks/${doneTimeModal.taskId}/timelog`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ normalHours: n, otHours: parseFloat(reviewOtHrs) || 0, replace: reviewReplace }),
+      body: JSON.stringify({ normalHours: n, otHours: parseFloat(otHrs) || 0, replace: timeReplace }),
     });
     if (res.ok) {
       const log = await res.json();
-      const newNormal = reviewReplace ? log.normalMinutes : reviewTimeModal.totalNormalMin + log.normalMinutes;
-      const newOt     = reviewReplace ? log.otMinutes    : reviewTimeModal.totalOtMin    + log.otMinutes;
-      const updatedLanes = reviewTimeModal.pendingLanes.map(l => ({
+      const newNormal = timeReplace ? log.normalMinutes : doneTimeModal.totalNormalMin + log.normalMinutes;
+      const newOt     = timeReplace ? log.otMinutes    : doneTimeModal.totalOtMin    + log.otMinutes;
+      const updatedLanes = doneTimeModal.pendingLanes.map(l => ({
         ...l, tasks: l.tasks.map(t =>
-          t.id === reviewTimeModal.taskId ? { ...t, totalNormalMin: newNormal, totalOtMin: newOt } : t
+          t.id === doneTimeModal.taskId ? { ...t, totalNormalMin: newNormal, totalOtMin: newOt } : t
         ),
       }));
       setLanes(updatedLanes);
-      setReviewTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true, totalNormalMin: newNormal, totalOtMin: newOt } : m);
-      setReviewNormalHrs(''); setReviewOtHrs('');
-      setReviewTimeAdded(true);
+      setDoneTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true, totalNormalMin: newNormal, totalOtMin: newOt } : m);
+      setNormalHrs(''); setOtHrs('');
+      setTimeAdded(true);
     } else {
-      setReviewTimeError(await res.text());
+      setTimeError(await res.text());
     }
-    setReviewTimeSaving(false);
+    setTimeSaving(false);
   }
 
-  async function proceedToReview() {
-    const pending = pendingReviewerRef.current;
-    if (pending) {
-      const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === pending.taskId);
-      const squadId = task?.squadId;
-      const reviewerName = pending.reviewerId && squadId
-        ? (reviewersBySquad[squadId] ?? []).find(r => r.id === pending.reviewerId)?.name ?? null
-        : null;
-      const ok = await saveOrder(lanesRef.current, { [pending.taskId]: pending.reviewerId });
-      if (ok) {
-        // เข้าเลน Review รอบใหม่เสมอต้อง reset review approval (shouldResetReviewApproval ฝั่ง
-        // server ก็ทำแบบนี้ใน /api/tasks/reorder) — ต้อง sync local state ด้วยไม่งั้น banner
-        // "Review ผ่านแล้ว" เดิมจะค้างอยู่บนการ์ดทั้งที่ DB reset ไปแล้วจริง
-        setLanes(lanesRef.current.map(l => ({
-          ...l, tasks: l.tasks.map(t =>
-            t.id === pending.taskId
-              ? { ...t, reviewerId: pending.reviewerId, reviewerName, reviewApprovedAt: null }
-              : t
-          ),
-        })));
-      }
-      pendingReviewerRef.current = null;
+  async function proceedToDone() {
+    if (doneTimeModal?.onConfirm) {
+      await doneTimeModal.onConfirm();
     } else {
       await saveOrder(lanesRef.current);
     }
-    setReviewTimeModal(null);
-    setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
+    setDoneTimeModal(null);
+    setTimeMode(null); setTimeAdded(false); setTimeError('');
   }
 
-  function cancelReviewModal() {
-    setLanes(preDragRef.current);
-    pendingReviewerRef.current = null;
-    setReviewTimeModal(null);
-    setReviewMode(null); setReviewTimeAdded(false); setReviewTimeError('');
+  function cancelDoneTimeModal() {
+    if (doneTimeModal) setLanes(doneTimeModal.revertLanes);
+    setDoneTimeModal(null);
+    setTimeMode(null); setTimeAdded(false); setTimeError('');
   }
 
   /* ─── Inline reviewer / PR link handlers (on Review lane cards) ─── */
@@ -1291,20 +1317,19 @@ export default function MyBoardClient({
   }
 
   /* ─── Move a review-approved task straight to Done (queue rail quick action) ─── */
-  const [movingToDoneId, setMovingToDoneId] = useState<string | null>(null);
-  async function moveToDone(taskId: string) {
+  function moveToDone(taskId: string) {
+    if (doneTimeModal) return; // guard double-click: modal already gating this move
     const doneLane = lanesRef.current.find(l => l.name === 'Done');
     if (!doneLane) return;
-    setMovingToDoneId(taskId);
-    const task = lanesRef.current.flatMap(l => l.tasks).find(t => t.id === taskId);
-    if (!task) { setMovingToDoneId(null); return; }
-    const next = lanesRef.current.map(l => {
+    const revertLanes = lanesRef.current;
+    const task = revertLanes.flatMap(l => l.tasks).find(t => t.id === taskId);
+    if (!task) return;
+    const next = revertLanes.map(l => {
       const cleaned = l.tasks.filter(t => t.id !== taskId);
       return l.id === doneLane.id ? { ...l, tasks: [...cleaned, task] } : { ...l, tasks: cleaned };
     });
     setLanes(next);
-    await saveOrder(next);
-    setMovingToDoneId(null);
+    openDoneTimeModal(taskId, task.title, next, revertLanes);
   }
 
   /* ─── Queue rail data ─────────────────────────────────── */
@@ -1350,7 +1375,6 @@ export default function MyBoardClient({
           readyTasks={readyTasks}
           onApprove={approveReview}
           onMoveToDone={moveToDone}
-          movingToDoneId={movingToDoneId}
         />
 
         <div className="flex-1 min-w-0">
@@ -1381,7 +1405,7 @@ export default function MyBoardClient({
                   </div>
                   <div className="flex items-baseline gap-2 whitespace-nowrap">
                     <div className="font-mono text-[24px] font-semibold text-txt-primary leading-none">{myTotalHours}</div>
-                    <div className="text-[13px] text-txt-secondary">/ {capacityHours} ชม. · {myTotalPoints} point</div>
+                    <div className="text-[13px] text-txt-secondary">/ {capacityHours} ชม. · {myTotalPoints} point · <span className="text-success">เสร็จแล้ว {loadBuckets.done.points} PT</span></div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5">
@@ -1668,77 +1692,77 @@ export default function MyBoardClient({
         );
       })()}
 
-      {/* ── Modal: Record time before Review ────────────── */}
-      {reviewTimeModal && (
+      {/* ── Modal: Record time before Done ────────────── */}
+      {doneTimeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
           <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[450px] shadow-xl">
-            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">⏱ บันทึกเวลาก่อนส่ง Review</h3>
+            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">⏱ บันทึกเวลาก่อนปิดงาน (Done)</h3>
             <p className="text-[12.5px] text-txt-secondary mb-2">
-              งาน <span className="font-medium text-txt-primary">"{reviewTimeModal.taskTitle}"</span>
+              งาน <span className="font-medium text-txt-primary">"{doneTimeModal.taskTitle}"</span>
             </p>
 
-            {reviewTimeModal.hasTime && !reviewTimeAdded && (
+            {doneTimeModal.hasTime && !timeAdded && (
               <div className="flex items-center gap-2 text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-[3px] mb-3">
                 <span>✓ เวลาที่บันทึกแล้ว:</span>
-                <span className="font-medium">{fmt(reviewTimeModal.totalNormalMin)}</span>
-                {reviewTimeModal.totalOtMin > 0 && (
-                  <span className="text-warning">+OT {fmt(reviewTimeModal.totalOtMin)}</span>
+                <span className="font-medium">{fmt(doneTimeModal.totalNormalMin)}</span>
+                {doneTimeModal.totalOtMin > 0 && (
+                  <span className="text-warning">+OT {fmt(doneTimeModal.totalOtMin)}</span>
                 )}
                 <span className="text-txt-muted ml-auto">· เพิ่มเวลาได้ถ้าต้องการ</span>
               </div>
             )}
 
-            {reviewTimeAdded && (
+            {timeAdded && (
               <div className="text-[12px] text-success bg-success/8 border border-success/25 px-3 py-2 rounded-[3px] mb-3">
-                ✓ บันทึกเวลาเรียบร้อย — กดยืนยันเพื่อย้ายงานไป Review
+                ✓ บันทึกเวลาเรียบร้อย — กดยืนยันเพื่อย้ายงานไป Done
               </div>
             )}
 
-            {!reviewTimeAdded && (
+            {!timeAdded && (
               <div className="mb-3">
                 <p className="text-[11.5px] text-txt-muted mb-2.5">
-                  {reviewTimeModal.hasTime ? 'เพิ่มเวลาเพิ่มเติม (ไม่บังคับ):' : <>กรุณาเลือกวิธีบันทึกเวลา <span className="text-danger">(จำเป็น)</span></>}
+                  {doneTimeModal.hasTime ? 'เพิ่มเวลาเพิ่มเติม (ไม่บังคับ):' : <>กรุณาเลือกวิธีบันทึกเวลา <span className="text-danger">(จำเป็น)</span></>}
                 </p>
 
                 <div className="flex flex-col gap-2 mb-3">
                   <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-[3px] border cursor-pointer transition-colors ${
-                    reviewMode === 'auto' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
+                    timeMode === 'auto' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
                   }`}>
-                    <input type="radio" name="revMode" value="auto" checked={reviewMode === 'auto'}
-                      onChange={() => { setReviewMode('auto'); setReviewTimeError(''); }} className="mt-0.5 accent-accent" />
+                    <input type="radio" name="revMode" value="auto" checked={timeMode === 'auto'}
+                      onChange={() => { setTimeMode('auto'); setTimeError(''); }} className="mt-0.5 accent-accent" />
                     <div>
                       <p className="text-[12.5px] text-txt-primary">⏹ หยุดตัวจับเวลา (บันทึกอัตโนมัติ)</p>
                       <p className="text-[11px] text-txt-muted">หยุดการนับเวลาที่กำลังทำงานอยู่และบันทึกเวลาที่ผ่านมา</p>
                     </div>
                   </label>
                   <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-[3px] border cursor-pointer transition-colors ${
-                    reviewMode === 'manual' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
+                    timeMode === 'manual' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
                   }`}>
-                    <input type="radio" name="revMode" value="manual" checked={reviewMode === 'manual'}
-                      onChange={() => { setReviewMode('manual'); setReviewTimeError(''); }} className="mt-0.5 accent-accent" />
+                    <input type="radio" name="revMode" value="manual" checked={timeMode === 'manual'}
+                      onChange={() => { setTimeMode('manual'); setTimeError(''); }} className="mt-0.5 accent-accent" />
                     <span className="text-[12.5px] text-txt-primary">✎ บันทึกเวลา manual</span>
                   </label>
                 </div>
 
-                {reviewMode === 'auto' && (
-                  <button onClick={submitReviewAuto} disabled={reviewTimeSaving}
+                {timeMode === 'auto' && (
+                  <button onClick={submitTimeAuto} disabled={timeSaving}
                     className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
-                    {reviewTimeSaving ? 'กำลังบันทึก...' : '⏹ หยุดและบันทึกเวลา'}
+                    {timeSaving ? 'กำลังบันทึก...' : '⏹ หยุดและบันทึกเวลา'}
                   </button>
                 )}
 
-                {reviewMode === 'manual' && (
+                {timeMode === 'manual' && (
                   <div className="flex flex-col gap-2">
-                    {reviewTimeModal.hasTime && (
+                    {doneTimeModal.hasTime && (
                       <div className="flex gap-4 px-1">
                         <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
-                          <input type="radio" name="revManualMode" checked={!reviewReplace}
-                            onChange={() => setReviewReplace(false)} className="accent-accent" />
+                          <input type="radio" name="revManualMode" checked={!timeReplace}
+                            onChange={() => setTimeReplace(false)} className="accent-accent" />
                           เพิ่มเติม (บวกกับเวลาเดิม)
                         </label>
                         <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
-                          <input type="radio" name="revManualMode" checked={reviewReplace}
-                            onChange={() => setReviewReplace(true)} className="accent-accent" />
+                          <input type="radio" name="revManualMode" checked={timeReplace}
+                            onChange={() => setTimeReplace(true)} className="accent-accent" />
                           แทนที่เวลาเดิม
                         </label>
                       </div>
@@ -1747,42 +1771,42 @@ export default function MyBoardClient({
                       <div className="flex-1">
                         <label className="block text-[11px] text-txt-muted mb-1">Normal (ชม.)</label>
                         <input type="number" min="0.25" step="0.25" autoFocus
-                          value={reviewNormalHrs} onChange={e => setReviewNormalHrs(e.target.value)}
+                          value={normalHrs} onChange={e => setNormalHrs(e.target.value)}
                           placeholder="เช่น 2.5"
                           className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                       </div>
                       <div className="flex-1">
                         <label className="block text-[11px] text-txt-muted mb-1">OT (ชม.) — ไม่บังคับ</label>
                         <input type="number" min="0" step="0.25"
-                          value={reviewOtHrs} onChange={e => setReviewOtHrs(e.target.value)}
+                          value={otHrs} onChange={e => setOtHrs(e.target.value)}
                           placeholder="0"
                           className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                       </div>
                     </div>
-                    <button onClick={submitReviewManual} disabled={reviewTimeSaving || !reviewNormalHrs}
+                    <button onClick={submitTimeManual} disabled={timeSaving || !normalHrs}
                       className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
-                      {reviewTimeSaving ? 'กำลังบันทึก...' : '✎ บันทึกเวลา'}
+                      {timeSaving ? 'กำลังบันทึก...' : '✎ บันทึกเวลา'}
                     </button>
                   </div>
                 )}
 
-                {reviewTimeError && <p className="text-[11.5px] text-danger mt-2">{reviewTimeError}</p>}
+                {timeError && <p className="text-[11.5px] text-danger mt-2">{timeError}</p>}
               </div>
             )}
 
             <div className="flex gap-2 justify-end mt-1">
-              <button onClick={cancelReviewModal}
+              <button onClick={cancelDoneTimeModal}
                 className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
                 ยกเลิก
               </button>
-              {reviewTimeModal.hasTime && !reviewTimeAdded && (
-                <button onClick={proceedToReview}
+              {doneTimeModal.hasTime && !timeAdded && (
+                <button onClick={proceedToDone}
                   className="px-4 py-2 text-[12.5px] text-txt-secondary hover:text-txt-primary border border-app-border rounded-[3px] transition-colors">
                   ข้าม — ย้ายงานเลย
                 </button>
               )}
-              <button onClick={proceedToReview}
-                disabled={!reviewTimeModal.hasTime && !reviewTimeAdded}
+              <button onClick={proceedToDone}
+                disabled={!doneTimeModal.hasTime && !timeAdded}
                 className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
                 ยืนยันและย้ายงาน →
               </button>
