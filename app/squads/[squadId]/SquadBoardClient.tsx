@@ -368,7 +368,14 @@ export default function SquadBoardClient({
       taskPoint: task.taskPoint, estimatedHours: task.estimatedHours,
       currentAssigneeId: task.assignee?.id ?? null,
     });
-    setAssigneeId(task.assignee?.id ?? userId);
+    // Default to the current user only if they're actually a selectable member (e.g. a squad
+    // engineer claiming their own work) — for ADMIN or anyone else not in `members`, that id
+    // isn't among the <select>'s <option>s, so the browser silently shows the first member
+    // instead while `assigneeId` state stays stuck on the invalid default. Submitting then sends
+    // that stale id and the server rejects it as "Invalid assignee", even though the dropdown
+    // visually shows someone else selected. Fall back to the first real member instead.
+    const isCurrentUserSelectable = members.some(m => m.id === userId);
+    setAssigneeId(task.assignee?.id ?? (isCurrentUserSelectable ? userId : (members[0]?.id ?? '')));
     setClaimError('');
     setClaimOverConfirm(false);
   }

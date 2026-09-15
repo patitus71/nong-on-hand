@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import type { SessionUser } from '@/lib/rbac';
+import { canEditTaskContent, type SessionUser } from '@/lib/rbac';
 
 export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -18,8 +18,12 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
     return new Response('normalHours ต้องมากกว่า 0', { status: 400 });
   }
 
-  const task = await prisma.task.findUnique({ where: { id: params.taskId }, select: { id: true } });
+  const task = await prisma.task.findUnique({
+    where: { id: params.taskId },
+    select: { id: true, assigneeId: true, squadId: true },
+  });
   if (!task) return new Response('Not Found', { status: 404 });
+  if (!canEditTaskContent(user, task)) return new Response('Forbidden', { status: 403 });
 
   if (replace) {
     await prisma.timeLog.deleteMany({ where: { taskId: params.taskId } });

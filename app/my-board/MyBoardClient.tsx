@@ -123,6 +123,8 @@ function QueueRail({
 function SortableCard({
   task, overlay = false, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave, saving = false,
   pointMappings = [], onTaskPointChange,
+  logFormOpen = false, logNormalHours = '', logOtHours = '', logSaving = false, logError = '',
+  onToggleLogForm, onQuickAdd, onNormalHoursChange, onOtHoursChange, onSubmitLog, onCancelLog,
 }: {
   task: TaskData; overlay?: boolean; laneName?: string;
   reviewersBySquad?: Record<string, Reviewer[]>;
@@ -131,6 +133,17 @@ function SortableCard({
   saving?: boolean;
   pointMappings?: PointMapping[];
   onTaskPointChange?: (taskId: string, point: number) => Promise<{ error: string | null }>;
+  logFormOpen?: boolean;
+  logNormalHours?: string;
+  logOtHours?: string;
+  logSaving?: boolean;
+  logError?: string;
+  onToggleLogForm?: (taskId: string) => void;
+  onQuickAdd?: (minutes: number) => void;
+  onNormalHoursChange?: (value: string) => void;
+  onOtHoursChange?: (value: string) => void;
+  onSubmitLog?: (taskId: string) => void;
+  onCancelLog?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id, disabled: saving || task.isCancelled });
@@ -193,6 +206,10 @@ function SortableCard({
   /* ── Point block / Burn bar (design handoff: Task Card Burn Bar) ── */
   const [pointSaving, setPointSaving] = useState(false);
   const [pointError,  setPointError]  = useState('');
+
+  /* ── Manual time-log button (design handoff: only usable in In Progress) ── */
+  const canLogTime = laneName === 'In Progress' && !overlay && !task.isCancelled;
+  const [showLogTooltip, setShowLogTooltip] = useState(false);
 
   async function handlePointSelect(e: React.ChangeEvent<HTMLSelectElement>) {
     const point = Number(e.target.value);
@@ -314,6 +331,99 @@ function SortableCard({
           )}
         </div>
       )}
+
+      {/* Manual time-log button (design handoff: only usable in In Progress) */}
+      {!overlay && !task.isCancelled && (
+        <div className="relative mt-2">
+          <button
+            type="button"
+            onClick={() => canLogTime ? onToggleLogForm?.(task.id) : setShowLogTooltip(true)}
+            onMouseEnter={() => { if (!canLogTime) setShowLogTooltip(true); }}
+            onMouseLeave={() => setShowLogTooltip(false)}
+            onFocus={() => { if (!canLogTime) setShowLogTooltip(true); }}
+            onBlur={() => setShowLogTooltip(false)}
+            onPointerDown={e => e.stopPropagation()}
+            aria-disabled={!canLogTime}
+            className={`w-full h-7 rounded-[3px] text-[11.5px] font-semibold flex items-center justify-center gap-[5px] transition-colors ${
+              canLogTime
+                ? 'bg-accent-bg text-accent border border-accent/35 hover:bg-accent/20 cursor-pointer'
+                : 'bg-surface-3 text-txt-muted border border-app-border cursor-not-allowed'
+            }`}
+          >
+            ⏱ ลงเวลา
+          </button>
+          {showLogTooltip && !canLogTime && (
+            <div className="pop-in absolute left-2.5 right-2.5 top-full mt-1.5 z-10 bg-surface-3 border border-app-border rounded px-2.5 py-[7px] text-[11px] leading-[1.4] text-txt-secondary shadow-[0_6px_18px_rgba(0,0,0,0.45)]">
+              ลงเวลาได้เฉพาะการ์ดในเลน <span className="text-accent font-semibold">In Progress</span> — ลากการ์ดนี้เข้า In Progress ก่อน
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline manual time-log form */}
+      {logFormOpen && canLogTime && (
+        <div
+          className="pop-in bg-surface-3 border border-app-border rounded p-2.5 flex flex-col gap-[9px] mt-2"
+          onClick={e => e.stopPropagation()}
+          onPointerDown={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11.5px] font-semibold text-txt-primary">ใช้เวลาไปเท่าไหร่</span>
+            <span className="font-mono text-[10.5px] text-txt-muted">
+              EST {task.estimatedHours !== null ? `${task.estimatedHours} ชม.` : '—'}
+            </span>
+          </div>
+          <div className="flex gap-[5px] flex-wrap">
+            {[{ min: 15, label: '+15 น.' }, { min: 30, label: '+30 น.' }, { min: 60, label: '+1 ชม.' }, { min: 120, label: '+2 ชม.' }].map(q => (
+              <button
+                key={q.min} type="button" onClick={() => onQuickAdd?.(q.min)}
+                className="h-[26px] px-[9px] rounded-[3px] font-mono text-[11px] font-semibold bg-accent-bg text-accent border border-accent/30 hover:bg-accent/20 transition-colors"
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-[10.5px] text-txt-secondary mb-1">ชั่วโมงปกติ</label>
+              <input
+                type="number" step="0.25" min="0" placeholder="0"
+                value={logNormalHours}
+                onChange={e => onNormalHoursChange?.(e.target.value)}
+                className="w-full h-7 bg-surface-2 border border-app-border rounded-[3px] font-mono text-xs px-2 text-txt-primary focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-[10.5px] text-txt-secondary mb-1">OT (ชม.)</label>
+              <input
+                type="number" step="0.25" min="0" placeholder="0"
+                value={logOtHours}
+                onChange={e => onOtHoursChange?.(e.target.value)}
+                className="w-full h-7 bg-surface-2 border border-app-border rounded-[3px] font-mono text-xs px-2 text-txt-primary focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+          <p className="font-mono text-[10.5px] text-txt-muted">
+            รวมหลังบันทึก {fmtHM(actMinutes + Math.round((parseFloat(logNormalHours) || 0) * 60) + Math.round((parseFloat(logOtHours) || 0) * 60))} / EST {fmtHM(estMinutes)}
+          </p>
+          {logError && <p className="text-[11.5px] text-danger">{logError}</p>}
+          <div className="flex gap-1.5">
+            <button
+              type="button" disabled={logSaving || !logNormalHours} onClick={() => onSubmitLog?.(task.id)}
+              className={`flex-1 h-7 bg-accent text-white rounded-[3px] text-[11.5px] font-semibold hover:bg-accent-hover disabled:opacity-50 transition-colors ${logSaving ? 'btn-loading' : ''}`}
+            >
+              บันทึก
+            </button>
+            <button
+              type="button" onClick={() => onCancelLog?.()}
+              className="px-[11px] h-7 border border-app-border text-txt-secondary bg-transparent rounded-[3px] text-[11.5px] hover:bg-surface-2 transition-colors"
+            >
+              ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+
       {task.isCancelled && task.cancelNote && (
         <div className="text-[10.5px] text-danger mt-1.5 leading-relaxed">
           🚫 ยกเลิก: {task.cancelNote} — ตัดออกจากโหลดแล้ว
@@ -418,6 +528,8 @@ function SortableFlaggedCard({
 function DroppableLaneCards({
   laneId, tasks, laneName, reviewersBySquad, onReviewerChange, onPrLinkSave, savingTaskIds,
   pointMappings, onTaskPointChange,
+  logFormTaskId, logNormalHours, logOtHours, logSaving, logError,
+  onToggleLogForm, onQuickAdd, onNormalHoursChange, onOtHoursChange, onSubmitLog, onCancelLog,
 }: {
   laneId: string; tasks: TaskData[]; laneName: string;
   reviewersBySquad: Record<string, Reviewer[]>;
@@ -426,6 +538,17 @@ function DroppableLaneCards({
   savingTaskIds: Set<string>;
   pointMappings: PointMapping[];
   onTaskPointChange: (taskId: string, point: number) => Promise<{ error: string | null }>;
+  logFormTaskId: string | null;
+  logNormalHours: string;
+  logOtHours: string;
+  logSaving: boolean;
+  logError: string;
+  onToggleLogForm: (taskId: string) => void;
+  onQuickAdd: (minutes: number) => void;
+  onNormalHoursChange: (value: string) => void;
+  onOtHoursChange: (value: string) => void;
+  onSubmitLog: (taskId: string) => void;
+  onCancelLog: () => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: laneId });
   return (
@@ -445,6 +568,17 @@ function DroppableLaneCards({
             saving={savingTaskIds.has(task.id)}
             pointMappings={pointMappings}
             onTaskPointChange={onTaskPointChange}
+            logFormOpen={logFormTaskId === task.id}
+            logNormalHours={logNormalHours}
+            logOtHours={logOtHours}
+            logSaving={logSaving}
+            logError={logError}
+            onToggleLogForm={onToggleLogForm}
+            onQuickAdd={onQuickAdd}
+            onNormalHoursChange={onNormalHoursChange}
+            onOtHoursChange={onOtHoursChange}
+            onSubmitLog={onSubmitLog}
+            onCancelLog={onCancelLog}
           />
         ))}
       </div>
@@ -614,6 +748,14 @@ export default function MyBoardClient({
   }
   const lanes = lanesRef.current;
 
+  // initialLanes only feeds useState/useRef on the very first mount — React ignores it on every
+  // later render, so edits made elsewhere (e.g. logging time on a task's detail page) never reached
+  // this board after navigating back, even once the server sent fresh data. Re-sync whenever the
+  // server actually gives us a new snapshot (mount, or any refetch of this route).
+  useEffect(() => {
+    setLanes(initialLanes);
+  }, [initialLanes]);
+
   const [activeTask, setActiveTask] = useState<TaskData | null>(null);
   const [activeLaneName, setActiveLaneName] = useState<string | undefined>(undefined);
   const [editMode,   setEditMode]   = useState(false);
@@ -720,8 +862,71 @@ export default function MyBoardClient({
   const [timeSaving,  setTimeSaving]  = useState(false);
   const [timeError,   setTimeError]   = useState('');
 
+  /* ── Manual time-log button (My Board card, In Progress only) ── */
+  const [logFormTaskId,  setLogFormTaskId]  = useState<string | null>(null);
+  const [logNormalHours, setLogNormalHours] = useState('');
+  const [logOtHours,     setLogOtHours]     = useState('');
+  const [logSaving,      setLogSaving]      = useState(false);
+  const [logError,       setLogError]       = useState('');
+
+  function openLogForm(taskId: string) {
+    setLogFormTaskId(prev => (prev === taskId ? null : taskId));
+    setLogNormalHours('');
+    setLogOtHours('');
+    setLogError('');
+  }
+  function closeLogForm() {
+    setLogFormTaskId(null);
+    setLogNormalHours('');
+    setLogOtHours('');
+    setLogError('');
+  }
+  function quickAddMinutes(minutes: number) {
+    setLogNormalHours(prev => {
+      const next = (Number(prev || '0') || 0) + minutes / 60;
+      return String(Math.round(next * 100) / 100);
+    });
+  }
+  async function submitLog(taskId: string) {
+    const n = parseFloat(logNormalHours);
+    if (!n || n <= 0) { setLogError('กรุณากรอกชั่วโมงที่ทำงาน'); return; }
+    setLogSaving(true);
+    setLogError('');
+    const otHrsVal = parseFloat(logOtHours) || 0;
+    const res = await fetch(`/api/tasks/${taskId}/timelog`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ normalHours: n, otHours: otHrsVal }),
+    });
+    if (res.ok) {
+      const addedNormalMin = Math.round(n * 60);
+      const addedOtMin     = Math.round(otHrsVal * 60);
+      setLanes(lanesRef.current.map(l => ({
+        ...l, tasks: l.tasks.map(t =>
+          t.id === taskId
+            ? { ...t, totalNormalMin: t.totalNormalMin + addedNormalMin, totalOtMin: t.totalOtMin + addedOtMin }
+            : t
+        ),
+      })));
+      closeLogForm();
+      showToast('success', `บันทึก ${fmtHM(addedNormalMin + addedOtMin)} ชม. แล้ว (MANUAL)`);
+    } else {
+      setLogError(await res.text());
+    }
+    setLogSaving(false);
+  }
+
+  /* ── Move-out-of-In-Progress confirm (drag away from the lane loses manual logging) ── */
+  type MoveOutOfProgressModalData = {
+    taskId: string; taskTitle: string; totalMinutes: number;
+    pendingLanes: LaneData[]; revertLanes: LaneData[];
+  };
+  const [moveOutOfProgressModal, setMoveOutOfProgressModal] = useState<MoveOutOfProgressModalData | null>(null);
+
   /* ── Pending reviews (I'm the reviewer) ── */
   const [pendingReviewsList, setPendingReviewsList] = useState<PendingReview[]>(initialPendingReviews);
+  useEffect(() => {
+    setPendingReviewsList(initialPendingReviews);
+  }, [initialPendingReviews]);
 
   /* ── Personal export ── */
   const [showExport,     setShowExport]     = useState(false);
@@ -929,6 +1134,22 @@ export default function MyBoardClient({
         if (AUTO_TIMER_ON_DRAG && srcName === 'To Do' && dstName === 'In Progress') {
           const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
           setStartTimerModal({ taskId: activeId, taskTitle: t.title, pendingLanes: current });
+          return;
+        }
+
+        // Leaving In Progress means the manual "⏱ ลงเวลา" button (In-Progress-only) goes away for
+        // this card — warn before it's too late. Review/Done already have their own dedicated gates
+        // right below (reviewer picker / forced time entry), so skip this generic warning for those
+        // destinations rather than stacking two confirm dialogs on the same drag. Card stays at its
+        // dragged-to position while the modal is open — same convention as openDoneTimeModal/
+        // reviewerModal below; only an explicit "ยกเลิก"/"ลงเวลาก่อน" reverts it.
+        if (srcName === 'In Progress' && dstName !== 'In Progress' && dstName !== 'Review' && dstName !== 'Done') {
+          const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
+          setMoveOutOfProgressModal({
+            taskId: activeId, taskTitle: t.title,
+            totalMinutes: t.totalNormalMin + t.totalOtMin,
+            pendingLanes: current, revertLanes: preDragRef.current,
+          });
           return;
         }
 
@@ -1498,6 +1719,17 @@ export default function MyBoardClient({
                 savingTaskIds={savingTaskIds}
                 pointMappings={pointMappings}
                 onTaskPointChange={handleTaskPointChange}
+                logFormTaskId={logFormTaskId}
+                logNormalHours={logNormalHours}
+                logOtHours={logOtHours}
+                logSaving={logSaving}
+                logError={logError}
+                onToggleLogForm={openLogForm}
+                onQuickAdd={quickAddMinutes}
+                onNormalHoursChange={setLogNormalHours}
+                onOtHoursChange={setLogOtHours}
+                onSubmitLog={submitLog}
+                onCancelLog={closeLogForm}
               />
               {lane.name === 'To Do' && (
                 <AddTaskForm laneId={lane.id} squadId={userSquadId} onCreated={t => onTaskCreated(lane.id, t)} />
@@ -1621,6 +1853,51 @@ export default function MyBoardClient({
               <button onClick={confirmStartTimer} disabled={startTimerSaving}
                 className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
                 {startTimerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: leaving In Progress (design handoff: manual time-log) ──── */}
+      {moveOutOfProgressModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6">
+          <div className="max-w-[360px] w-full bg-surface-1 border border-app-border rounded-md p-4 flex flex-col gap-2.5 shadow-[0_18px_48px_rgba(0,0,0,0.5)]">
+            <h3 className="text-[13px] font-bold text-txt-primary">ย้ายออกจาก In Progress?</h3>
+            <p className="text-xs leading-[1.5] text-txt-secondary">
+              การ์ด "{moveOutOfProgressModal.taskTitle}" ลงเวลาไว้ {fmtHM(moveOutOfProgressModal.totalMinutes)} ชม.
+              หลังย้ายออกจากเลนนี้จะลงเวลาเพิ่มไม่ได้
+            </p>
+            <div className="flex flex-col gap-1.5 mt-1">
+              <button
+                onClick={() => {
+                  const { taskId, revertLanes } = moveOutOfProgressModal;
+                  setLanes(revertLanes);
+                  setMoveOutOfProgressModal(null);
+                  openLogForm(taskId);
+                }}
+                className="h-[30px] bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium rounded-[3px] transition-colors"
+              >
+                ลงเวลาก่อน
+              </button>
+              <button
+                onClick={async () => {
+                  const { pendingLanes } = moveOutOfProgressModal;
+                  setMoveOutOfProgressModal(null);
+                  await saveOrder(pendingLanes);
+                }}
+                className="h-[30px] bg-warning-bg text-warning border border-warning/35 text-[12.5px] font-medium rounded-[3px] transition-colors"
+              >
+                ย้ายเลย
+              </button>
+              <button
+                onClick={() => {
+                  setLanes(moveOutOfProgressModal.revertLanes);
+                  setMoveOutOfProgressModal(null);
+                }}
+                className="h-[30px] border border-app-border text-txt-secondary text-[12.5px] rounded-[3px] hover:bg-surface-2 transition-colors"
+              >
+                ยกเลิก
               </button>
             </div>
           </div>

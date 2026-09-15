@@ -95,6 +95,12 @@ export default function RetroBoardClient({
   const [selectedId, setSelectedId]   = useState<string | null>(
     initRetros.find(r => r.status === 'OPEN')?.id ?? initRetros[0]?.id ?? null
   );
+  // initRetros only seeds useState on the very first mount — React ignores it on later renders,
+  // so a retro item added elsewhere (e.g. a task's "ส่งเข้า Retro") never showed up here after
+  // navigating back, even once the server sent a fresh list. Re-sync on every real refetch.
+  useEffect(() => {
+    setRetros(initRetros);
+  }, [initRetros]);
   const [creating, setCreating]       = useState(false);
   const [newTitle, setNewTitle]       = useState('');
   const [createSaving, setCreateSaving] = useState(false);
