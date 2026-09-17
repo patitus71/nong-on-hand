@@ -75,6 +75,29 @@ export default async function MyBoardPage() {
   ]);
   const effectiveCapacityHours = myOpenSprint?.capacityHours ?? mySquad?.capacityHours ?? null;
 
+  // Velocity history — PT ที่ปิดได้ (Done) ต่อ sprint ที่ปิดแล้ว ≥4 sprint ล่าสุดของ squad ตัวเอง
+  // (design handoff: Time & Velocity B4) — task ที่ done แล้วจะไม่ถูก carryOverUnfinishedTasks
+  // ย้าย sprintId อีก (ดู lib/sprint.ts) ดังนั้น sprintId เดิม + lane ชื่อ Done ยัง reconstruct
+  // ประวัติ velocity ได้แม่นยำ ต้อง query แยกเพราะ finishedInClosedSprintFilter() ด้านล่างตัด
+  // task พวกนี้ออกจาก my-board display โดยเจตนา
+  const closedSprints = user.squadId
+    ? await prisma.sprint.findMany({
+        where:  { squadId: user.squadId, status: 'CLOSED' },
+        orderBy: { closedAt: 'desc' },
+        take:    4,
+        select: {
+          id: true, name: true,
+          tasks: {
+            where:  { assigneeId: user.id, isCancelled: false, lane: { name: 'Done' } },
+            select: { taskPoint: true },
+          },
+        },
+      })
+    : [];
+  const velocityHistory = closedSprints
+    .map(s => ({ id: s.id, name: s.name, points: s.tasks.reduce((sum, t) => sum + (t.taskPoint ?? 0), 0) }))
+    .reverse();
+
   let board = await prisma.board.findFirst({
     where: { ownerId: user.id, type: 'PERSONAL' },
     include: {
@@ -297,6 +320,7 @@ export default async function MyBoardPage() {
         pendingReviews={pendingReviews}
         capacityHours={effectiveCapacityHours}
         squadName={mySquad?.name ?? null}
+        velocityHistory={velocityHistory}
       />
     </>
   );

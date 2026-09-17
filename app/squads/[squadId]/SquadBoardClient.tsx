@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { fmtHM, burnColorCls, initials, avatarColor } from '@/lib/ui';
+import {
+  fmtHM, burnColorCls, initials, avatarColor,
+  burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
+} from '@/lib/ui';
 
 type TaskCard = {
   id:                 string;
@@ -57,8 +60,8 @@ type Props = {
   squadDefaultCapacityHours: number;
 };
 
-type ClaimTarget = { taskId: string; taskTitle: string; taskPoint: number | null; estimatedHours: number | null; currentAssigneeId: string | null };
 type FlagTarget  = { taskId: string; taskTitle: string };
+type Toast       = { message: string; kind: 'ok' | 'warn' | 'neutral' };
 
 export default function SquadBoardClient({
   currentSquadId, currentSquadName, lanes, members, squads, userId, userName,
@@ -301,13 +304,23 @@ export default function SquadBoardClient({
   }
 
   const laneByName = new Map(lanes.map(l => [l.name, l.tasks]));
-  const poolTasks  = laneByName.get('To do list') ?? [];
+  // "กองกลาง" ต้องโชว์งานที่ยังไม่มีเจ้าของทุกใบไม่ว่าจะอยู่ bucket ไหน — ไม่ใช่แค่ 'To do list' —
+  // เพราะตอนนี้ unassign ได้จากการ์ดโดยตรง และงาน hasIssue=true จะยังอยู่ bucket 'มีปัญหา' เสมอ
+  // (computeSquadBoardStatus เช็ค hasIssue ก่อน lane เสมอ) ต่อให้ assignee เป็น null ก็ตาม —
+  // ถ้ายังกรองแค่ 'To do list' การ์ดพวกนี้จะหายไปเงียบๆ ทั้งที่ยังนับชั่วโมงใน "ยังไม่มีเจ้าของ" อยู่
+  const poolTasks: { task: TaskCard; laneName: string }[] = lanes.flatMap(l =>
+    l.tasks.filter(t => !t.assignee && !t.isCancelled).map(t => ({ task: t, laneName: l.name }))
+  );
 
   // นับเฉพาะการ์ดที่ตั้ง point แล้ว และไม่นับการ์ดที่ยกเลิก (Board Point Capacity spec)
   function laneSubtotal(cardTasks: TaskCard[]) {
     return cardTasks.reduce(
-      (acc, t) => t.isCancelled ? acc : { hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) },
-      { hours: 0, points: 0 }
+      (acc, t) => t.isCancelled ? acc : {
+        hours: acc.hours + (t.estimatedHours ?? 0),
+        points: acc.points + (t.taskPoint ?? 0),
+        spentMin: acc.spentMin + t.totalNormalMin + t.totalOtMin,
+      },
+      { hours: 0, points: 0, spentMin: 0 }
     );
   }
 
@@ -325,90 +338,103 @@ export default function SquadBoardClient({
     'มีปัญหา': 'rgb(var(--danger))', 'To do list': 'rgb(var(--text-muted))',
   };
 
-  // ── Card ⋯ menu ──────────────────────────────────────────────────────────────
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const closeAllMenus = useCallback(() => setOpenMenuId(null), []);
+  // ── Card ⋯ menu + assignee popover ──────────────────────────────────────────
+  const [openMenuId,     setOpenMenuId]     = useState<string | null>(null);
+  const [openAssigneeId, setOpenAssigneeId] = useState<string | null>(null);
+  const closeAllMenus = useCallback(() => { setOpenMenuId(null); setOpenAssigneeId(null); }, []);
   useEffect(() => {
     document.addEventListener('click', closeAllMenus);
-    return () => document.removeEventListener('click', closeAllMenus);
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeAllMenus(); };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('click', closeAllMenus);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [closeAllMenus]);
+
+  // ── Toast (assignee edit feedback) ──────────────────────────────────────────
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
+  function flashToast(message: string, kind: Toast['kind'] = 'ok') {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, kind });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2600);
+  }
 
   // ── Member load (Board Point Capacity) — สรุปโหลดรายคนจากงานทั้งหมดบนบอร์ดนี้ ──
   // (ทุกเลนรวม Done, ไม่นับการ์ดที่ยกเลิก) ใช้ทั้งแผงโหลดรวม squad และเช็คก่อน assign
   const allBoardTasks = lanes.flatMap(l => l.tasks);
-  const memberLoads = new Map<string, { hours: number; points: number; count: number; donePoints: number }>();
+  type MemberLoad = { hours: number; points: number; count: number; donePoints: number; spentMin: number; doneMin: number };
+  const memberLoads = new Map<string, MemberLoad>();
   for (const l of lanes) {
     for (const t of l.tasks) {
       if (t.isCancelled || !t.assignee) continue;
-      const cur = memberLoads.get(t.assignee.id) ?? { hours: 0, points: 0, count: 0, donePoints: 0 };
+      const cur = memberLoads.get(t.assignee.id) ?? { hours: 0, points: 0, count: 0, donePoints: 0, spentMin: 0, doneMin: 0 };
+      const taskSpentMin = t.totalNormalMin + t.totalOtMin;
       cur.hours += t.estimatedHours ?? 0;
       cur.points += t.taskPoint ?? 0;
       cur.count += 1;
-      if (l.name === 'Done') cur.donePoints += t.taskPoint ?? 0;
+      cur.spentMin += taskSpentMin;
+      if (l.name === 'Done') { cur.donePoints += t.taskPoint ?? 0; cur.doneMin += taskSpentMin; }
       memberLoads.set(t.assignee.id, cur);
     }
   }
   const unassignedTasks = allBoardTasks.filter(t => !t.assignee && !t.isCancelled);
   const unassignedLoad = unassignedTasks.reduce(
-    (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) }),
-    { hours: 0, points: 0 }
+    (acc, t) => ({
+      hours: acc.hours + (t.estimatedHours ?? 0),
+      points: acc.points + (t.taskPoint ?? 0),
+      spentMin: acc.spentMin + t.totalNormalMin + t.totalOtMin,
+    }),
+    { hours: 0, points: 0, spentMin: 0 }
   );
   const unassignedNoPointCount = unassignedTasks.filter(t => t.taskPoint === null).length;
 
-  // ── Claim (assign) ───────────────────────────────────────────────────────────
-  const [claimTarget, setClaimTarget] = useState<ClaimTarget | null>(null);
-  const [assigneeId,  setAssigneeId]  = useState(userId);
-  const [claiming,    setClaiming]    = useState(false);
-  const [claimError,  setClaimError]  = useState('');
-  const [claimOverConfirm, setClaimOverConfirm] = useState(false);
+  // ── Edit assignee (avatar button + popover on the card) ─────────────────────
+  // กฎ: แก้ได้เฉพาะ lead (canAssign — ADMIN/QA_LEAD ในสควอด/floating pool member), ห้ามแก้ถ้า
+  // งานอยู่คอลัมน์ Done, ห้ามแก้งานที่ถูกยกเลิก, ห้ามแก้ตอน sprint ปิด (readonly) — เช็คซ้ำที่ backend เสมอ
+  const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null);
 
-  function openClaim(task: TaskCard) {
-    setClaimTarget({
-      taskId: task.id, taskTitle: task.title,
-      taskPoint: task.taskPoint, estimatedHours: task.estimatedHours,
-      currentAssigneeId: task.assignee?.id ?? null,
-    });
-    // Default to the current user only if they're actually a selectable member (e.g. a squad
-    // engineer claiming their own work) — for ADMIN or anyone else not in `members`, that id
-    // isn't among the <select>'s <option>s, so the browser silently shows the first member
-    // instead while `assigneeId` state stays stuck on the invalid default. Submitting then sends
-    // that stale id and the server rejects it as "Invalid assignee", even though the dropdown
-    // visually shows someone else selected. Fall back to the first real member instead.
-    const isCurrentUserSelectable = members.some(m => m.id === userId);
-    setAssigneeId(task.assignee?.id ?? (isCurrentUserSelectable ? userId : (members[0]?.id ?? '')));
-    setClaimError('');
-    setClaimOverConfirm(false);
+  function avatarDisabledReason(t: TaskCard, laneName: string): string | null {
+    if (!canAssign) return 'ต้องเป็น lead';
+    if (isReadonly) return 'Sprint นี้ปิดแล้ว แก้ไม่ได้';
+    if (t.isCancelled) return 'งานนี้ถูกยกเลิกแล้ว แก้เจ้าของไม่ได้';
+    if (laneName === 'Done') return 'งาน Done แล้ว แก้ไม่ได้';
+    return null;
   }
 
-  // โหลดของผู้รับผิดชอบใหม่ถ้ายืนยัน (ของเดิม + ชม.ของงานนี้ ถ้าเปลี่ยนคนจากเดิม)
-  const claimTargetNewLoad = claimTarget && claimTarget.currentAssigneeId !== assigneeId
-    ? (memberLoads.get(assigneeId)?.hours ?? 0) + (claimTarget.estimatedHours ?? 0)
-    : (memberLoads.get(assigneeId)?.hours ?? 0);
-  const claimWillExceedCapacity = claimTarget !== null && claimTargetNewLoad > capacityHours;
+  function handleAvatarClick(t: TaskCard, laneName: string) {
+    const reason = avatarDisabledReason(t, laneName);
+    if (reason) { flashToast(reason, 'warn'); return; }
+    setOpenMenuId(null);
+    setOpenAssigneeId(id => id === t.id ? null : t.id);
+  }
 
-  async function submitClaim() {
-    if (!claimTarget) return;
-    if (claimTarget.taskPoint === null) {
-      setClaimError('งานนี้ยังไม่ตั้ง Task Point — ต้องตั้ง point ก่อนถึงจะ assign ได้');
+  async function submitAssign(t: TaskCard, newId: string | null, newName: string | null) {
+    if (newId && t.taskPoint === null) {
+      flashToast('งานนี้ยังไม่ตั้ง Task Point — ต้องตั้ง point ก่อนถึงจะ assign ได้', 'warn');
       return;
     }
-    if (claimWillExceedCapacity && !claimOverConfirm) {
-      setClaimOverConfirm(true);
-      return;
-    }
-    setClaiming(true);
-    setClaimError('');
+    setOpenAssigneeId(null);
+    setAssigningTaskId(t.id);
     try {
-      const res = await fetch(`/api/tasks/${claimTarget.taskId}/claim`, {
+      const res = await fetch(`/api/tasks/${t.id}/claim`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ assigneeId }),
+        body:    JSON.stringify({ assigneeId: newId }),
       });
-      if (!res.ok) { setClaimError(await res.text() || 'เกิดข้อผิดพลาด'); return; }
-      setClaimTarget(null);
+      if (!res.ok) {
+        flashToast((await res.text()) || 'เกิดข้อผิดพลาด', 'warn');
+        return;
+      }
+      flashToast(
+        newId ? `มอบ "${t.title.slice(0, 34)}" ให้ ${newName}` : `เอา "${t.title.slice(0, 34)}" ออกจากเจ้าของแล้ว`,
+        newId ? 'ok' : 'neutral',
+      );
       router.refresh();
     } finally {
-      setClaiming(false);
+      setAssigningTaskId(null);
     }
   }
 
@@ -576,6 +602,99 @@ export default function SquadBoardClient({
               {t.title}
             </Link>
 
+            {!t.isCancelled && (() => {
+              const assigneeOpen   = openAssigneeId === t.id;
+              const disabledReason = avatarDisabledReason(t, laneName);
+              const isDisabled     = disabledReason !== null;
+              const isSubmitting   = assigningTaskId === t.id;
+              return (
+                <div className="relative flex-shrink-0">
+                  <button
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={assigneeOpen}
+                    aria-disabled={isDisabled}
+                    aria-label={`แก้ผู้รับผิดชอบ: ${t.title}`}
+                    title={disabledReason ?? 'แก้ assignee'}
+                    onClick={e => {
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
+                      handleAvatarClick(t, laneName);
+                    }}
+                    className={`w-[26px] h-[26px] rounded-full text-[10.5px] font-bold flex items-center justify-center transition-[filter] ${
+                      isDisabled ? 'opacity-55 cursor-not-allowed' : 'cursor-pointer hover:brightness-110'
+                    } ${isSubmitting ? 'btn-loading' : ''}`}
+                    style={t.assignee ? {
+                      background: av!.bg, color: av!.fg,
+                      border: assigneeOpen ? '2px solid rgb(var(--text-primary))' : '2px solid transparent',
+                    } : {
+                      background: 'rgb(var(--surface-3))', color: 'rgb(var(--text-muted))',
+                      borderWidth: 1, borderStyle: 'dashed',
+                      borderColor: isDisabled ? 'rgb(var(--border))' : 'rgb(var(--text-muted))',
+                    }}
+                  >
+                    {t.assignee ? initials(t.assignee.name) : '+'}
+                  </button>
+
+                  {assigneeOpen && (
+                    <div
+                      role="menu"
+                      aria-label="มอบหมายให้"
+                      onClick={e => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                      className="pop-in absolute top-full mt-1.5 right-0 z-30 w-[216px] p-1.5 bg-surface-2 border border-app-border rounded-[10px] shadow-2xl"
+                    >
+                      <div className="px-2 pt-1 pb-1.5 text-[10.5px] uppercase tracking-[.1em] text-txt-muted">มอบหมายให้</div>
+                      {members.filter(m => !m.external).map(m => {
+                        const isCurrent = t.assignee?.id === m.id;
+                        const mav       = avatarColor(m.name);
+                        const mHours    = memberLoads.get(m.id)?.hours ?? 0;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={isCurrent}
+                            disabled={isSubmitting}
+                            onClick={() => submitAssign(t, m.id, m.name)}
+                            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-[7px] text-[13px] text-txt-primary text-left transition-colors disabled:opacity-60 ${
+                              isCurrent ? 'bg-surface-3' : 'hover:bg-surface-3'
+                            }`}
+                          >
+                            <span
+                              className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0"
+                              style={{ background: mav.bg, color: mav.fg }}
+                            >
+                              {initials(m.name)}
+                            </span>
+                            <span className="flex-1 truncate">{m.name}</span>
+                            <span className="font-mono text-[11px] text-txt-muted flex-shrink-0">{mHours}/{capacityHours} ชม.</span>
+                            {isCurrent && <span className="text-success text-[13px] flex-shrink-0">✓</span>}
+                          </button>
+                        );
+                      })}
+                      {t.assignee && (
+                        <>
+                          <div className="h-px my-1.5 mx-1 bg-app-border" />
+                          <button
+                            type="button"
+                            role="menuitem"
+                            disabled={isSubmitting}
+                            onClick={() => submitAssign(t, null, null)}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[7px] text-[13px] text-danger text-left hover:bg-danger-bg transition-colors disabled:opacity-60"
+                          >
+                            <span className="w-[22px] h-[22px] rounded-full border border-dashed border-txt-muted flex items-center justify-center text-[12px] text-txt-muted flex-shrink-0">
+                              −
+                            </span>
+                            <span className="flex-1">เอาออก / ยังไม่มีเจ้าของ</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ⋯ menu button — ADMIN/QA_LEAD เท่านั้น, ปิดถ้า sprint นี้ปิดแล้ว (view-only) */}
             {canAssign && !isReadonly && (
               <button
@@ -591,7 +710,7 @@ export default function SquadBoardClient({
             )}
           </div>
 
-          {/* Meta row: point chip + estimate + avatar */}
+          {/* Meta row: point chip + estimate + assignee name */}
           {!t.isCancelled && (
             <div className="flex items-center gap-1.5 mb-2">
               <div onClick={e => e.stopPropagation()}>
@@ -608,18 +727,12 @@ export default function SquadBoardClient({
                 </select>
               </div>
               <span className="font-mono text-[10.5px] text-txt-secondary flex-shrink-0">
-                {t.taskPoint !== null && t.estimatedHours !== null ? `${t.estimatedHours} ชม.` : 'ยังไม่ตั้ง estimate'}
+                {t.taskPoint !== null && t.estimatedHours !== null ? `EST ${t.estimatedHours} ชม.` : 'ยังไม่ตั้ง estimate'}
               </span>
               {cardPointError && <span className="text-[9px] text-danger flex-shrink-0">พลาด</span>}
-              {av && t.assignee && (
-                <div
-                  className="ml-auto w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0"
-                  style={{ background: av.bg, color: av.fg }}
-                  title={t.assignee.name}
-                >
-                  {initials(t.assignee.name)}
-                </div>
-              )}
+              <span className="ml-auto text-[11px] text-txt-muted truncate max-w-[92px]" title={t.assignee?.name ?? 'ยังไม่มีเจ้าของ'}>
+                {t.assignee ? t.assignee.name : 'ยังไม่มีเจ้าของ'}
+              </span>
             </div>
           )}
 
@@ -697,6 +810,9 @@ export default function SquadBoardClient({
                   />
                 </div>
               )}
+              <div className={`font-mono text-[10.5px] ${burnSummaryColorCls(actMinutes, t.estimatedHours)}`}>
+                {burnSummaryText(actMinutes, t.estimatedHours)}
+              </div>
             </div>
           )}
 
@@ -718,15 +834,6 @@ export default function SquadBoardClient({
             </div>
           )}
 
-          {/* Claim button */}
-          {canAssign && members.length > 0 && !isReadonly && (
-            <button
-              onClick={() => openClaim(t)}
-              className="mt-2 w-full text-[11.5px] px-2 py-1 rounded-[3px] border border-app-border text-txt-muted hover:border-accent hover:text-accent transition-colors"
-            >
-              + เพิ่มเข้าบอร์ดของฉัน
-            </button>
-          )}
         </div>
 
         {/* Card ⋯ dropdown */}
@@ -875,12 +982,21 @@ export default function SquadBoardClient({
               underMembers.length > 0 ? ` ส่วน ${underMembers.map(m => m.name).join(', ')} ยังรับได้อีก` : ''
             }`
           : `เกลี่ยงานให้แต่ละคนไม่เกิน ${capacityHours} ชม./sprint`;
+
+        // เวลาที่ใช้จริงรวมทั้งบอร์ด (ทุกคน + กองกลาง) และ velocity ของ squad — derive จาก
+        // timeLogs ที่มากับ task ทุกใบอยู่แล้ว ไม่ query เพิ่ม (design handoff: Time & Velocity B1)
+        const squadTotalSpentMin = members.reduce((s, m) => s + (memberLoads.get(m.id)?.spentMin ?? 0), 0) + unassignedLoad.spentMin;
+        const squadDoneMin       = members.reduce((s, m) => s + (memberLoads.get(m.id)?.doneMin ?? 0), 0);
+        const squadEstPct        = squadTotalHours > 0 ? Math.round((squadTotalSpentMin / 60 / squadTotalHours) * 100) : null;
+        const squadRemainMin     = Math.max(0, squadTotalHours * 60 - squadTotalSpentMin);
+        const squadHoursPerPoint = squadDonePoints > 0 ? squadDoneMin / 60 / squadDonePoints : null;
+
         return (
           <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 mb-4 flex flex-col gap-3.5">
-            <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div className="flex flex-wrap items-end gap-7">
               <div className="flex flex-col gap-0.5 flex-shrink-0">
                 <div className="flex items-center gap-2">
-                  <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">โหลดรวมของ SQUAD</div>
+                  <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">โหลดตามแผน (EST)</div>
                   {canManageSprint && activeSprint && !isReadonly && (
                     editingSprintCap ? (
                       <div className="flex items-center gap-1">
@@ -911,25 +1027,52 @@ export default function SquadBoardClient({
                   )}
                 </div>
                 <div className="flex items-baseline gap-2 whitespace-nowrap">
-                  <div className="font-mono text-[24px] font-semibold text-txt-primary leading-none">{squadTotalHours}</div>
-                  <div className="text-[13px] text-txt-secondary">/ {squadCap} ชม. · {members.length} คน · {squadTotalPoints} point · <span className="text-success">เสร็จแล้ว {squadDonePoints} PT</span></div>
+                  <div className="font-mono text-[26px] font-bold text-txt-primary leading-none">{squadTotalHours}</div>
+                  <div className="text-[13px] text-txt-secondary">/ {squadCap} ชม. · {members.length} คน · {squadTotalPoints} PT</div>
                 </div>
               </div>
-              <p className="text-[12px] text-txt-secondary leading-relaxed max-w-[420px]">{summarySentence}</p>
+
+              <div className="w-px self-stretch bg-app-border" />
+
+              <div className="flex flex-col gap-0.5 flex-shrink-0">
+                <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">เวลาที่ใช้จริง</div>
+                <div className="flex items-baseline gap-2 whitespace-nowrap">
+                  <div className="font-mono text-[26px] font-bold text-success leading-none">{fmtHM(squadTotalSpentMin)}</div>
+                  <div className="text-[13px] text-txt-secondary">
+                    {squadEstPct !== null ? `= ${squadEstPct}% ของ EST · เหลือ ${fmtHM(squadRemainMin)}` : 'ยังไม่มี EST'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="w-px self-stretch bg-app-border" />
+
+              <div className="flex flex-col gap-0.5 flex-shrink-0">
+                <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">Velocity ของ squad</div>
+                <div className="flex items-baseline gap-2 whitespace-nowrap">
+                  <div className="font-mono text-[26px] font-bold text-accent leading-none">{squadDonePoints}</div>
+                  <div className="text-[13px] text-txt-secondary">
+                    PT เสร็จ · {squadHoursPerPoint !== null ? `${squadHoursPerPoint.toFixed(1)} ชม./PT` : 'ยังไม่มีงานเสร็จ'}
+                  </div>
+                </div>
+              </div>
             </div>
+            <p className="text-[12px] text-txt-secondary leading-relaxed">{summarySentence}</p>
 
             <div className="flex gap-2.5 flex-wrap">
               {members.map(m => {
-                const load = memberLoads.get(m.id) ?? { hours: 0, points: 0, count: 0, donePoints: 0 };
+                const load = memberLoads.get(m.id) ?? { hours: 0, points: 0, count: 0, donePoints: 0, spentMin: 0, doneMin: 0 };
                 const ratio = capacityHours > 0 ? load.hours / capacityHours : 0;
+                const spentRatio = capacityHours > 0 ? (load.spentMin / 60) / capacityHours : 0;
                 const over  = load.hours > capacityHours;
                 const near  = !over && ratio >= 0.9;
                 const barColor = over ? 'bg-danger' : near ? 'bg-accent' : 'bg-success';
                 const statusText = over ? `เกินเป้า ${load.hours - capacityHours} ชม.` : near ? 'ใกล้เต็มโควตา' : load.hours === capacityHours ? 'เต็มพอดี' : `รับได้อีก ${capacityHours - load.hours} ชม.`;
                 const statusColor = over ? 'text-danger' : near ? 'text-accent' : 'text-success';
                 const av = avatarColor(m.name);
+                const pctOfPlan = load.hours > 0 ? Math.round((load.spentMin / 60 / load.hours) * 100) : null;
+                const hoursPerPoint = load.donePoints > 0 ? load.doneMin / 60 / load.donePoints : null;
                 return (
-                  <div key={m.id} className={`bg-surface-2 border rounded-[10px] px-3 py-2.5 w-[210px] flex flex-col gap-2 ${over ? 'border-danger/45' : 'border-app-border'}`}>
+                  <div key={m.id} className={`bg-surface-2 border rounded-[10px] px-3 py-2.5 w-[236px] flex flex-col gap-2 ${over ? 'border-danger/45' : 'border-app-border'}`}>
                     <div className="flex items-center gap-1.5">
                       <div className="w-5 h-5 rounded-full text-[9.5px] font-semibold flex items-center justify-center flex-shrink-0" style={{ background: av.bg, color: av.fg }}>
                         {initials(m.name)}
@@ -937,16 +1080,33 @@ export default function SquadBoardClient({
                       <span className="text-[12.5px] text-txt-primary truncate">{m.name}</span>
                       <span className={`ml-auto font-mono text-[11.5px] font-semibold flex-shrink-0 ${over ? 'text-danger' : 'text-txt-primary'}`}>{load.hours} / {capacityHours}</span>
                     </div>
-                    <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
-                      <div className={`h-full ${barColor}`} style={{ width: `${Math.min(ratio, 1) * 100}%` }} />
+                    {/* progress 2 ชั้น — ชั้นหลัง (จาง) = EST, ชั้นหน้า (ทึบ) = spent จริง ทั้งคู่เทียบกับโควตา */}
+                    <div className="relative h-[7px] rounded-full bg-surface-3 overflow-hidden">
+                      <div className="absolute inset-y-0 left-0 opacity-30" style={{ width: `${Math.min(ratio, 1) * 100}%`, background: av.fg }} />
+                      <div className={`absolute inset-y-0 left-0 ${barColor}`} style={{ width: `${Math.min(spentRatio, 1) * 100}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between font-mono text-[10.5px]">
+                      <span className="text-txt-primary font-semibold">ใช้จริง {fmtHM(load.spentMin)}</span>
+                      <span className="text-txt-muted">EST {load.hours} ชม.</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1 bg-[rgb(var(--surface-1))] rounded-[7px] px-2 py-1.5">
+                        <div className="text-[10.5px] uppercase tracking-[.04em] text-txt-muted mb-0.5">velocity</div>
+                        <div className="font-mono text-[15px] font-bold text-accent">{load.donePoints} <span className="text-[10.5px] font-normal text-txt-muted">PT เสร็จ</span></div>
+                      </div>
+                      <div className="flex-1 bg-[rgb(var(--surface-1))] rounded-[7px] px-2 py-1.5">
+                        <div className="text-[10.5px] uppercase tracking-[.04em] text-txt-muted mb-0.5">ชม./PT</div>
+                        {hoursPerPoint !== null ? (
+                          <div className={`font-mono text-[15px] font-bold ${hoursPerPointColorCls(hoursPerPoint)}`}>{hoursPerPoint.toFixed(1)}</div>
+                        ) : (
+                          <div className="text-[10.5px] text-txt-muted">ยังไม่มีงานเสร็จ</div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between text-[10.5px] text-txt-muted">
-                      <span>{load.points} PT · {load.count} งาน</span>
-                      <span className={statusColor}>{statusText}</span>
+                      <span>{load.count} งาน · {load.points} PT{pctOfPlan !== null ? ` · ใช้จริง ${pctOfPlan}% ของแผน` : ''}</span>
                     </div>
-                    {load.donePoints > 0 && (
-                      <div className="text-[10.5px] text-success">✓ เสร็จแล้ว {load.donePoints} PT</div>
-                    )}
+                    <div className={`text-[10.5px] ${statusColor}`}>{statusText}</div>
                   </div>
                 );
               })}
@@ -961,6 +1121,9 @@ export default function SquadBoardClient({
                   {unassignedNoPointCount > 0 && (
                     <div className="text-[10.5px] text-txt-muted leading-relaxed">{unassignedNoPointCount} งานยังไม่ตั้ง point</div>
                   )}
+                  <div className="text-[10.5px] text-txt-muted">
+                    {unassignedLoad.spentMin > 0 ? `ใช้จริง ${fmtHM(unassignedLoad.spentMin)}` : 'ยังไม่มีใครลงเวลา'}
+                  </div>
                 </div>
               )}
             </div>
@@ -981,12 +1144,20 @@ export default function SquadBoardClient({
               {STATUS_COLS.map(col => {
                 const sub = laneSubtotal(laneByName.get(col.key) ?? []);
                 return (
-                  <span key={col.key} className={`text-[11.5px] font-semibold flex items-center justify-between gap-1.5 ${col.color}`}>
-                    <span className="flex items-center gap-1.5"><span>{col.glyph}</span>{col.label}</span>
-                    {(sub.hours > 0 || sub.points > 0) && (
-                      <span className="font-mono text-[10.5px] font-normal text-txt-secondary whitespace-nowrap">{sub.points} PT · {sub.hours} ชม.</span>
+                  <div key={col.key} className="flex flex-col gap-1">
+                    <span className={`text-[11.5px] font-semibold flex items-center justify-between gap-1.5 ${col.color}`}>
+                      <span className="flex items-center gap-1.5"><span>{col.glyph}</span>{col.label}</span>
+                      {sub.points > 0 && (
+                        <span className="font-mono text-[10.5px] font-normal text-txt-muted whitespace-nowrap">{sub.points} PT</span>
+                      )}
+                    </span>
+                    {(sub.hours > 0 || sub.spentMin > 0) && (
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10.5px] px-1.5 py-[1px] rounded-[5px] bg-surface-1 text-txt-muted whitespace-nowrap">EST {sub.hours} ชม.</span>
+                        <span className="font-mono text-[10.5px] px-1.5 py-[1px] rounded-[5px] bg-success-bg text-success whitespace-nowrap">ใช้จริง {fmtHM(sub.spentMin)}</span>
+                      </span>
                     )}
-                  </span>
+                  </div>
                 );
               })}
 
@@ -1029,16 +1200,16 @@ export default function SquadBoardClient({
               <span className="font-mono text-[11px] text-txt-secondary">{unassignedLoad.points} PT · {unassignedLoad.hours} ชม.</span>
             )}
             {canAssign && poolTasks.length > 0 && (
-              <span className="ml-auto text-[11.5px] text-txt-muted">assign ให้สมาชิกได้จากปุ่ม &ldquo;+ เพิ่มเข้าบอร์ดของฉัน&rdquo; บนการ์ด</span>
+              <span className="ml-auto text-[11.5px] text-txt-muted">assign ให้สมาชิกได้จากปุ่ม avatar บนการ์ด</span>
             )}
           </div>
           <div className="flex gap-2.5 flex-wrap">
             {poolTasks.length === 0 && (
               <span className="text-[12px] text-txt-muted py-1">ไม่มีงานรอ assign</span>
             )}
-            {poolTasks.map(t => (
-              <div key={t.id} className="flex-[0_0_250px]">
-                {renderCard(t, 'To do list')}
+            {poolTasks.map(({ task, laneName }) => (
+              <div key={task.id} className="flex-[0_0_250px]">
+                {renderCard(task, laneName)}
               </div>
             ))}
           </div>
@@ -1207,61 +1378,13 @@ export default function SquadBoardClient({
         </div>
       )}
 
-      {/* ── Claim dialog ── */}
-      {claimTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[340px] shadow-xl">
-            <h2 className="text-[15px] font-semibold text-txt-primary mb-1">เพิ่มเข้าบอร์ดของฉัน</h2>
-            <p className="text-[12px] text-txt-muted mb-4 leading-relaxed">
-              งานจะเข้าเลน <span className="text-accent font-medium">To do</span> ในบอร์ดของผู้รับผิดชอบ
-              — ให้ผู้รับผิดชอบเลื่อนไป In Progress เองเมื่อพร้อมทำ
-            </p>
-            <p className="text-[12px] text-txt-secondary mb-1 font-medium truncate" title={claimTarget.taskTitle}>
-              {claimTarget.taskTitle}
-            </p>
-
-            <label className="block text-[12px] text-txt-muted mt-3 mb-1">ผู้รับผิดชอบ</label>
-            <select
-              value={assigneeId}
-              onChange={e => { setAssigneeId(e.target.value); setClaimOverConfirm(false); setClaimError(''); }}
-              className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent"
-            >
-              {members.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.name}{m.id === userId ? ' (ฉัน)' : ''}
-                </option>
-              ))}
-            </select>
-
-            {claimTarget?.taskPoint === null && (
-              <p className="text-[12px] text-warning mt-2">⚠ งานนี้ยังไม่ตั้ง Task Point — ต้องตั้ง point ก่อนถึงจะ assign ได้ (แก้ที่การ์ดได้เลย)</p>
-            )}
-            {claimTarget?.taskPoint !== null && claimOverConfirm && (
-              <p className="text-[12px] text-danger mt-2">
-                ⚠ assign แล้ว {members.find(m => m.id === assigneeId)?.name} จะมีโหลด {claimTargetNewLoad} ชม. เกินเป้า {capacityHours} ชม. — ยืนยันต่อไหม?
-              </p>
-            )}
-            {claimError && <p className="text-[12px] text-danger mt-2">{claimError}</p>}
-
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={submitClaim}
-                disabled={claiming || claimTarget?.taskPoint === null}
-                className={`flex-1 text-white text-[13px] py-2 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${claiming ? 'btn-loading' : ''} ${
-                  claimOverConfirm ? 'bg-danger hover:bg-danger/85' : 'bg-accent hover:bg-accent-hover'
-                }`}
-              >
-                {claimOverConfirm ? 'ยืนยันต่อ (เกินโควตา)' : 'ยืนยัน'}
-              </button>
-              <button
-                onClick={() => setClaimTarget(null)}
-                disabled={claiming}
-                className="px-4 py-2 text-[13px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
-              >
-                ยกเลิก
-              </button>
-            </div>
-          </div>
+      {/* ── Assignee-edit toast ── */}
+      {toast && (
+        <div className="pop-in fixed left-1/2 bottom-7 -translate-x-1/2 z-[60] flex items-center gap-2.5 px-4 py-3 bg-surface-2 border border-app-border rounded-[10px] shadow-2xl text-[13.5px] text-txt-primary">
+          <span className={toast.kind === 'warn' ? 'text-warning' : toast.kind === 'neutral' ? 'text-txt-muted' : 'text-success'}>
+            {toast.kind === 'warn' ? '⚠' : toast.kind === 'neutral' ? '−' : '✓'}
+          </span>
+          <span>{toast.message}</span>
         </div>
       )}
 

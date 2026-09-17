@@ -3,36 +3,53 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ensureSquadBoard } from '@/lib/squadBoard';
 import { canAssignTaskOnSquadBoard, type SessionUser } from '@/lib/rbac';
-import { canAssignTaskTo } from '@/lib/importTasks';
+import { canAssignTaskTo, computeSquadBoardStatus } from '@/lib/importTasks';
 
 export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser & { name: string };
 
-  const { assigneeId } = await req.json();
-  if (!assigneeId) return new Response('assigneeId required', { status: 400 });
+  const body = await req.json();
+  // assigneeId: string = assign/reassign · null = unassign (แก้ assignee จากการ์ด Squad Board)
+  const assigneeId: string | null = body.assigneeId ?? null;
 
   const task = await prisma.task.findUnique({
     where: { id: params.taskId },
-    select: { id: true, squadId: true, laneId: true, isCancelled: true },
+    select: {
+      id: true, squadId: true, laneId: true, isCancelled: true, hasIssue: true, assigneeId: true,
+      lane: { select: { name: true } },
+    },
   });
   if (!task) return new Response('Not Found', { status: 404 });
   if (!task.squadId) return new Response('Task has no squad', { status: 400 });
-  if (task.isCancelled) return new Response('งานนี้ถูกยกเลิกแล้ว claim ต่อไม่ได้อีก', { status: 403 });
+  if (task.isCancelled) return new Response('งานนี้ถูกยกเลิกแล้ว แก้เจ้าของไม่ได้', { status: 403 });
   if (!canAssignTaskOnSquadBoard(user, task.squadId)) {
     return new Response('Forbidden', { status: 403 });
   }
-
-  const assignee = await prisma.user.findUnique({
-    where: { id: assigneeId },
-    select: { role: true, squadId: true },
-  });
-  if (!assignee || !canAssignTaskTo(user, assignee)) {
-    return new Response('Invalid assignee', { status: 400 });
+  // ห้ามแก้ assignee ถ้างานอยู่คอลัมน์ Done — เช็คด้วย bucket ที่ derive จริง (ไม่ใช่ชื่อ lane
+  // ตรงๆ) เพราะ hasIssue=true ชนะเสมอ (การ์ดในเลน Done ที่ hasIssue=true จะยังอยู่บัคเก็ต
+  // "มีปัญหา" ซึ่งแก้ไขได้ตามสเปค) และ task ของ squad นี้อาจอยู่ในเลน "Done" บน personal board
+  // ของ user คนอื่นก็ได้ (ไม่ใช่แค่ SQUAD board) — computeSquadBoardStatus ครอบคลุมทั้งสองเคส
+  if (computeSquadBoardStatus(task) === 'Done') {
+    return new Response('งานนี้ Done แล้ว แก้เจ้าของไม่ได้', { status: 403 });
   }
 
-  // Find "To do" lane in the squad's SQUAD board — auto-create board if it doesn't exist yet
+  if (assigneeId) {
+    const assignee = await prisma.user.findUnique({
+      where: { id: assigneeId },
+      select: { role: true, squadId: true },
+    });
+    if (!assignee || !canAssignTaskTo(user, assignee)) {
+      return new Response('Invalid assignee', { status: 400 });
+    }
+  }
+
+  // Find "To do" lane in the squad's SQUAD board — auto-create board if it doesn't exist yet.
+  // ทั้ง assign/reassign และ unassign ย้ายมาเลนนี้เสมอ (reset ความคืบหน้า) — assign แบบเดิม
+  // ทำแบบนี้อยู่แล้ว (ให้ผู้รับผิดชอบเลื่อนเข้า In Progress เอง) ส่วน unassign ก็ต้องมาเลนนี้ด้วย
+  // ไม่งั้นการ์ดที่เคยอยู่เลน "review"/"in progress" ของ personal board คนเดิมจะหายไปจากทุกที่บน
+  // Squad Board ทันทีที่ assignee เป็น null (ไม่โผล่ทั้งในแถวสมาชิกและกองกลาง)
   let todoLane = await prisma.lane.findFirst({
     where: {
       name: { in: ['To do', 'To Do'] },
@@ -56,19 +73,21 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
     data: {
       assigneeId,
       laneId: todoLane.id,
-      ...(!task.laneId ? { pulledIntoBoardAt: new Date() } : {}),
+      ...(!task.laneId && assigneeId ? { pulledIntoBoardAt: new Date() } : {}),
     },
   });
 
-  // สร้าง in-app notification สำหรับ assignee — ไม่ส่ง LINE message ตอน assign แล้ว
-  // (เก็บเฉพาะ Standup/EOD/End-of-sprint บน LINE เพื่อไม่ให้เปลือง quota)
-  void prisma.notification.create({
-    data: {
-      userId:        assigneeId,
-      message:       `งาน "${updated.title}" ถูกมอบหมายให้คุณ`,
-      relatedTaskId: updated.id,
-    },
-  }).catch(err => console.error('[claim] notification create error:', err));
+  // สร้าง in-app notification สำหรับ assignee ใหม่เท่านั้น — ไม่ส่ง LINE message ตอน assign แล้ว
+  // (เก็บเฉพาะ Standup/EOD/End-of-sprint บน LINE เพื่อไม่ให้เปลือง quota) ไม่ต้องแจ้งตอน unassign
+  if (assigneeId) {
+    void prisma.notification.create({
+      data: {
+        userId:        assigneeId,
+        message:       `งาน "${updated.title}" ถูกมอบหมายให้คุณ`,
+        relatedTaskId: updated.id,
+      },
+    }).catch(err => console.error('[claim] notification create error:', err));
+  }
 
   return Response.json(updated);
 }

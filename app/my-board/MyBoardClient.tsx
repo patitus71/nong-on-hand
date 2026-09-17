@@ -12,7 +12,10 @@ import {
   verticalListSortingStrategy, horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { fmt, fmtHM, burnColorCls, initials, avatarColor, renderReportMarkdown, markdownToPlainText } from '@/lib/ui';
+import {
+  fmt, fmtHM, burnColorCls, initials, avatarColor, renderReportMarkdown, markdownToPlainText,
+  burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
+} from '@/lib/ui';
 
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
@@ -227,6 +230,9 @@ function SortableCard({
   const velocity     = isDoneLane && actMinutes > 0 && task.estimatedHours
     ? task.estimatedHours / (actMinutes / 60)
     : null;
+  const hoursPerPointTask = isDoneLane && actMinutes > 0 && task.taskPoint
+    ? (actMinutes / 60) / task.taskPoint
+    : null;
 
   return (
     <div
@@ -288,15 +294,20 @@ function SortableCard({
           </select>
         </div>
         <span className={`font-mono text-[10.5px] text-txt-secondary flex-shrink-0 ${task.isCancelled ? 'line-through' : ''}`}>
-          {task.estimatedHours !== null ? `${task.estimatedHours} ชม.` : '—'}
+          {task.estimatedHours !== null ? `EST ${task.estimatedHours} ชม.` : '—'}
         </span>
         {pointError && <span className="text-[9px] text-danger flex-shrink-0">{pointError}</span>}
-        {av && task.assignee && (
-          <div className="ml-auto w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
-            style={{ background: av.bg, color: av.fg }}>
-            {initials(task.assignee.name)}
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          {isDoneLane && hoursPerPointTask !== null && (
+            <span className="font-mono text-[10px] text-accent">{hoursPerPointTask.toFixed(1)} ชม./PT</span>
+          )}
+          {av && task.assignee && (
+            <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
+              style={{ background: av.bg, color: av.fg }}>
+              {initials(task.assignee.name)}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Burn bar — ACT ÷ EST (ไม่โชว์ถ้าการ์ดถูกยกเลิก) */}
@@ -329,6 +340,9 @@ function SortableCard({
               />
             </div>
           )}
+          <div className={`font-mono text-[10.5px] ${burnSummaryColorCls(actMinutes, task.estimatedHours)}`}>
+            {burnSummaryText(actMinutes, task.estimatedHours)}
+          </div>
         </div>
       )}
 
@@ -732,11 +746,12 @@ type Props = {
   pendingReviews: PendingReview[];
   capacityHours: number | null;
   squadName: string | null;
+  velocityHistory: { id: string; name: string; points: number }[];
 };
 
 export default function MyBoardClient({
   boardId, initialLanes, userSquadId, canEditLanes, canCreateTask,
-  reviewersBySquad, pendingReviews: initialPendingReviews, capacityHours, squadName,
+  reviewersBySquad, pendingReviews: initialPendingReviews, capacityHours, squadName, velocityHistory,
 }: Props) {
   const [, setLanesState] = useState<LaneData[]>(initialLanes);
   const lanesRef   = useRef<LaneData[]>(initialLanes);
@@ -808,8 +823,12 @@ export default function MyBoardClient({
   function bucketLoad(laneName: string) {
     const laneTasks = lanes.find(l => l.name === laneName)?.tasks ?? [];
     return laneTasks.reduce(
-      (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) }),
-      { hours: 0, points: 0 }
+      (acc, t) => ({
+        hours: acc.hours + (t.estimatedHours ?? 0),
+        points: acc.points + (t.taskPoint ?? 0),
+        spentMin: acc.spentMin + t.totalNormalMin + t.totalOtMin,
+      }),
+      { hours: 0, points: 0, spentMin: 0 }
     );
   }
   const loadBuckets = {
@@ -821,6 +840,12 @@ export default function MyBoardClient({
   const cancelLoad = bucketLoad('Cancel');
   const myTotalHours  = loadBuckets.done.hours + loadBuckets.progress.hours + loadBuckets.review.hours + loadBuckets.todo.hours;
   const myTotalPoints = loadBuckets.done.points + loadBuckets.progress.points + loadBuckets.review.points + loadBuckets.todo.points;
+  const mySpentMin    = loadBuckets.done.spentMin + loadBuckets.progress.spentMin + loadBuckets.review.spentMin + loadBuckets.todo.spentMin;
+  // Velocity ของฉัน (design handoff: Time & Velocity B4) — เฉพาะงานที่ done แล้วในเลน Done ปัจจุบัน
+  const myDonePoints     = loadBuckets.done.points;
+  const myDoneSpentMin   = loadBuckets.done.spentMin;
+  const myHoursPerPoint  = myDonePoints > 0 ? myDoneSpentMin / 60 / myDonePoints : null;
+  const myEstAccuracy    = loadBuckets.done.hours > 0 ? (myDoneSpentMin / 60) / loadBuckets.done.hours : null;
 
   /* ── Resolve modal state ── */
   const [resolveTarget,      setResolveTarget]      = useState<TaskData | null>(null);
@@ -1602,6 +1627,122 @@ export default function MyBoardClient({
         <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
           onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
 
+        {/* ── เวลาของฉัน + velocity ของฉัน (design handoff: Time & Velocity B4) ── */}
+        {capacityHours !== null && (mySpentMin > 0 || myTotalHours > 0 || myDonePoints > 0 || velocityHistory.length > 0) && (() => {
+          const spentHours   = mySpentMin / 60;
+          const overQuota    = spentHours > capacityHours;
+          const pctOfPlan    = myTotalHours > 0 ? Math.round((spentHours / myTotalHours) * 100) : null;
+          const planRemainMin  = Math.max(0, myTotalHours * 60 - mySpentMin);
+          const quotaRemainMin = Math.max(0, capacityHours * 60 - mySpentMin);
+          const timeLegend: { label: string; spentMin: number; points: number; colorCls: string }[] = [
+            { label: 'Done',        spentMin: loadBuckets.done.spentMin,     points: loadBuckets.done.points,     colorCls: 'bg-success' },
+            { label: 'In progress', spentMin: loadBuckets.progress.spentMin, points: loadBuckets.progress.points, colorCls: 'bg-accent' },
+            { label: 'Review',      spentMin: loadBuckets.review.spentMin,   points: loadBuckets.review.points,   colorCls: 'bg-warning' },
+            { label: 'To do',       spentMin: loadBuckets.todo.spentMin,     points: loadBuckets.todo.points,     colorCls: 'bg-[#4b5563]' },
+          ];
+          const segPct = (min: number) => `${mySpentMin > 0 ? (min / mySpentMin) * 100 : 0}%`;
+
+          const historyBars = [...velocityHistory, { id: 'current', name: 'ตอนนี้', points: myDonePoints }];
+          const maxPt = Math.max(1, ...historyBars.map(b => b.points));
+
+          return (
+            <div className="grid gap-3 mb-4" style={{ gridTemplateColumns: 'minmax(0,2fr) minmax(280px,1fr)' }}>
+              {/* การ์ดซ้าย — เวลาของฉัน */}
+              <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">
+                    เวลาของฉัน{squadName ? ` — ${squadName}` : ''}
+                  </div>
+                  <span className={`text-[12px] px-2.5 py-1 rounded-full whitespace-nowrap ${overQuota ? 'text-danger bg-danger-bg' : 'text-success bg-success-bg'}`}>
+                    {overQuota ? 'เกินโควตา' : 'อยู่ในเป้า'}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <div className="font-mono text-[34px] font-bold text-success leading-none">{fmtHM(mySpentMin)}</div>
+                    <div className="text-[13px] text-txt-secondary">ใช้ไปแล้ว</div>
+                  </div>
+                  <div className="text-[12.5px] text-txt-muted mt-1">
+                    {pctOfPlan !== null ? `จากที่วางแผนไว้ ${myTotalHours} ชม. · คิดเป็น ${pctOfPlan}% ของแผน` : 'ยังไม่ได้วางแผน (EST) ไว้'}
+                  </div>
+                </div>
+                <div className="border-t border-app-border pt-3">
+                  <div className="flex items-baseline gap-2">
+                    <div className="font-mono text-[24px] font-bold text-txt-primary leading-none">{fmtHM(planRemainMin)}</div>
+                    <div className="text-[13px] text-txt-secondary">เหลือตามแผน</div>
+                  </div>
+                  <div className="text-[12px] text-txt-muted mt-1">รับได้อีก {fmtHM(quotaRemainMin)} จากโควตา {capacityHours} ชม.</div>
+                </div>
+                <div className="flex h-3 rounded-md overflow-hidden bg-[rgb(var(--surface-2))]">
+                  {timeLegend.map(seg => seg.spentMin > 0 && (
+                    <div key={seg.label} className={seg.colorCls} style={{ width: segPct(seg.spentMin) }} title={`${seg.label}: ${fmtHM(seg.spentMin)}`} />
+                  ))}
+                </div>
+                <div className="flex gap-4 flex-wrap text-[12.5px] text-txt-secondary">
+                  {timeLegend.map(seg => (
+                    <div key={seg.label} className="flex items-center gap-1.5">
+                      <div className={`w-[9px] h-[9px] rounded-[2px] ${seg.colorCls}`} />
+                      {seg.label} {fmtHM(seg.spentMin)} · {seg.points} PT
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* การ์ดขวา — velocity ของฉัน */}
+              <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 flex flex-col gap-3">
+                <div>
+                  <div className="flex items-baseline gap-2">
+                    <div className="font-mono text-[30px] font-bold text-accent leading-none">{myDonePoints}</div>
+                  </div>
+                  <div className="text-[12.5px] text-txt-secondary mt-0.5">PT เสร็จใน sprint นี้</div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1 bg-surface-2 rounded-[8px] px-2.5 py-2">
+                    <div className="text-[10.5px] uppercase tracking-[.04em] text-txt-muted mb-0.5">ชม./PT</div>
+                    {myHoursPerPoint !== null ? (
+                      <>
+                        <div className={`font-mono text-[17px] font-bold ${hoursPerPointColorCls(myHoursPerPoint)}`}>{myHoursPerPoint.toFixed(1)}</div>
+                        <div className="text-[10.5px] text-txt-muted">เฉลี่ยจริง</div>
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-txt-muted">ยังไม่มีงานเสร็จ</div>
+                    )}
+                  </div>
+                  <div className="flex-1 bg-surface-2 rounded-[8px] px-2.5 py-2">
+                    <div className="text-[10.5px] uppercase tracking-[.04em] text-txt-muted mb-0.5">ความแม่น EST</div>
+                    {myEstAccuracy !== null ? (
+                      <>
+                        <div className={`font-mono text-[17px] font-bold ${estAccuracyColorCls(myEstAccuracy)}`}>{Math.round(myEstAccuracy * 100)}%</div>
+                        <div className={`text-[10.5px] ${estAccuracyColorCls(myEstAccuracy)}`}>{estAccuracyLabel(myEstAccuracy)}</div>
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-txt-muted">ยังไม่มีงานเสร็จ</div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10.5px] text-txt-muted mb-1.5">velocity 4 sprint ที่ผ่านมา</div>
+                  <div className="flex items-end gap-2 h-[62px]">
+                    {historyBars.map(b => {
+                      const isCurrent = b.id === 'current';
+                      return (
+                        <div key={b.id} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                          <span className={`font-mono text-[11px] ${isCurrent ? 'text-accent' : 'text-txt-muted'}`}>{b.points}</span>
+                          <div
+                            className={`w-full rounded-t-[4px] ${isCurrent ? 'bg-accent' : 'bg-[#2f3a4a]'}`}
+                            style={{ height: `${Math.max(6, (b.points / maxPt) * 44)}px` }}
+                          />
+                          <span className={`text-[10.5px] truncate w-full text-center ${isCurrent ? 'text-accent' : 'text-txt-muted'}`}>{b.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {capacityHours !== null && (myTotalHours > 0 || myTotalPoints > 0) && (() => {
           const ratio = myTotalHours / capacityHours;
           const over  = myTotalHours > capacityHours;
@@ -1671,43 +1812,57 @@ export default function MyBoardClient({
             >
               <div className="h-[3px] -mx-2.5 -mt-2.5 mb-2.5 flex-shrink-0"
                 style={{ background: LANE_ACCENT[lane.name] ?? 'rgb(var(--border))' }} />
-              <div className="flex items-center justify-between px-1 pb-2.5">
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[13px] font-semibold ${
-                    lane.name === 'Cancel'      ? 'text-danger'  :
-                    lane.name === 'Done'        ? 'text-success' :
-                    lane.name === 'Review'      ? 'text-warning' :
-                    lane.name === 'In Progress' ? 'text-accent'  :
-                    'text-txt-primary'
-                  }`}>
-                    {LANE_GLYPH[lane.name] && <span className="mr-1">{LANE_GLYPH[lane.name]}</span>}
-                    {lane.name}
-                  </span>
-                  <span className="text-[11px] font-mono text-txt-muted bg-surface-3 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {lane.name === 'Cancel' ? (
-                    <span className="font-mono text-[11px] font-semibold text-txt-muted">ไม่นับโหลด</span>
-                  ) : (() => {
-                    const sub = lane.tasks.reduce(
-                      (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), points: acc.points + (t.taskPoint ?? 0) }),
-                      { hours: 0, points: 0 }
+              <div className="flex flex-col gap-1 px-1 pb-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[13px] font-semibold ${
+                      lane.name === 'Cancel'      ? 'text-danger'  :
+                      lane.name === 'Done'        ? 'text-success' :
+                      lane.name === 'Review'      ? 'text-warning' :
+                      lane.name === 'In Progress' ? 'text-accent'  :
+                      'text-txt-primary'
+                    }`}>
+                      {LANE_GLYPH[lane.name] && <span className="mr-1">{LANE_GLYPH[lane.name]}</span>}
+                      {lane.name}
+                    </span>
+                    <span className="text-[11px] font-mono text-txt-muted bg-surface-3 px-2 py-0.5 rounded-full">{lane.tasks.length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {lane.name === 'Cancel' ? (
+                      <span className="font-mono text-[11px] font-semibold text-txt-muted">ไม่นับโหลด</span>
+                    ) : (() => {
+                      const sub = lane.tasks.reduce(
+                        (acc, t) => ({ points: acc.points + (t.taskPoint ?? 0) }),
+                        { points: 0 }
+                      );
+                      return sub.points > 0 ? (
+                        <span className="font-mono text-[11px] font-semibold text-txt-muted">{sub.points} PT</span>
+                      ) : null;
+                    })()}
+                  {editMode && (() => {
+                    const isProtected = PROTECTED_LANES.has(lane.name);
+                    return isProtected ? (
+                      <button title={PROTECTED_TOOLTIP} onClick={() => alert(PROTECTED_TOOLTIP)}
+                        className="text-txt-muted text-[14px] px-1.5 py-0.5 rounded opacity-35 cursor-not-allowed">✕</button>
+                    ) : (
+                      <button onClick={() => deleteLane(lane.id)}
+                        className="text-danger text-[14px] px-1.5 py-0.5 rounded hover:bg-danger-bg transition-colors">✕</button>
                     );
-                    return (sub.hours > 0 || sub.points > 0) ? (
-                      <span className="font-mono text-[11px] font-semibold text-txt-secondary">{sub.points} PT · {sub.hours} ชม.</span>
-                    ) : null;
                   })()}
-                {editMode && (() => {
-                  const isProtected = PROTECTED_LANES.has(lane.name);
-                  return isProtected ? (
-                    <button title={PROTECTED_TOOLTIP} onClick={() => alert(PROTECTED_TOOLTIP)}
-                      className="text-txt-muted text-[14px] px-1.5 py-0.5 rounded opacity-35 cursor-not-allowed">✕</button>
-                  ) : (
-                    <button onClick={() => deleteLane(lane.id)}
-                      className="text-danger text-[14px] px-1.5 py-0.5 rounded hover:bg-danger-bg transition-colors">✕</button>
-                  );
-                })()}
+                  </div>
                 </div>
+                {lane.name !== 'Cancel' && (() => {
+                  const sub = lane.tasks.reduce(
+                    (acc, t) => ({ hours: acc.hours + (t.estimatedHours ?? 0), spentMin: acc.spentMin + t.totalNormalMin + t.totalOtMin }),
+                    { hours: 0, spentMin: 0 }
+                  );
+                  return (sub.hours > 0 || sub.spentMin > 0) ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10.5px] px-1.5 py-[1px] rounded-[5px] bg-surface-1 text-txt-muted whitespace-nowrap">EST {sub.hours} ชม.</span>
+                      <span className="font-mono text-[10.5px] px-1.5 py-[1px] rounded-[5px] bg-success-bg text-success whitespace-nowrap">ใช้จริง {fmtHM(sub.spentMin)}</span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <DroppableLaneCards
                 laneId={lane.id}

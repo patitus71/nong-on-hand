@@ -19,6 +19,37 @@ export function burnColorCls(ratio: number): string {
   return 'bg-success';
 }
 
+// บรรทัดสรุปส่วนต่างใต้ burn bar (design handoff: Time & Velocity B3) — spent/est เป็นนาที/ชม.
+export function burnSummaryText(spentMin: number, estHours: number | null): string {
+  if (estHours === null) return 'ยังไม่ตั้ง estimate';
+  const estMin = estHours * 60;
+  if (spentMin === 0) return `ยังไม่ลงเวลา · เหลือ ${fmtHM(estMin)}`;
+  if (spentMin > estMin) return `เกิน EST ${fmtHM(spentMin - estMin)}`;
+  if (spentMin < estMin) return `เหลืออีก ${fmtHM(estMin - spentMin)}`;
+  return 'ตรงตาม EST พอดี';
+}
+export function burnSummaryColorCls(spentMin: number, estHours: number | null): string {
+  if (estHours !== null && spentMin > estHours * 60) return 'text-danger';
+  return 'text-txt-muted';
+}
+
+// ความแม่นของ estimate เทียบเวลาจริงที่ใช้ไปของงานที่ done แล้ว (spent(done)/est(done))
+export function estAccuracyLabel(ratio: number): string {
+  if (ratio > 1.1) return 'ใช้เกินที่ประเมิน';
+  if (ratio >= 0.9) return 'ประเมินแม่น';
+  return 'ประเมินเผื่อไว้มาก';
+}
+export function estAccuracyColorCls(ratio: number): string {
+  if (ratio > 1.1) return 'text-danger';
+  if (ratio >= 0.9) return 'text-success';
+  return 'text-warning';
+}
+
+// ชม./PT (spent(done)/pt(done)) — เตือนถ้างานหนักกว่าพอยต์ที่ให้
+export function hoursPerPointColorCls(hoursPerPoint: number): string {
+  return hoursPerPoint > 6 ? 'text-warning' : 'text-txt-primary';
+}
+
 export function initials(name: string) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 }
