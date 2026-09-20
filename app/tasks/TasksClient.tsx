@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { fmt, initials, avatarColor, laneBadgeCls, laneGlyph } from '@/lib/ui';
+import TopLoadingBar from '@/components/TopLoadingBar';
 
 type TaskRow = {
   id:                  string;
@@ -74,6 +75,10 @@ function isUnflagEnabled(t: TaskRow, userRole: string, userSquadId: string | nul
 
 export default function TasksClient({ tasks, squads, users, userRole, userSquadId, userId, qaEngineers, openSprints }: Props) {
   const router = useRouter();
+  // router.refresh() ไม่มี promise ให้ await — ต้องห่อด้วย startTransition ถึงจะรู้ได้ว่า
+  // RSC refetch + re-render จริงๆ เสร็จเมื่อไหร่ (ไม่งั้น modal/loading ปิดไปก่อนหน้าจอ update จริง
+  // ทำให้ user เข้าใจผิดว่าลบ/ดึงงานไม่สำเร็จ ทั้งที่กำลัง refresh อยู่เบื้องหลัง)
+  const [isRefreshing, startRefresh] = useTransition();
 
   // ── Filters ─────────────────────────────────────────────────────────────────
   const [search,         setSearch]         = useState('');
@@ -233,7 +238,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
     }
     setSelectedIds(new Set());
     setShowPullInModal(false);
-    router.refresh();
+    startRefresh(() => router.refresh());
     setPullSubmitting(false);
   }
 
@@ -245,7 +250,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ flaggedForDeletion: false }),
     });
-    if (res.ok) router.refresh();
+    if (res.ok) startRefresh(() => router.refresh());
     else alert(await res.text());
   }
 
@@ -295,7 +300,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
     setSelectedIds(new Set());
     setShowDeleteModal(false);
     setPendingDeleteIds([]);
-    router.refresh();
+    startRefresh(() => router.refresh());
     setDeleting(false);
   }
 
@@ -315,6 +320,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
 
   return (
     <div className="px-7 py-6 pb-16">
+      <TopLoadingBar visible={isRefreshing} />
 
       {/* Page header */}
       <div className="flex items-end justify-between mb-5 flex-wrap gap-3">

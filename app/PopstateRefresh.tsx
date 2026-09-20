@@ -2,6 +2,7 @@
 
 import { useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import TopLoadingBar from '@/components/TopLoadingBar';
 
 // Next.js's client-side Router Cache restores browser back/forward navigations
 // straight from cache and ignores `staleTimes` in that path, so pages showing
@@ -32,22 +33,5 @@ export default function PopstateRefresh() {
     return () => window.removeEventListener('popstate', onPopState);
   }, [router]);
 
-  if (!isPending) return null;
-
-  return (
-    <>
-      <style>{`
-        @keyframes popstate-refresh-sweep {
-          0%   { left: -33%; }
-          100% { left: 100%; }
-        }
-      `}</style>
-      <div className="fixed top-0 left-0 right-0 h-[3px] z-[9999] overflow-hidden pointer-events-none">
-        <div
-          className="absolute top-0 h-full w-1/3 bg-accent"
-          style={{ animation: 'popstate-refresh-sweep 1s ease-in-out infinite' }}
-        />
-      </div>
-    </>
-  );
+  return <TopLoadingBar visible={isPending} />;
 }

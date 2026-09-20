@@ -7,6 +7,7 @@ import {
   fmtHM, burnColorCls, initials, avatarColor,
   burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
 } from '@/lib/ui';
+import TopLoadingBar from '@/components/TopLoadingBar';
 
 type TaskCard = {
   id:                 string;
@@ -72,25 +73,34 @@ export default function SquadBoardClient({
 }: Props) {
   const router = useRouter();
   const [sprintNavPending, startSprintNav] = useTransition();
+  // router.refresh() ไม่มี promise ให้ await — ต้องห่อด้วย startTransition ถึงจะรู้ได้ว่า RSC
+  // refetch + re-render จริงๆ เสร็จเมื่อไหร่ ไม่งั้น per-card saving flag (assigningTaskId,
+  // pointSavingId, ฯลฯ) จะเคลียร์ไปก่อนหน้าจอ update จริง ทำให้ user เข้าใจผิดว่าการ์ดไม่ยอมย้าย/อัปเดต
+  const [isRefreshing, startRefresh] = useTransition();
 
   // ── Auto-refresh every 30 s so changes by other users (QA Engineer moving cards)
   // become visible without a manual reload ────────────────────────────────────────
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const refreshingRef = useRef(false);
 
+  // เคลียร์ guard ก็ต่อเมื่อ transition ก่อนหน้า commit จริงแล้วเท่านั้น (ไม่ใช่เคลียร์ทันทีแบบเดิม
+  // ซึ่งทำให้ guard ไม่มีผลอะไรเลยเพราะ router.refresh() เป็น fire-and-forget)
+  useEffect(() => {
+    if (!isRefreshing) refreshingRef.current = false;
+  }, [isRefreshing]);
+
   useEffect(() => {
     const tick = setInterval(() => {
       if (refreshingRef.current) return;
       refreshingRef.current = true;
-      router.refresh();
+      startRefresh(() => router.refresh());
       setLastRefreshed(new Date());
-      refreshingRef.current = false;
     }, 30_000);
     return () => clearInterval(tick);
   }, [router]);
 
   function manualRefresh() {
-    router.refresh();
+    startRefresh(() => router.refresh());
     setLastRefreshed(new Date());
   }
 
@@ -122,7 +132,7 @@ export default function SquadBoardClient({
     });
     if (res.ok) {
       setEditingSprintCap(false);
-      router.refresh();
+      startRefresh(() => router.refresh());
     } else {
       const data = await res.json().catch(() => null);
       setSprintCapError(data?.error ?? 'เกิดข้อผิดพลาด');
@@ -155,7 +165,7 @@ export default function SquadBoardClient({
       if (data.carriedCount > 0) {
         alert(`เปิด Sprint ใหม่แล้ว — ดึงงานค้าง ${data.carriedCount} งานจาก sprint เก่าเข้ามาด้วย`);
       }
-      router.refresh();
+      startRefresh(() => router.refresh());
     } else {
       setOpenSprintError(await res.text());
     }
@@ -187,7 +197,7 @@ export default function SquadBoardClient({
     if (data.carriedCount > 0) {
       alert(`ปิด Sprint แล้ว — เปิด "${data.newSprint.name}" ต่อทันที และดึงงานค้าง ${data.carriedCount} งาน (รวมงานกองกลาง) เข้ามาด้วย`);
     }
-    router.refresh();
+    startRefresh(() => router.refresh());
     setClosingLoading(false);
   }
 
@@ -434,7 +444,7 @@ export default function SquadBoardClient({
         newId ? `มอบ "${t.title.slice(0, 34)}" ให้ ${newName}` : `เอา "${t.title.slice(0, 34)}" ออกจากเจ้าของแล้ว`,
         newId ? 'ok' : 'neutral',
       );
-      router.refresh();
+      startRefresh(() => router.refresh());
     } finally {
       setAssigningTaskId(null);
     }
@@ -466,7 +476,7 @@ export default function SquadBoardClient({
       });
       if (!res.ok) { setFlagError(await res.text()); return; }
       setFlagTarget(null);
-      router.refresh();
+      startRefresh(() => router.refresh());
     } finally {
       setFlagging(false);
     }
@@ -479,7 +489,7 @@ export default function SquadBoardClient({
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ flaggedForDeletion: false }),
     });
-    if (res.ok) router.refresh();
+    if (res.ok) startRefresh(() => router.refresh());
   }
 
   // ── Create task (inline, To do column) ─────────────────────────────────────
@@ -505,7 +515,7 @@ export default function SquadBoardClient({
     });
     setPointSavingId(null);
     if (res.ok) {
-      router.refresh();
+      startRefresh(() => router.refresh());
     } else {
       setPointErrorId(taskId);
       setTimeout(() => setPointErrorId(null), 3000);
@@ -527,7 +537,7 @@ export default function SquadBoardClient({
     if (res.ok) {
       setCreateTitle(''); setCreatePoint('');
       setShowCreate(false);
-      router.refresh();
+      startRefresh(() => router.refresh());
     }
     setCreateLoading(false);
   }
@@ -540,7 +550,7 @@ export default function SquadBoardClient({
     try {
       const res = await fetch(`/api/tasks/${taskId}/approve-review`, { method: 'PATCH' });
       if (!res.ok) { alert(await res.text()); return; }
-      router.refresh();
+      startRefresh(() => router.refresh());
     } finally {
       setApprovingId(null);
     }
@@ -879,6 +889,7 @@ export default function SquadBoardClient({
 
   return (
     <div className="px-7 py-6 pb-16">
+      <TopLoadingBar visible={isRefreshing || sprintNavPending} />
 
       {/* Page header */}
       <div className="flex items-center justify-between mb-5 flex-wrap gap-2.5">
