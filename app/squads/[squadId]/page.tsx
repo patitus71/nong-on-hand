@@ -119,6 +119,8 @@ export default async function SquadPage({
         laneName:           t.lane?.name ?? null,
         taskPoint:          t.taskPoint ?? null,
         estimatedHours:     t.estimatedHours ?? null,
+        jiraTicketNo:       t.jiraTicketNo ?? null,
+        jiraUrl:            t.jiraUrl ?? null,
         reviewApprovedAt:   t.reviewApprovedAt?.toISOString() ?? null,
         isCancelled:        t.isCancelled,
         cancelNote:         t.cancelNote ?? null,

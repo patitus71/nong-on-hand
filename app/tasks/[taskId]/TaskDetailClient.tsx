@@ -22,6 +22,8 @@ type Task = {
   laneName: string | null;
   taskPoint: number | null;
   estimatedHours: number | null;
+  jiraTicketNo: string | null;
+  jiraUrl: string | null;
   timeLogs:   TimeLog[];
   taskLogs:   TaskLogEntry[];
   retroItems: RetroRef[];
@@ -41,6 +43,15 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleString('th-TH', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
+}
+
+function isHttpUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function catLabel(cat: string) {
@@ -382,6 +393,16 @@ export default function TaskDetailClient({
             {task.squad && <span className="text-[11.5px] bg-surface-2 text-txt-secondary px-2.5 py-1 rounded-full">{task.squad.name}</span>}
             {task.laneName && <span className="text-[11.5px] bg-warning-bg text-warning px-2.5 py-1 rounded-full">{task.laneName}</span>}
             <span className="text-[11.5px] bg-surface-2 text-txt-secondary px-2.5 py-1 rounded-full">{task.source === 'IMPORTED' ? 'Imported' : 'Manual'}</span>
+            {task.jiraUrl && isHttpUrl(task.jiraUrl) && (
+              <a
+                href={task.jiraUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11.5px] bg-accent-bg text-accent px-2.5 py-1 rounded-full hover:underline"
+              >
+                🔗 Jira: {task.jiraTicketNo || 'เปิดลิงก์'}
+              </a>
+            )}
           </div>
 
           {/* Description */}

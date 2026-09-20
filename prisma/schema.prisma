@@ -169,6 +169,9 @@ model Task {
   sprint                Sprint?   @relation(fields: [sprintId], references: [id])
   taskType              String?   // จาก TaskTypeOption.label ตอน import — free string ไม่ใช่ FK เพื่อกัน list เปลี่ยนแล้วงานเก่าพัง
   taskPoint             Float?    // จาก TaskPointMapping.point ตอน import — ใช้ auto-fill estimatedHours ตอนเลือก ไม่ผูก FK ด้วยเหตุผลเดียวกัน
+  jiraTicketNo          String?   // เช่น "SR-25842" — จาก import Jira JSON
+  jiraUrl               String?   // ลิงก์เต็มไป Jira ticket (http/https only — validate ทั้ง client และ server เหมือน prLink)
+  jiraStatus            String?   // สถานะตอน import (เช่น "Done", "TO EXECUTE") — เก็บไว้อ้างอิงเฉยๆ ไม่มีผลต่อ lane assignment
   timeLogs      TimeLog[]
   taskLogs      TaskLog[]
   retroItems    RetroItem[]

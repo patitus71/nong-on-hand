@@ -32,6 +32,8 @@ type TaskData = {
   assigneeId: string | null;
   taskPoint: number | null;
   estimatedHours: number | null;
+  jiraTicketNo: string | null;
+  jiraUrl: string | null;
   totalNormalMin: number; totalOtMin: number;
   isAtRisk: boolean; riskReason: string;
 };
@@ -300,6 +302,19 @@ function SortableCard({
         <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
           {isDoneLane && hoursPerPointTask !== null && (
             <span className="font-mono text-[10px] text-accent">{hoursPerPointTask.toFixed(1)} ชม./PT</span>
+          )}
+          {task.jiraUrl && (
+            <a
+              href={task.jiraUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              onPointerDown={e => e.stopPropagation()}
+              title={`Jira: ${task.jiraTicketNo ?? task.jiraUrl}`}
+              className="text-[10px] font-mono text-txt-muted bg-surface-3 border border-app-border px-1.5 py-0.5 rounded-full hover:text-accent hover:border-accent/40 transition-colors"
+            >
+              {task.jiraTicketNo ?? 'Jira'} ↗
+            </a>
           )}
           {av && task.assignee && (
             <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
@@ -680,6 +695,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         taskPoint: task.taskPoint ?? null, estimatedHours: task.estimatedHours ?? null,
+        jiraTicketNo: null, jiraUrl: null,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
       setTitle(''); setTaskPoint(''); setOpen(false);

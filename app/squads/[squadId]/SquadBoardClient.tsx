@@ -18,6 +18,8 @@ type TaskCard = {
   laneName:           string | null;
   taskPoint:          number | null;
   estimatedHours:     number | null;
+  jiraTicketNo:       string | null;
+  jiraUrl:            string | null;
   reviewApprovedAt:   string | null;
   isCancelled:        boolean;
   cancelNote:         string | null;
@@ -730,7 +732,19 @@ export default function SquadBoardClient({
                 {t.taskPoint !== null && t.estimatedHours !== null ? `EST ${t.estimatedHours} ชม.` : 'ยังไม่ตั้ง estimate'}
               </span>
               {cardPointError && <span className="text-[9px] text-danger flex-shrink-0">พลาด</span>}
-              <span className="ml-auto text-[11px] text-txt-muted truncate max-w-[92px]" title={t.assignee?.name ?? 'ยังไม่มีเจ้าของ'}>
+              {t.jiraUrl && (
+                <a
+                  href={t.jiraUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  title={`Jira: ${t.jiraTicketNo ?? t.jiraUrl}`}
+                  className="ml-auto text-[10px] font-mono text-txt-muted bg-surface-2 border border-app-border px-1.5 py-0.5 rounded-full hover:text-accent hover:border-accent/40 transition-colors flex-shrink-0"
+                >
+                  {t.jiraTicketNo ?? 'Jira'} ↗
+                </a>
+              )}
+              <span className={`${t.jiraUrl ? '' : 'ml-auto'} text-[11px] text-txt-muted truncate max-w-[92px]`} title={t.assignee?.name ?? 'ยังไม่มีเจ้าของ'}>
                 {t.assignee ? t.assignee.name : 'ยังไม่มีเจ้าของ'}
               </span>
             </div>

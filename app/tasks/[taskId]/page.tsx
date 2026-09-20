@@ -49,6 +49,8 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
     laneName:    task.lane?.name ?? null,
     taskPoint:      task.taskPoint,
     estimatedHours: task.estimatedHours,
+    jiraTicketNo:   task.jiraTicketNo,
+    jiraUrl:        task.jiraUrl,
     timeLogs: task.timeLogs.map(l => ({
       normalMinutes: l.normalMinutes ?? 0,
       otMinutes:     l.otMinutes ?? 0,

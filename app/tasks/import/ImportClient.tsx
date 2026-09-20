@@ -13,14 +13,132 @@ type Row = {
   ticketRef: string;
   taskPoint: number | null; // null = ยังไม่เลือก
   squadId:   string;        // '' = ไม่ระบุ squad
+  // ผูกไว้เบื้องหลังจาก import Jira JSON เท่านั้น — ไม่มี input ให้แก้ในตาราง (มีแค่ badge read-only)
+  jiraTicketNo: string | null;
+  jiraUrl:      string | null;
+  jiraStatus:   string | null;
 };
 
+type EpicBanner = { ticketNo: string; url: string; totalPoints: number | null };
+
 function newRow(): Row {
-  return { id: crypto.randomUUID(), title: '', taskType: '', ticketRef: '', taskPoint: null, squadId: '' };
+  return {
+    id: crypto.randomUUID(), title: '', taskType: '', ticketRef: '', taskPoint: null, squadId: '',
+    jiraTicketNo: null, jiraUrl: null, jiraStatus: null,
+  };
 }
 
 function isRowValid(r: Row): boolean {
   return r.title.trim() !== '' && r.taskPoint !== null;
+}
+
+function isValidHttpUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+// ตัด tag "[QA]" ตัวแรกออกก่อน (ถ้ามี) แล้วดึงกลุ่มวงเล็บที่เหลือต่อจากต้นสตริง เช่น
+// "[QA][automation][review pr] เคสทดสอบ..." -> "[automation][review pr]"
+function stripLeadingQaTag(summary: string): string {
+  return summary.replace(/^\s*\[\s*qa\s*\]\s*/i, '');
+}
+
+function extractLeadingBrackets(s: string): string {
+  const m = s.match(/^(?:\s*\[[^\]]*\])+/);
+  return m ? m[0].trim() : '';
+}
+
+// normalize เฉพาะช่องว่างระหว่าง "][" และช่องว่างหัว-ท้าย — ห้ามลบช่องว่าง "ภายใน" แต่ละ tag
+// (เช่น "[review pr]" ต้องคงช่องว่างไว้ ไม่งั้นจะไม่ match label ที่ seed ไว้)
+function normalizeBracketGroup(s: string): string {
+  return s.toLowerCase().replace(/\s*\]\s*\[\s*/g, '][').replace(/\s+/g, ' ').trim();
+}
+
+function matchTaskType(summary: string, taskTypes: TypeRow[]): string {
+  if (!summary || taskTypes.length === 0) return '';
+  const stripped      = stripLeadingQaTag(summary);
+  const bracketPrefix = extractLeadingBrackets(stripped);
+  if (!bracketPrefix) return '';
+  const target = normalizeBracketGroup(bracketPrefix);
+
+  const exact = taskTypes.find(t => normalizeBracketGroup(t.label) === target);
+  if (exact) return exact.label;
+
+  // substring match — เทียบตัวที่ label ยาวสุดก่อน กัน "[automation]" ชนะ "[automation][review pr]" ผิดๆ
+  const bySubstring = [...taskTypes]
+    .sort((a, b) => b.label.length - a.label.length)
+    .find(t => {
+      const label = normalizeBracketGroup(t.label);
+      return target.includes(label) || label.includes(target);
+    });
+  return bySubstring ? bySubstring.label : '';
+}
+
+function jiraItemToRow(item: any, taskTypes: TypeRow[], pointMappings: PointRow[]): Row {
+  const ticketNo = item?.ticket_no !== undefined && item?.ticket_no !== null ? String(item.ticket_no).trim() : '';
+  const url      = item?.url      !== undefined && item?.url      !== null ? String(item.url).trim()      : '';
+  const summary  = item?.summary  !== undefined && item?.summary  !== null ? String(item.summary).trim()  : '';
+  const status   = item?.status   !== undefined && item?.status   !== null ? String(item.status).trim()   : '';
+
+  const rawPoints  = item?.task_points;
+  const numPoints  = rawPoints !== undefined && rawPoints !== null && String(rawPoints).trim() !== '' && !isNaN(Number(rawPoints))
+    ? Number(rawPoints) : null;
+  // ต้อง match ค่าที่ตั้งไว้ใน Admin (TaskPointMapping) เป๊ะๆ เหมือน CSV import เดิม ไม่งั้น
+  // <select> ในตารางจะโชว์ค่าที่ไม่มีใน option list — ถ้าไม่ match ปล่อยว่างให้ user เลือกเอง
+  const taskPoint  = numPoints !== null && pointMappings.some(p => p.point === numPoints) ? numPoints : null;
+
+  return {
+    id:        crypto.randomUUID(),
+    title:     summary,
+    taskType:  matchTaskType(summary, taskTypes),
+    ticketRef: ticketNo,
+    taskPoint,
+    squadId:   '',
+    jiraTicketNo: ticketNo || null,
+    jiraUrl:      isValidHttpUrl(url) ? url : null,
+    jiraStatus:   status || null,
+  };
+}
+
+function parseEpicBanner(parent: any): EpicBanner | null {
+  if (!parent || typeof parent !== 'object') return null;
+  const ticketNo = parent.ticket_no !== undefined && parent.ticket_no !== null ? String(parent.ticket_no).trim() : '';
+  const url      = parent.url      !== undefined && parent.url      !== null ? String(parent.url).trim()      : '';
+  const rawTotal = parent.total_task_points;
+  const totalPoints = rawTotal !== undefined && rawTotal !== null && !isNaN(Number(rawTotal)) ? Number(rawTotal) : null;
+  if (!ticketNo && !url) return null;
+  return { ticketNo, url, totalPoints };
+}
+
+function parseJiraJson(
+  text: string, taskTypes: TypeRow[], pointMappings: PointRow[],
+): { rows: Row[]; epic: EpicBanner | null } {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ');
+  }
+
+  const subTasks    = Array.isArray(parsed.parent_ticket?.sub_tasks) ? parsed.parent_ticket.sub_tasks : [];
+  const linkedCases = Array.isArray(parsed.linked_test_cases_to_execute) ? parsed.linked_test_cases_to_execute : [];
+
+  // parent_ticket ไม่มีเลย (มีแค่ linked_test_cases_to_execute) ก็ยัง import ได้ปกติ — ข้าม banner เฉยๆ
+  if (subTasks.length === 0 && linkedCases.length === 0) {
+    throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ — ไม่พบ sub_tasks หรือ linked_test_cases_to_execute');
+  }
+
+  const epic = parseEpicBanner(parsed.parent_ticket);
+  const rows = [...subTasks, ...linkedCases].map((item: any) => jiraItemToRow(item, taskTypes, pointMappings));
+  return { rows, epic };
 }
 
 function downloadTemplate() {
@@ -56,6 +174,9 @@ async function parseFile(file: File, squads: Squad[], pointMappings: PointRow[])
       ticketRef: String(raw.ticketRef ?? '').trim(),
       taskPoint: matchedPoint,
       squadId:   matchedSquad?.id ?? '',
+      jiraTicketNo: null,
+      jiraUrl:      null,
+      jiraStatus:   null,
     };
   });
 }
@@ -76,11 +197,18 @@ function exportCsv(rows: Row[], sprintLabel: string, squads: Squad[], pointMappi
 }
 
 export default function ImportClient({ squads }: { squads: Squad[] }) {
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef     = useRef<HTMLInputElement>(null);
+  const jiraFileRef = useRef<HTMLInputElement>(null);
 
   const [pointMappings, setPointMappings] = useState<PointRow[]>([]);
   const [taskTypes,     setTaskTypes]     = useState<TypeRow[]>([]);
   const [configLoading, setConfigLoading] = useState(true);
+
+  // Jira JSON import panel
+  const [jiraPanelOpen, setJiraPanelOpen] = useState(false);
+  const [jiraJsonText,  setJiraJsonText]  = useState('');
+  const [jiraJsonError, setJiraJsonError] = useState('');
+  const [epicBanner,    setEpicBanner]    = useState<EpicBanner | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -112,6 +240,23 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
     const parsed = await parseFile(f, squads, pointMappings);
     setRows(prev => [...prev, ...parsed]);
     setParsing(false);
+  }
+
+  function applyJiraJson(text: string) {
+    try {
+      const { rows: newRows, epic } = parseJiraJson(text, taskTypes, pointMappings);
+      setRows(prev => [...prev, ...newRows]);
+      if (epic) setEpicBanner(epic);
+      setJiraJsonError('');
+      setJiraJsonText('');
+    } catch (err: any) {
+      setJiraJsonError(err?.message || 'รูปแบบ JSON ไม่ตรงตามที่รองรับ');
+    }
+  }
+
+  async function handleJiraJsonFile(f: File) {
+    const text = await f.text();
+    applyJiraJson(text);
   }
 
   function hoursOf(r: Row): number | null {
@@ -147,6 +292,9 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
           taskType:      r.taskType || undefined,
           taskPoint:     r.taskPoint,
           estimateHours: hoursOf(r) ?? undefined,
+          jiraTicketNo:  r.jiraTicketNo || undefined,
+          jiraUrl:       r.jiraUrl || undefined,
+          jiraStatus:    r.jiraStatus || undefined,
         })),
       }),
     });
@@ -154,6 +302,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
       const data = await res.json();
       setImportDone(data.count);
       setRows([]);
+      setEpicBanner(null);
     }
     setImporting(false);
   }
@@ -213,6 +362,14 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             <input ref={fileRef} type="file" accept=".csv,.xlsx" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }} />
             <button
+              onClick={() => { setJiraPanelOpen(o => !o); setJiraJsonError(''); }}
+              className={`text-[12.5px] px-3 py-[7px] rounded-[3px] transition-colors border ${
+                jiraPanelOpen ? 'bg-accent-bg border-accent/40 text-accent' : 'bg-surface-2 border-app-border text-txt-primary hover:bg-surface-3'
+              }`}
+            >
+              📋 วาง JSON จาก Jira
+            </button>
+            <button
               onClick={() => exportCsv(rows, sprintLabel, squads, pointMappings)}
               disabled={rows.length === 0}
               className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors disabled:opacity-50"
@@ -226,6 +383,59 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
               ดาวน์โหลด template
             </button>
           </div>
+
+          {/* Jira JSON import panel */}
+          {jiraPanelOpen && (
+            <div className="bg-surface-1 border border-app-border rounded-[4px] p-3.5 mb-4">
+              <p className="text-[12px] text-txt-secondary mb-2">
+                วาง JSON จาก Jira ที่นี่ (รองรับโครงสร้าง <code className="text-[11px]">parent_ticket</code> +{' '}
+                <code className="text-[11px]">linked_test_cases_to_execute</code>) หรืออัปโหลดไฟล์ .json
+              </p>
+              <textarea
+                rows={6}
+                value={jiraJsonText}
+                onChange={e => { setJiraJsonText(e.target.value); if (jiraJsonError) setJiraJsonError(''); }}
+                placeholder='{"parent_ticket": {...}, "linked_test_cases_to_execute": [...]}'
+                className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12px] font-mono px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent resize-y"
+              />
+              {jiraJsonError && <p className="text-[11.5px] text-danger mt-1.5">{jiraJsonError}</p>}
+              <div className="flex items-center gap-2 mt-2.5">
+                <button
+                  onClick={() => applyJiraJson(jiraJsonText)}
+                  disabled={!jiraJsonText.trim()}
+                  className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-3 py-[7px] rounded-[3px] transition-colors disabled:opacity-50"
+                >
+                  นำเข้าจาก JSON
+                </button>
+                <button
+                  onClick={() => jiraFileRef.current?.click()}
+                  className="bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors"
+                >
+                  📤 Upload .json
+                </button>
+                <input ref={jiraFileRef} type="file" accept=".json" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleJiraJsonFile(f); e.target.value = ''; }} />
+              </div>
+            </div>
+          )}
+
+          {/* Epic banner — อ้างอิงเฉยๆ ไม่สร้างเป็น task */}
+          {epicBanner && (
+            <div className="flex items-center justify-between gap-2 bg-accent-bg border border-accent/30 text-[12.5px] text-txt-primary px-3 py-2.5 rounded-[3px] mb-4">
+              <span>
+                📎 Epic:{' '}
+                {isValidHttpUrl(epicBanner.url) ? (
+                  <a href={epicBanner.url} target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                    {epicBanner.ticketNo || epicBanner.url}
+                  </a>
+                ) : (
+                  <span className="font-medium">{epicBanner.ticketNo || '—'}</span>
+                )}
+                {epicBanner.totalPoints !== null && <> · เป้าหมาย {epicBanner.totalPoints} pts</>}
+              </span>
+              <button onClick={() => setEpicBanner(null)} className="text-txt-muted hover:text-txt-primary text-[12px] flex-shrink-0">✕</button>
+            </div>
+          )}
 
           {/* Summary bar — แยกกล่องชัดเจนต่อ metric */}
           <div className="mb-4">
@@ -260,7 +470,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
               <table className="w-full border-collapse bg-surface-1 border border-app-border rounded-[4px] overflow-hidden">
                 <thead>
                   <tr className="border-b border-app-border">
-                    {['Story/Task Name', 'Task Type', 'Jira/Ticket Ref', 'Task Point', 'Estimate Man-Hour', 'Squad', ''].map(h => (
+                    {['Story/Task Name', 'Task Type', 'Jira/Ticket Ref', 'Jira Status', 'Task Point', 'Estimate Man-Hour', 'Squad', ''].map(h => (
                       <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3 py-2.5 border-b border-app-border whitespace-nowrap">
                         {h}
                       </th>
@@ -288,6 +498,15 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
                           <input type="text" value={row.ticketRef} placeholder="เช่น JIRA-123"
                             onChange={e => patchRow(row.id, { ticketRef: e.target.value })}
                             className={inputCls} />
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {row.jiraStatus ? (
+                            <span className="text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-surface-2 border border-app-border text-txt-secondary">
+                              {row.jiraStatus}
+                            </span>
+                          ) : (
+                            <span className="text-txt-muted text-[11px]">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 min-w-[130px]">
                           <select
