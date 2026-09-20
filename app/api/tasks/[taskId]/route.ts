@@ -6,6 +6,18 @@ import { canDeleteTask, canEditTaskContent, type SessionUser } from '@/lib/rbac'
 import { buildTaskDeletionNotifications } from '@/lib/notifications';
 import { revalidatePath } from 'next/cache';
 
+// Jira URL มักลงท้ายด้วย ticket key เช่น .../browse/SR-25842 หรือ .../issues/SR-25842?... —
+// ดึง segment สุดท้ายของ path มาเดาเป็น ticket key เพื่อโชว์เป็น label แทนการให้ user กรอกแยก
+function extractJiraTicketNo(url: string): string | null {
+  try {
+    const segments = new URL(url).pathname.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    return last ? decodeURIComponent(last) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: { taskId: string } },
@@ -16,13 +28,13 @@ export async function PATCH(
 
   const body = await req.json() as {
     title?: string; description?: string; reviewerId?: string | null; prLink?: string | null;
-    taskPoint?: number;
+    taskPoint?: number; jiraUrl?: string | null;
   };
-  const { title, description, reviewerId, prLink, taskPoint } = body;
+  const { title, description, reviewerId, prLink, taskPoint, jiraUrl } = body;
 
   if (
     title === undefined && description === undefined && reviewerId === undefined &&
-    prLink === undefined && taskPoint === undefined
+    prLink === undefined && taskPoint === undefined && jiraUrl === undefined
   ) {
     return new Response('Bad Request', { status: 400 });
   }
@@ -47,6 +59,16 @@ export async function PATCH(
       return new Response('PR link ไม่ถูกต้อง — ต้องเป็น URL ที่ถูกต้อง', { status: 400 });
     }
   }
+  if (jiraUrl !== undefined && jiraUrl !== null) {
+    try {
+      const parsed = new URL(jiraUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return new Response('Jira link ต้องขึ้นต้นด้วย http:// หรือ https://', { status: 400 });
+      }
+    } catch {
+      return new Response('Jira link ไม่ถูกต้อง — ต้องเป็น URL ที่ถูกต้อง', { status: 400 });
+    }
+  }
 
   const task = await prisma.task.findUnique({
     where: { id: params.taskId, deletedAt: null },
@@ -60,6 +82,11 @@ export async function PATCH(
   if (description !== undefined) data.description = description.trim() || null;
   if (reviewerId !== undefined) data.reviewerId = reviewerId;
   if (prLink !== undefined) data.prLink = prLink ? prLink.trim() : null;
+  if (jiraUrl !== undefined) {
+    const trimmed = jiraUrl ? jiraUrl.trim() : null;
+    data.jiraUrl      = trimmed;
+    data.jiraTicketNo = trimmed ? extractJiraTicketNo(trimmed) : null;
+  }
   if (pointMapping) {
     data.taskPoint      = pointMapping.point;
     data.estimatedHours = pointMapping.hours;
@@ -70,7 +97,7 @@ export async function PATCH(
     data,
     select: {
       id: true, title: true, description: true, reviewerId: true, prLink: true,
-      taskPoint: true, estimatedHours: true,
+      taskPoint: true, estimatedHours: true, jiraUrl: true, jiraTicketNo: true,
     },
   });
 

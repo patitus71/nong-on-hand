@@ -140,6 +140,49 @@ export default function TaskDetailClient({
     setDescSaving(false);
   }
 
+  // Jira link edit state — เหมือน pattern PR link ใน MyBoardClient (input + save on blur)
+  const [jiraUrlDraft,  setJiraUrlDraft]  = useState(init.jiraUrl ?? '');
+  const [jiraUrlError,  setJiraUrlError]  = useState('');
+  const [jiraUrlSaving, setJiraUrlSaving] = useState(false);
+
+  useEffect(() => { setJiraUrlDraft(task.jiraUrl ?? ''); }, [task.jiraUrl]);
+
+  async function handleJiraUrlBlur() {
+    const val     = jiraUrlDraft.trim();
+    const current = task.jiraUrl ?? '';
+    if (val === current) return;
+    if (val) {
+      try {
+        const parsed = new URL(val);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          setJiraUrlError('URL ต้องขึ้นต้นด้วย http:// หรือ https://');
+          setJiraUrlDraft(current);
+          return;
+        }
+      } catch {
+        setJiraUrlError('URL ไม่ถูกต้อง');
+        setJiraUrlDraft(current);
+        return;
+      }
+    }
+    setJiraUrlError('');
+    setJiraUrlSaving(true);
+    const res = await fetch(`/api/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jiraUrl: val || null }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setTask(t => ({ ...t, jiraUrl: data.jiraUrl, jiraTicketNo: data.jiraTicketNo }));
+      showToast('บันทึกลิงก์ Jira แล้ว');
+    } else {
+      setJiraUrlError(await res.text());
+      setJiraUrlDraft(current);
+    }
+    setJiraUrlSaving(false);
+  }
+
   // Flag state
   const [flagging,     setFlagging]     = useState(false);
   const [flagContent,  setFlagContent]  = useState(init.issueNote ?? '');
@@ -589,6 +632,40 @@ export default function TaskDetailClient({
                 : '—'
             )}
             {sbRow('มีปัญหา', task.hasIssue ? <span className="text-danger">ใช่</span> : 'ไม่มี')}
+          </div>
+
+          {/* Jira link — แก้ไขได้หลังสร้าง task แล้ว (ไม่ใช่แค่ตอน import จาก Jira JSON) */}
+          <div className="bg-surface-1 border border-app-border rounded-[4px] p-3.5 mb-3.5">
+            <label className="block text-[11px] uppercase tracking-wider text-txt-muted font-medium mb-1.5">Jira link</label>
+            {canEdit ? (
+              <>
+                {jiraUrlSaving ? (
+                  <span className="text-[12.5px] text-txt-muted">กำลังบันทึก...</span>
+                ) : (
+                  <input
+                    type="url"
+                    value={jiraUrlDraft}
+                    onChange={e => { setJiraUrlDraft(e.target.value); if (jiraUrlError) setJiraUrlError(''); }}
+                    onBlur={handleJiraUrlBlur}
+                    placeholder="https://yourcompany.atlassian.net/browse/SR-12345"
+                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent placeholder-txt-muted"
+                  />
+                )}
+                {jiraUrlError && <p className="text-[11px] text-danger mt-1">{jiraUrlError}</p>}
+                {!jiraUrlError && task.jiraUrl && (
+                  <a href={task.jiraUrl} target="_blank" rel="noopener noreferrer"
+                    className="block text-[11.5px] text-accent hover:underline truncate mt-1.5"
+                    title={task.jiraUrl}
+                  >🔗 {task.jiraTicketNo || 'เปิดลิงก์'} ↗</a>
+                )}
+              </>
+            ) : (
+              task.jiraUrl
+                ? <a href={task.jiraUrl} target="_blank" rel="noopener noreferrer" className="text-[12.5px] text-accent hover:underline">
+                    🔗 {task.jiraTicketNo || task.jiraUrl} ↗
+                  </a>
+                : <span className="text-[12.5px] text-txt-muted">ยังไม่มีลิงก์ Jira</span>
+            )}
           </div>
 
           {/* Actions */}

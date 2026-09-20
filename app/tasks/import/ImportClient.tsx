@@ -19,7 +19,60 @@ type Row = {
   jiraStatus:   string | null;
 };
 
-type EpicBanner = { ticketNo: string; url: string; totalPoints: number | null };
+// ตัวอย่าง JSON ที่ตรง schema เป๊ะๆ — สร้างจาก object แล้ว stringify เพื่อกันพิมพ์ผิดเอง
+// (ใช้ทั้งโชว์ในหน้า UI และฝังลงใน prompt ที่ให้ copy ไปวางกับ AI ตัวอื่น)
+const JIRA_JSON_EXAMPLE = JSON.stringify(
+  [
+    {
+      key: 'SR-12345',
+      summary: '[QA][automation][create automation script] TC001_Open_Deposit - เปิดบัญชีเงินฝากสำเร็จ กรณีลูกค้าไทย',
+      url: 'https://yourcompany.atlassian.net/browse/SR-12345',
+    },
+    {
+      key: 'SR-12346',
+      summary: '[QA][automation][review pr] Review PR for login flow',
+      url: 'https://yourcompany.atlassian.net/browse/SR-12346',
+    },
+  ],
+  null,
+  2,
+);
+
+// Prompt สำเร็จรูป — ให้ user copy ไปวางใน AI ตัวอื่น (ChatGPT, Claude ฯลฯ) พร้อมข้อมูล Jira
+// ที่มี แล้วให้ AI นั้น gen JSON กลับมาตรงตาม schema ที่หน้า import นี้ parse ได้เป๊ะๆ
+const JIRA_AI_PROMPT = `คุณคือผู้ช่วยแปลงข้อมูล Jira ให้อยู่ในรูปแบบ JSON สำหรับนำเข้าระบบ QA Task Board
+
+แปลงข้อมูล Jira ที่ฉันจะแปะไว้ท้าย prompt นี้ (อาจเป็นข้อความที่ copy มาจากหน้า Jira, ลิงก์ + รายละเอียด, ตาราง, หรือ list ของ ticket) ให้เป็น JSON array ตาม schema นี้เป๊ะๆ:
+
+ถ้าคุณเชื่อมต่อ Jira ได้จริง (เช่นมี MCP/tool ที่เข้าถึง Jira ของฉัน) ให้ดึง ticket ต่อไปนี้มาแปลงทั้งหมดแทนที่จะรอฉันแปะข้อมูลเอง:
+- ticket ที่อยู่ใน "Linked work items" ของ ticket ที่ฉันระบุ key หรือลิงก์มา
+- หรือถ้าฉันบอกว่ากำลังดู filter/ตัวกรองอะไรอยู่ ให้ดึง ticket ทั้งหมดที่อยู่ใน filter นั้นตอนนี้มาแปลง
+ถ้าคุณเข้าถึง Jira จริงไม่ได้ หรือฉันไม่ได้ระบุ ticket/filter ไว้ ให้ใช้ข้อมูลที่ฉันแปะไว้ท้าย prompt นี้แทน
+
+Schema:
+\`\`\`json
+[
+  {
+    "key": string,       // Jira ticket key เช่น "SR-25842"
+    "summary": string,   // ชื่องาน/summary เต็ม — ถ้ามี tag เช่น [QA][automation][create automation script] ให้คงไว้หน้าชื่อตามเดิม
+    "url": string         // ลิงก์เต็มไป Jira ticket ต้องขึ้นต้นด้วย http:// หรือ https://
+  }
+]
+\`\`\`
+
+กติกา:
+- ต้องตอบกลับเป็น JSON array ล้วนๆ (ไม่มี object ห่อข้างนอกอีกชั้น) แต่ละ item มีแค่ 3 key ด้านบนเท่านั้น ห้ามเพิ่ม field อื่น
+- ถ้า ticket ไหนไม่มี url ให้ใส่เป็น string ว่าง ""
+- คำตอบสุดท้ายของคุณ (JSON ที่แปลงเสร็จแล้ว) ให้ตอบเป็น code block แบบ \`\`\`json ครอบด้วยเสมอ เพื่อให้ฉัน copy ไปวางในระบบได้ง่ายๆ ก้อนเดียว — ห้ามมีข้อความอธิบายอื่นแทรกก่อน/หลัง code block นั้น
+
+ตัวอย่าง output ที่ถูกต้อง:
+\`\`\`json
+${JIRA_JSON_EXAMPLE}
+\`\`\`
+
+------
+ข้อมูล Jira ที่ต้องแปลง (แปะต่อจากบรรทัดนี้):
+`;
 
 function newRow(): Row {
   return {
@@ -79,66 +132,45 @@ function matchTaskType(summary: string, taskTypes: TypeRow[]): string {
   return bySubstring ? bySubstring.label : '';
 }
 
-function jiraItemToRow(item: any, taskTypes: TypeRow[], pointMappings: PointRow[]): Row {
-  const ticketNo = item?.ticket_no !== undefined && item?.ticket_no !== null ? String(item.ticket_no).trim() : '';
-  const url      = item?.url      !== undefined && item?.url      !== null ? String(item.url).trim()      : '';
-  const summary  = item?.summary  !== undefined && item?.summary  !== null ? String(item.summary).trim()  : '';
-  const status   = item?.status   !== undefined && item?.status   !== null ? String(item.status).trim()   : '';
-
-  const rawPoints  = item?.task_points;
-  const numPoints  = rawPoints !== undefined && rawPoints !== null && String(rawPoints).trim() !== '' && !isNaN(Number(rawPoints))
-    ? Number(rawPoints) : null;
-  // ต้อง match ค่าที่ตั้งไว้ใน Admin (TaskPointMapping) เป๊ะๆ เหมือน CSV import เดิม ไม่งั้น
-  // <select> ในตารางจะโชว์ค่าที่ไม่มีใน option list — ถ้าไม่ match ปล่อยว่างให้ user เลือกเอง
-  const taskPoint  = numPoints !== null && pointMappings.some(p => p.point === numPoints) ? numPoints : null;
+// item เดียวจาก array อาจขาด key ไปเลย (ไม่ใช่แค่ null) — ถือเป็นค่าว่างเหมือนกันเสมอ ไม่ throw
+function jiraItemToRow(item: any, taskTypes: TypeRow[]): Row {
+  const ticketNo = item?.key     !== undefined && item?.key     !== null ? String(item.key).trim()     : '';
+  const url      = item?.url     !== undefined && item?.url     !== null ? String(item.url).trim()     : '';
+  const summary  = item?.summary !== undefined && item?.summary !== null ? String(item.summary).trim() : '';
 
   return {
     id:        crypto.randomUUID(),
     title:     summary,
     taskType:  matchTaskType(summary, taskTypes),
     ticketRef: ticketNo,
-    taskPoint,
+    taskPoint: null, // format นี้ไม่มี point มาด้วย ต้องให้ user เลือกเองเสมอ (validation เดิม block import ถ้าไม่เลือก)
     squadId:   '',
     jiraTicketNo: ticketNo || null,
     jiraUrl:      isValidHttpUrl(url) ? url : null,
-    jiraStatus:   status || null,
+    jiraStatus:   null, // format นี้ไม่มี status มาด้วย
   };
 }
 
-function parseEpicBanner(parent: any): EpicBanner | null {
-  if (!parent || typeof parent !== 'object') return null;
-  const ticketNo = parent.ticket_no !== undefined && parent.ticket_no !== null ? String(parent.ticket_no).trim() : '';
-  const url      = parent.url      !== undefined && parent.url      !== null ? String(parent.url).trim()      : '';
-  const rawTotal = parent.total_task_points;
-  const totalPoints = rawTotal !== undefined && rawTotal !== null && !isNaN(Number(rawTotal)) ? Number(rawTotal) : null;
-  if (!ticketNo && !url) return null;
-  return { ticketNo, url, totalPoints };
+// รับ array แบบแบน [{ key, summary, url }] — ไม่มี object ห่อ ไม่มี epic/parent ticket
+// เผื่อ user copy มาทั้งก้อน ```json ... ``` จากแชท AI (ไม่ใช่แค่เนื้อ JSON ข้างใน) — ตัด fence ออกก่อน parse
+function stripJsonCodeFence(text: string): string {
+  const trimmed = text.trim();
+  const m = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return m ? m[1].trim() : trimmed;
 }
 
-function parseJiraJson(
-  text: string, taskTypes: TypeRow[], pointMappings: PointRow[],
-): { rows: Row[]; epic: EpicBanner | null } {
+function parseJiraJson(text: string, taskTypes: TypeRow[]): Row[] {
   let parsed: any;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(stripJsonCodeFence(text));
   } catch {
     throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ');
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ');
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ — ต้องเป็น array ของ {key, summary, url}');
   }
 
-  const subTasks    = Array.isArray(parsed.parent_ticket?.sub_tasks) ? parsed.parent_ticket.sub_tasks : [];
-  const linkedCases = Array.isArray(parsed.linked_test_cases_to_execute) ? parsed.linked_test_cases_to_execute : [];
-
-  // parent_ticket ไม่มีเลย (มีแค่ linked_test_cases_to_execute) ก็ยัง import ได้ปกติ — ข้าม banner เฉยๆ
-  if (subTasks.length === 0 && linkedCases.length === 0) {
-    throw new Error('รูปแบบ JSON ไม่ตรงตามที่รองรับ — ไม่พบ sub_tasks หรือ linked_test_cases_to_execute');
-  }
-
-  const epic = parseEpicBanner(parsed.parent_ticket);
-  const rows = [...subTasks, ...linkedCases].map((item: any) => jiraItemToRow(item, taskTypes, pointMappings));
-  return { rows, epic };
+  return parsed.map((item: any) => jiraItemToRow(item, taskTypes));
 }
 
 function downloadTemplate() {
@@ -208,7 +240,19 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
   const [jiraPanelOpen, setJiraPanelOpen] = useState(false);
   const [jiraJsonText,  setJiraJsonText]  = useState('');
   const [jiraJsonError, setJiraJsonError] = useState('');
-  const [epicBanner,    setEpicBanner]    = useState<EpicBanner | null>(null);
+  const [promptOpen,    setPromptOpen]    = useState(false);
+  const [promptCopied,  setPromptCopied]  = useState(false);
+
+  async function copyJiraPrompt() {
+    try {
+      await navigator.clipboard.writeText(JIRA_AI_PROMPT);
+    } catch {
+      alert(JIRA_AI_PROMPT);
+      return;
+    }
+    setPromptCopied(true);
+    setTimeout(() => setPromptCopied(false), 2000);
+  }
 
   useEffect(() => {
     Promise.all([
@@ -244,9 +288,8 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
 
   function applyJiraJson(text: string) {
     try {
-      const { rows: newRows, epic } = parseJiraJson(text, taskTypes, pointMappings);
+      const newRows = parseJiraJson(text, taskTypes);
       setRows(prev => [...prev, ...newRows]);
-      if (epic) setEpicBanner(epic);
       setJiraJsonError('');
       setJiraJsonText('');
     } catch (err: any) {
@@ -302,7 +345,6 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
       const data = await res.json();
       setImportDone(data.count);
       setRows([]);
-      setEpicBanner(null);
     }
     setImporting(false);
   }
@@ -388,14 +430,14 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
           {jiraPanelOpen && (
             <div className="bg-surface-1 border border-app-border rounded-[4px] p-3.5 mb-4">
               <p className="text-[12px] text-txt-secondary mb-2">
-                วาง JSON จาก Jira ที่นี่ (รองรับโครงสร้าง <code className="text-[11px]">parent_ticket</code> +{' '}
-                <code className="text-[11px]">linked_test_cases_to_execute</code>) หรืออัปโหลดไฟล์ .json
+                วาง JSON จาก Jira ที่นี่ (รองรับ array ของ{' '}
+                <code className="text-[11px]">{'{ key, summary, url }'}</code>) หรืออัปโหลดไฟล์ .json
               </p>
               <textarea
                 rows={6}
                 value={jiraJsonText}
                 onChange={e => { setJiraJsonText(e.target.value); if (jiraJsonError) setJiraJsonError(''); }}
-                placeholder='{"parent_ticket": {...}, "linked_test_cases_to_execute": [...]}'
+                placeholder='[{"key": "SR-25842", "summary": "...", "url": "https://..."}]'
                 className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12px] font-mono px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent resize-y"
               />
               {jiraJsonError && <p className="text-[11.5px] text-danger mt-1.5">{jiraJsonError}</p>}
@@ -415,25 +457,35 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
                 </button>
                 <input ref={jiraFileRef} type="file" accept=".json" className="hidden"
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleJiraJsonFile(f); e.target.value = ''; }} />
+                <button
+                  onClick={() => setPromptOpen(o => !o)}
+                  className="ml-auto text-[11.5px] text-txt-secondary hover:text-txt-primary underline"
+                >
+                  {promptOpen ? 'ซ่อน prompt สำหรับ AI' : '🤖 ไม่มี JSON? ให้ AI อื่นช่วย gen ให้'}
+                </button>
               </div>
-            </div>
-          )}
 
-          {/* Epic banner — อ้างอิงเฉยๆ ไม่สร้างเป็น task */}
-          {epicBanner && (
-            <div className="flex items-center justify-between gap-2 bg-accent-bg border border-accent/30 text-[12.5px] text-txt-primary px-3 py-2.5 rounded-[3px] mb-4">
-              <span>
-                📎 Epic:{' '}
-                {isValidHttpUrl(epicBanner.url) ? (
-                  <a href={epicBanner.url} target="_blank" rel="noopener noreferrer" className="text-accent underline">
-                    {epicBanner.ticketNo || epicBanner.url}
-                  </a>
-                ) : (
-                  <span className="font-medium">{epicBanner.ticketNo || '—'}</span>
-                )}
-                {epicBanner.totalPoints !== null && <> · เป้าหมาย {epicBanner.totalPoints} pts</>}
-              </span>
-              <button onClick={() => setEpicBanner(null)} className="text-txt-muted hover:text-txt-primary text-[12px] flex-shrink-0">✕</button>
+              {promptOpen && (
+                <div className="mt-3 pt-3 border-t border-app-border">
+                  <p className="text-[12px] text-txt-secondary mb-2">
+                    คัดลอก prompt นี้ไปวางใน AI ตัวอื่น (ChatGPT, Claude ฯลฯ) ต่อท้ายด้วยข้อมูล Jira ที่มี
+                    (copy จากหน้า Jira, ลิงก์ + รายละเอียด ฯลฯ) แล้ว AI จะ gen JSON กลับมาให้วางในช่องด้านบนได้เลย
+                  </p>
+                  <textarea
+                    readOnly
+                    rows={8}
+                    value={JIRA_AI_PROMPT}
+                    onFocus={e => e.currentTarget.select()}
+                    className="w-full bg-surface-2 border border-app-border text-txt-secondary text-[11px] font-mono px-2.5 py-2 rounded-[3px] focus:outline-none resize-y"
+                  />
+                  <button
+                    onClick={copyJiraPrompt}
+                    className="mt-2 bg-surface-2 border border-app-border text-txt-primary text-[12px] px-3 py-[6px] rounded-[3px] hover:bg-surface-3 transition-colors"
+                  >
+                    {promptCopied ? '✅ คัดลอกแล้ว!' : '📋 Copy Prompt'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
