@@ -16,7 +16,7 @@ export default async function SquadsPage() {
 
   // Floating pool member และ ADMIN/QA_MANAGER เห็น grid selector ทั้งหมด
   // QA_LEAD/QA_ENGINEER ที่ผูก squad แล้ว redirect เข้า squad ตัวเองทันที
-  if (user.squadId && !user.isFloatingPoolMember) redirect(`/squads/${user.squadId}`);
+  if (user.squadId && !user.isFloatingPoolMember && user.role !== 'ADMIN') redirect(`/squads/${user.squadId}`);
 
   // ADMIN ไม่มี squad → แสดงรายชื่อ squad ทั้งหมดให้เลือก
   const scope = squadScopeFilter(user);

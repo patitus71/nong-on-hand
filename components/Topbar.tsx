@@ -12,7 +12,9 @@ export default async function Topbar() {
   const session = await getSession();
   const user = session?.user as any;
   const firstName = user?.name?.split(' ')[0] ?? 'User';
-  const useOwnSquad = user?.squadId && !user?.isFloatingPoolMember;
+  // ADMIN เห็นหน้า "เลือก Squad" (grid ทุก squad) เสมอ ไม่ว่าจะมี squadId ผูกอยู่หรือไม่
+  // (เช่น admin ที่ตอนนี้ผูกกับ Test Squads เพื่อไว้ test) — เหมือน floating pool member
+  const useOwnSquad = user?.squadId && !user?.isFloatingPoolMember && user?.role !== 'ADMIN';
   const squadHref   = useOwnSquad ? `/squads/${user.squadId}` : '/squads';
   const retroHref   = useOwnSquad ? `/squads/${user.squadId}/retro` : '/squads';
 
