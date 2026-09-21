@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     return new Response('งานนี้ถูกยกเลิกแล้ว ดึงเข้าบอร์ดต่อไม่ได้อีก', { status: 403 });
   }
 
-  if (user.squadId && !canPullIntoBoard(task, user.squadId)) {
+  if (user.role !== 'ADMIN' && user.squadId && !canPullIntoBoard(task, user.squadId)) {
     return new Response('Forbidden: task belongs to another squad', { status: 403 });
   }
 

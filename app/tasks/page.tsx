@@ -10,7 +10,7 @@ export default async function TasksPage() {
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
 
-  const [tasks, squads, users, qaEngineers, openSprints] = await Promise.all([
+  const [tasks, squads, users, assignableMembers, openSprints] = await Promise.all([
     prisma.task.findMany({
       where: { deletedAt: null },
       include: {
@@ -28,14 +28,14 @@ export default async function TasksPage() {
       select:  { id: true, name: true },
       orderBy: { name: 'asc' },
     }),
-    // QA Engineers in user's squad for the pull-in modal assignee dropdown
-    user.squadId
-      ? prisma.user.findMany({
-          where:   { role: 'QA_ENGINEER', squadId: user.squadId, active: true },
-          select:  { id: true, name: true },
-          orderBy: { name: 'asc' },
-        })
-      : Promise.resolve([] as { id: string; name: string }[]),
+    // ผู้รับผิดชอบได้ทุกคน (QA_ENGINEER/QA_LEAD — ตรงกับ canAssignTaskTo() ใน lib/importTasks.ts)
+    // ดึงมาทั้งหมดพร้อม squadId แล้วให้ TasksClient กรองตาม squad ของงานที่กำลังดึงเข้าบอร์ดเอง
+    // (ต้องดึงทุก squad ไม่ใช่แค่ squad ของ user ปัจจุบัน เพราะ ADMIN/floating pool ดึงงานข้าม squad ได้)
+    prisma.user.findMany({
+      where:   { role: { in: ['QA_ENGINEER', 'QA_LEAD'] }, active: true, deletedAt: null },
+      select:  { id: true, name: true, squadId: true },
+      orderBy: { name: 'asc' },
+    }),
     // OPEN sprints per squad — used in pull-in modal to assign task to a sprint
     prisma.sprint.findMany({
       where:   { status: 'OPEN' },
@@ -72,7 +72,7 @@ export default async function TasksPage() {
         userRole={user.role}
         userSquadId={user.squadId ?? null}
         userId={user.id}
-        qaEngineers={qaEngineers}
+        assignableMembers={assignableMembers}
         openSprints={openSprints}
       />
     </>

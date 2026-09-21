@@ -35,7 +35,7 @@ type Props = {
   userRole:     string;
   userSquadId:  string | null;
   userId:       string;
-  qaEngineers:  { id: string; name: string }[];
+  assignableMembers: { id: string; name: string; squadId: string | null }[];
   openSprints:  OpenSprint[];
 };
 
@@ -73,7 +73,7 @@ function isUnflagEnabled(t: TaskRow, userRole: string, userSquadId: string | nul
   return false;
 }
 
-export default function TasksClient({ tasks, squads, users, userRole, userSquadId, userId, qaEngineers, openSprints }: Props) {
+export default function TasksClient({ tasks, squads, users, userRole, userSquadId, userId, assignableMembers, openSprints }: Props) {
   const router = useRouter();
   // router.refresh() ไม่มี promise ให้ await — ต้องห่อด้วย startTransition ถึงจะรู้ได้ว่า
   // RSC refetch + re-render จริงๆ เสร็จเมื่อไหร่ (ไม่งั้น modal/loading ปิดไปก่อนหน้าจอ update จริง
@@ -743,7 +743,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                         onChange={e => setField(id, 'assignee', e.target.value)}
                         className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent">
                         <option value="">— เลือกทีหลัง —</option>
-                        {qaEngineers.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                        {assignableMembers.filter(e => e.squadId === modalSquadId).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                       </select>
                     </div>
                   </div>
