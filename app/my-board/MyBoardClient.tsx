@@ -15,7 +15,9 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   fmt, fmtHM, burnColorCls, initials, avatarColor, renderReportMarkdown, markdownToPlainText,
   burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
+  extractTitleTags,
 } from '@/lib/ui';
+import { sanitizeJiraUrl } from '@/lib/jira';
 
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
@@ -235,6 +237,7 @@ function SortableCard({
   const hoursPerPointTask = isDoneLane && actMinutes > 0 && task.taskPoint
     ? (actMinutes / 60) / task.taskPoint
     : null;
+  const { tags: cardTags, cleanTitle } = extractTitleTags(task.title);
 
   return (
     <div
@@ -267,15 +270,37 @@ function SortableCard({
           <span className="checkmark">✅</span> Review ผ่านแล้ว — พร้อมย้ายไป Done!
         </div>
       )}
+      {task.jiraUrl && (
+        <a
+          href={task.jiraUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          onPointerDown={e => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 mb-1.5 hover:brightness-110 transition-[filter]"
+        >
+          {task.jiraTicketNo ?? 'Jira'} ↗
+        </a>
+      )}
       <Link
         href={`/tasks/${task.id}`}
         onClick={e => e.stopPropagation()}
         onPointerDown={e => e.stopPropagation()}
-        className="block text-[13px] text-txt-primary leading-snug mb-2 flex items-start gap-1.5 hover:text-accent transition-colors"
+        className="block text-[13px] text-txt-primary leading-snug mb-1 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
         {task.hasIssue && !task.isCancelled && <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>}
-        {task.title}
+        {cleanTitle}
       </Link>
+
+      {cardTags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {cardTags.map((tag, i) => (
+            <span key={i} className="text-[9.5px] font-mono bg-surface-3 text-txt-muted rounded-[4px] px-1.5 py-0.5">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Meta row: squad tag + point chip + estimate + avatar */}
       <div className="flex items-center gap-1.5 mb-2">
@@ -302,19 +327,6 @@ function SortableCard({
         <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
           {isDoneLane && hoursPerPointTask !== null && (
             <span className="font-mono text-[10px] text-accent">{hoursPerPointTask.toFixed(1)} ชม./PT</span>
-          )}
-          {task.jiraUrl && (
-            <a
-              href={task.jiraUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              onPointerDown={e => e.stopPropagation()}
-              title={`Jira: ${task.jiraTicketNo ?? task.jiraUrl}`}
-              className="text-[10px] font-mono text-txt-muted bg-surface-3 border border-app-border px-1.5 py-0.5 rounded-full hover:text-accent hover:border-accent/40 transition-colors"
-            >
-              {task.jiraTicketNo ?? 'Jira'} ↗
-            </a>
           )}
           {av && task.assignee && (
             <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
@@ -672,6 +684,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
   const [open, setOpen]   = useState(false);
   const [title, setTitle] = useState('');
   const [taskPoint, setTaskPoint] = useState<string>('');
+  const [jiraUrl, setJiraUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
@@ -679,13 +692,17 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
     fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
   }, []);
 
+  const jiraUrlTrimmed = jiraUrl.trim();
+  const validJiraUrl   = jiraUrlTrimmed ? sanitizeJiraUrl(jiraUrlTrimmed) : null;
+  const invalidJiraUrl = jiraUrlTrimmed !== '' && validJiraUrl === null;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || taskPoint === '') return;
     setSaving(true);
     const res = await fetch('/api/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, laneId, squadId, taskPoint: Number(taskPoint) }),
+      body: JSON.stringify({ title, laneId, squadId, taskPoint: Number(taskPoint), jiraUrl: jiraUrlTrimmed || undefined }),
     });
     if (res.ok) {
       const task = await res.json();
@@ -695,10 +712,10 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         taskPoint: task.taskPoint ?? null, estimatedHours: task.estimatedHours ?? null,
-        jiraTicketNo: null, jiraUrl: null,
+        jiraTicketNo: task.jiraTicketNo ?? null, jiraUrl: task.jiraUrl ?? null,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
-      setTitle(''); setTaskPoint(''); setOpen(false);
+      setTitle(''); setTaskPoint(''); setJiraUrl(''); setOpen(false);
     }
     setSaving(false);
   }
@@ -719,10 +736,25 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         <option value="">Task Point — เลือก (จำเป็น)</option>
         {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
       </select>
+      <input value={jiraUrl} onChange={e => setJiraUrl(e.target.value)} placeholder="Jira link (ไม่บังคับ)"
+        className={`w-full bg-surface-2 border text-txt-primary text-[12.5px] font-mono px-2.5 py-2 rounded-[3px] focus:outline-none mb-1 ${
+          validJiraUrl ? 'border-accent/50' : invalidJiraUrl ? 'border-warning/60' : 'border-app-border'
+        }`} />
+      {validJiraUrl && (
+        <a href={validJiraUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 mb-1.5 hover:brightness-110 transition-[filter]">
+          เปิดลิงก์ ↗
+        </a>
+      )}
+      {invalidJiraUrl && (
+        <p className="text-[10.5px] text-warning mb-1.5">
+          อ่านลิงก์ไม่ออก — ต้องเป็น URL เต็มที่ขึ้นต้น http:// หรือ https:// (ไม่ใส่ก็บันทึกได้ปกติ)
+        </p>
+      )}
       <div className="flex gap-1.5">
         <button type="submit" disabled={saving || !title.trim() || taskPoint === ''}
           className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => { setOpen(false); setTitle(''); setTaskPoint(''); }}
+        <button type="button" onClick={() => { setOpen(false); setTitle(''); setTaskPoint(''); setJiraUrl(''); }}
           className="text-txt-muted text-[12px] px-2 py-1.5 rounded-[3px] hover:text-txt-secondary">ยกเลิก</button>
       </div>
     </form>
@@ -885,6 +917,7 @@ export default function MyBoardClient({
   type ReviewerModalData = { taskId: string; taskTitle: string; taskSquadId: string; pendingLanes: LaneData[] };
   const [reviewerModal,      setReviewerModal]      = useState<ReviewerModalData | null>(null);
   const [selectedReviewerId, setSelectedReviewerId] = useState<string>('');
+  const [reviewerModalSaving, setReviewerModalSaving] = useState(false);
 
   /* ── Time modal (any → Done) — forced once, regardless of whether the task passed through Review ── */
   type DoneTimeModalData = {
@@ -1416,7 +1449,8 @@ export default function MyBoardClient({
 
   /* ─── Reviewer modal handlers ─── */
   async function confirmReviewerModal(reviewerId: string | null) {
-    if (!reviewerModal) return;
+    if (!reviewerModal || reviewerModalSaving) return; // กัน double-submit ตอนกดซ้ำระหว่างรอ saveOrder
+    setReviewerModalSaving(true);
     const { taskId, pendingLanes } = reviewerModal;
     const task = pendingLanes.flatMap(l => l.tasks).find(t => t.id === taskId);
     const squadId = task?.squadId;
@@ -1436,9 +1470,11 @@ export default function MyBoardClient({
     }
     setReviewerModal(null);
     setSelectedReviewerId('');
+    setReviewerModalSaving(false);
   }
 
   function cancelReviewerModal() {
+    if (reviewerModalSaving) return; // ห้ามยกเลิกระหว่าง request กำลังยิงอยู่ — เดี๋ยว local state (preDragRef) กับผลลัพธ์จริงจาก server ขัดกัน
     setLanes(preDragRef.current);
     setReviewerModal(null);
     setSelectedReviewerId('');
@@ -2096,7 +2132,8 @@ export default function MyBoardClient({
                   <select
                     value={selectedReviewerId}
                     onChange={e => setSelectedReviewerId(e.target.value)}
-                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-4"
+                    disabled={reviewerModalSaving}
+                    className="w-full bg-surface-2 border border-app-border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none focus:border-accent mb-4 disabled:opacity-50"
                   >
                     <option value="">— เลือกผู้ review —</option>
                     {options.map(r => (
@@ -2104,13 +2141,14 @@ export default function MyBoardClient({
                     ))}
                   </select>
                   <div className="flex gap-2 justify-end">
-                    <button onClick={cancelReviewerModal}
-                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
+                    <button onClick={cancelReviewerModal} disabled={reviewerModalSaving}
+                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors disabled:opacity-40 disabled:pointer-events-none">
                       ยกเลิก
                     </button>
                     <button
                       onClick={() => confirmReviewerModal(selectedReviewerId || null)}
-                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] transition-colors"
+                      disabled={reviewerModalSaving}
+                      className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] transition-colors disabled:opacity-70 ${reviewerModalSaving ? 'btn-loading' : ''}`}
                     >
                       ยืนยัน →
                     </button>
@@ -2124,12 +2162,12 @@ export default function MyBoardClient({
                     ต้องการเข้า Review โดยไม่กำหนด reviewer?
                   </p>
                   <div className="flex gap-2 justify-end">
-                    <button onClick={cancelReviewerModal}
-                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
+                    <button onClick={cancelReviewerModal} disabled={reviewerModalSaving}
+                      className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors disabled:opacity-40 disabled:pointer-events-none">
                       ยกเลิก
                     </button>
-                    <button onClick={() => confirmReviewerModal(null)}
-                      className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] transition-colors">
+                    <button onClick={() => confirmReviewerModal(null)} disabled={reviewerModalSaving}
+                      className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] transition-colors disabled:opacity-70 ${reviewerModalSaving ? 'btn-loading' : ''}`}>
                       เข้า Review โดยไม่เลือก reviewer
                     </button>
                   </div>

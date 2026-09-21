@@ -2,7 +2,7 @@ import { getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { canCreateTask, type SessionUser } from '@/lib/rbac';
-import { PERSONAL_LANE_DEFAULTS } from '@/lib/personalBoard';
+import { PERSONAL_LANE_DEFAULTS, SQ_TO_PERSONAL_LANE, finishedInClosedSprintFilter } from '@/lib/personalBoard';
 import Topbar from '@/components/Topbar';
 import MyBoardClient from './MyBoardClient';
 
@@ -22,31 +22,10 @@ function computeAtRisk(
   return { isAtRisk: reasons.length > 0, riskReason: reasons.join(' · ') };
 }
 
-// Lane name → personal lane name.
-// Covers squad lane names AND personal lane names (tasks can end up in other users' personal boards).
-const SQ_TO_PERSONAL_LANE: Record<string, string> = {
-  'To do':      'To Do',        // squad board
-  'In progress': 'In Progress', // squad board
-  'Done':       'Done',         // both
-  'มีปัญหา':   'To Do',        // squad board physical lane → put in To Do (hasIssue=true moves it to issue section)
-  'To Do':      'To Do',        // personal board (other user)
-  'In Progress': 'In Progress', // personal board (other user)
-  'Review':     'In Progress',  // personal board (other user) — treat as In Progress
-};
-
-// ticket ที่ Done หรือถูก cancel (เลน Cancel) แต่ sprint ที่มันสังกัดปิดไปแล้ว ถือว่าจบเรื่องแล้วจริงๆ
-// ไม่ต้องตามหลอนอยู่ใน My Board อีก (ดูย้อนหลังได้ผ่าน export report ตามปกติ) — sprintId เป็น
-// null ก็ยังโชว์ตามเดิม (ไม่เคยผูกกับ sprint ไหนเลย)
-function finishedInClosedSprintFilter() {
-  return [
-    { isCancelled: true, sprint: { status: 'CLOSED' as const } },
-    { lane: { name: 'Done' }, sprint: { status: 'CLOSED' as const } },
-  ];
-}
-
 function personalBoardTasksInclude() {
   return {
     where: {
+      deletedAt: null,
       NOT: { OR: finishedInClosedSprintFilter() },
     },
     orderBy: [{ order: 'asc' as const }, { createdAt: 'asc' as const }],
@@ -149,6 +128,7 @@ export default async function MyBoardPage() {
   const rawSquadTasks = await prisma.task.findMany({
     where: {
       assigneeId: user.id,
+      deletedAt:  null,
       squadId:    { not: null },
       laneId:     { not: null },
       NOT: { OR: [{ lane: { boardId: board.id } }, ...finishedInClosedSprintFilter()] },

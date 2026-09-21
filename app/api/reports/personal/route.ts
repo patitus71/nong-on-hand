@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { generatePersonalReportMarkdown } from '@/lib/personalReport';
+import { SQ_TO_PERSONAL_LANE, finishedInClosedSprintFilter } from '@/lib/personalBoard';
 import type { SessionUser } from '@/lib/rbac';
 
 export async function GET(req: Request) {
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
     },
   });
 
-  const tasks =
+  const boardTasks =
     board?.lanes.flatMap(l =>
       l.tasks.map(t => ({
         id:             t.id,
@@ -47,6 +48,39 @@ export async function GET(req: Request) {
         totalOtMin:     t.timeLogs.reduce((s, log) => s + (log.otMinutes ?? 0), 0),
       }))
     ) ?? [];
+
+  // งาน squad ที่ถูก assign ให้ user นี้ แต่ยังไม่เคยถูกดึงเข้า personal board ของตัวเอง
+  // (laneId ยังชี้ไป lane ของ squad board อยู่) — ต้องรวมเข้ามาด้วย ไม่งั้น report จะโชว์
+  // "ยังไม่มีงานบนบอร์ด" ทั้งที่ my-board จริงๆ มีงานอยู่ (ดู app/my-board/page.tsx rawSquadTasks)
+  const rawSquadTasks = board
+    ? await prisma.task.findMany({
+        where: {
+          assigneeId: user.id,
+          deletedAt:  null,
+          squadId:    { not: null },
+          laneId:     { not: null },
+          NOT: { OR: [{ lane: { boardId: board.id } }, ...finishedInClosedSprintFilter()] },
+        },
+        include: { lane: { select: { name: true } }, timeLogs: { select: { normalMinutes: true, otMinutes: true } } },
+      })
+    : [];
+
+  const squadTasks = rawSquadTasks
+    .map(t => {
+      const laneName = SQ_TO_PERSONAL_LANE[t.lane!.name];
+      if (!laneName) return null;
+      return {
+        id:             t.id,
+        title:          t.title,
+        laneName,
+        completedAt:    t.completedAt,
+        totalNormalMin: t.timeLogs.reduce((s, log) => s + (log.normalMinutes ?? 0), 0),
+        totalOtMin:     t.timeLogs.reduce((s, log) => s + (log.otMinutes ?? 0), 0),
+      };
+    })
+    .filter((t): t is NonNullable<typeof t> => t !== null);
+
+  const tasks = [...boardTasks, ...squadTasks];
 
   const markdown = generatePersonalReportMarkdown({
     userName: user.name,

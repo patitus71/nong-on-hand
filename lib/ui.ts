@@ -1,3 +1,19 @@
+// แกะแท็ก "[QA][automation][review pr] ..." ที่ขึ้นต้น title (มักมาจาก Jira summary) ออกมาเป็น
+// array แยก — derive ตอน render เสมอ ไม่เก็บเป็นคอลัมน์แยกในฐานข้อมูล (กัน migration/backfill และ
+// กันชนกับ matchTaskType() ใน ImportClient.tsx ที่อ่าน bracket เดิมตอน import) ตัดแล้วว่างให้ fallback
+// เป็น title เดิม
+export function extractTitleTags(title: string): { tags: string[]; cleanTitle: string } {
+  const tags: string[] = [];
+  let rest = title;
+  const re = /^\s*\[([^\]]+)\]\s*/;
+  let m: RegExpMatchArray | null;
+  while ((m = rest.match(re))) {
+    tags.push(m[1].trim());
+    rest = rest.slice(m[0].length);
+  }
+  return { tags, cleanTitle: rest || title };
+}
+
 export function fmt(minutes: number): string | null {
   if (minutes === 0) return null;
   const h = Math.floor(minutes / 60);

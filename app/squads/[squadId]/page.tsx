@@ -149,6 +149,7 @@ export default async function SquadPage({
     ...squad.users.map(u => ({
       id:        u.id,
       name:      u.name,
+      role:      u.role,
       taskCount: tasks.filter(t => t.assignee?.id === u.id).length,
       external:  false,
     })),

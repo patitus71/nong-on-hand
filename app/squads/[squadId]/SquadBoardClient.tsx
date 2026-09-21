@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  fmtHM, burnColorCls, initials, avatarColor,
+  fmtHM, burnColorCls, initials, avatarColor, extractTitleTags,
   burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
 } from '@/lib/ui';
 import TopLoadingBar from '@/components/TopLoadingBar';
+import { sanitizeJiraUrl } from '@/lib/jira';
 
 type TaskCard = {
   id:                 string;
@@ -32,7 +33,7 @@ type TaskCard = {
 };
 
 type LaneData  = { name: string; tasks: TaskCard[] };
-type Member    = { id: string; name: string; taskCount: number; external?: boolean };
+type Member    = { id: string; name: string; role?: string; taskCount: number; external?: boolean };
 type SquadOpt  = { id: string; name: string };
 
 type SprintInfo = {
@@ -496,6 +497,7 @@ export default function SquadBoardClient({
   const [showCreate,   setShowCreate]   = useState(false);
   const [createTitle,  setCreateTitle]  = useState('');
   const [createPoint,  setCreatePoint]  = useState('');
+  const [createJiraUrl, setCreateJiraUrl] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
 
   const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
@@ -532,10 +534,11 @@ export default function SquadBoardClient({
       body:    JSON.stringify({
         title: createTitle.trim(), squadId: currentSquadId, assigneeId: null,
         taskPoint: Number(createPoint),
+        jiraUrl: createJiraUrl.trim() || undefined,
       }),
     });
     if (res.ok) {
-      setCreateTitle(''); setCreatePoint('');
+      setCreateTitle(''); setCreatePoint(''); setCreateJiraUrl('');
       setShowCreate(false);
       startRefresh(() => router.refresh());
     }
@@ -572,6 +575,7 @@ export default function SquadBoardClient({
       : null;
     const cardPointSaving = pointSavingId === t.id;
     const cardPointError  = pointErrorId === t.id;
+    const { tags: cardTags, cleanTitle } = extractTitleTags(t.title);
 
     return (
       <div key={t.id} className={`relative ${t.isAtRisk ? 'card-at-risk' : ''}`}>
@@ -595,8 +599,21 @@ export default function SquadBoardClient({
           }}
         >
 
+          {/* Jira chip — แถวเดี่ยวเหนือชื่องาน แสดงเฉพาะการ์ดที่มาจาก Jira */}
+          {t.jiraUrl && (
+            <a
+              href={t.jiraUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 mb-1.5 hover:brightness-110 transition-[filter]"
+            >
+              {t.jiraTicketNo ?? 'Jira'} ↗
+            </a>
+          )}
+
           {/* Title row */}
-          <div className="flex items-start gap-1 mb-2">
+          <div className="flex items-start gap-1 mb-1">
             <Link
               href={`/tasks/${t.id}`}
               className="flex-1 text-[13px] text-txt-primary flex items-start gap-1.5 hover:text-accent transition-colors"
@@ -611,7 +628,7 @@ export default function SquadBoardClient({
               {t.reviewApprovedAt && laneName === 'Wait for review' && (
                 <span className="text-success flex-shrink-0 text-[11px] leading-[1.4]" title="Review ผ่านแล้ว">✓</span>
               )}
-              {t.title}
+              {cleanTitle}
             </Link>
 
             {!t.isCancelled && (() => {
@@ -656,7 +673,9 @@ export default function SquadBoardClient({
                       className="pop-in absolute top-full mt-1.5 right-0 z-30 w-[216px] p-1.5 bg-surface-2 border border-app-border rounded-[10px] shadow-2xl"
                     >
                       <div className="px-2 pt-1 pb-1.5 text-[10.5px] uppercase tracking-[.1em] text-txt-muted">มอบหมายให้</div>
-                      {members.filter(m => !m.external).map(m => {
+                      {/* มอบหมายได้เฉพาะ QA_ENGINEER/QA_LEAD — ให้ตรงกับ canAssignTaskTo() ฝั่ง backend
+                          (lib/importTasks.ts) กันเลือก ADMIN/QA_MANAGER แล้วเจอ "Invalid assignee" */}
+                      {members.filter(m => !m.external && (m.role === 'QA_ENGINEER' || m.role === 'QA_LEAD')).map(m => {
                         const isCurrent = t.assignee?.id === m.id;
                         const mav       = avatarColor(m.name);
                         const mHours    = memberLoads.get(m.id)?.hours ?? 0;
@@ -722,6 +741,17 @@ export default function SquadBoardClient({
             )}
           </div>
 
+          {/* Tag chips — แกะจาก [QA][automation][...] ที่ขึ้นต้นชื่องาน (ถ้ามี) */}
+          {cardTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {cardTags.map((tag, i) => (
+                <span key={i} className="text-[9.5px] font-mono bg-surface-3 text-txt-muted rounded-[4px] px-1.5 py-0.5">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Meta row: point chip + estimate + assignee name */}
           {!t.isCancelled && (
             <div className="flex items-center gap-1.5 mb-2">
@@ -742,19 +772,7 @@ export default function SquadBoardClient({
                 {t.taskPoint !== null && t.estimatedHours !== null ? `EST ${t.estimatedHours} ชม.` : 'ยังไม่ตั้ง estimate'}
               </span>
               {cardPointError && <span className="text-[9px] text-danger flex-shrink-0">พลาด</span>}
-              {t.jiraUrl && (
-                <a
-                  href={t.jiraUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  title={`Jira: ${t.jiraTicketNo ?? t.jiraUrl}`}
-                  className="ml-auto text-[10px] font-mono text-txt-muted bg-surface-2 border border-app-border px-1.5 py-0.5 rounded-full hover:text-accent hover:border-accent/40 transition-colors flex-shrink-0"
-                >
-                  {t.jiraTicketNo ?? 'Jira'} ↗
-                </a>
-              )}
-              <span className={`${t.jiraUrl ? '' : 'ml-auto'} text-[11px] text-txt-muted truncate max-w-[92px]`} title={t.assignee?.name ?? 'ยังไม่มีเจ้าของ'}>
+              <span className="ml-auto text-[11px] text-txt-muted truncate max-w-[92px]" title={t.assignee?.name ?? 'ยังไม่มีเจ้าของ'}>
                 {t.assignee ? t.assignee.name : 'ยังไม่มีเจ้าของ'}
               </span>
             </div>
@@ -1015,6 +1033,7 @@ export default function SquadBoardClient({
         const squadEstPct        = squadTotalHours > 0 ? Math.round((squadTotalSpentMin / 60 / squadTotalHours) * 100) : null;
         const squadRemainMin     = Math.max(0, squadTotalHours * 60 - squadTotalSpentMin);
         const squadHoursPerPoint = squadDonePoints > 0 ? squadDoneMin / 60 / squadDonePoints : null;
+        const jiraSyncedCount = allBoardTasks.filter(t => t.jiraUrl).length;
 
         return (
           <div className="bg-surface-1 border border-app-border rounded-[4px] px-4 py-3.5 mb-4 flex flex-col gap-3.5">
@@ -1080,6 +1099,19 @@ export default function SquadBoardClient({
                   </div>
                 </div>
               </div>
+
+              {jiraSyncedCount > 0 && (
+                <>
+                  <div className="w-px self-stretch bg-app-border" />
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
+                    <div className="text-[11px] font-semibold tracking-[.08em] text-txt-muted uppercase">จาก Jira</div>
+                    <div className="flex items-baseline gap-2 whitespace-nowrap">
+                      <div className="font-mono text-[24px] font-bold text-accent leading-none">{jiraSyncedCount}/{allBoardTasks.length}</div>
+                      <div className="text-[13px] text-txt-secondary">การ์ดที่ซิงก์มา</div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <p className="text-[12px] text-txt-secondary leading-relaxed">{summarySentence}</p>
 
@@ -1258,6 +1290,39 @@ export default function SquadBoardClient({
                     <option value="">Task Point — เลือก (จำเป็น)</option>
                     {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
                   </select>
+                  {(() => {
+                    const trimmed = createJiraUrl.trim();
+                    const validJiraUrl = trimmed ? sanitizeJiraUrl(trimmed) : null;
+                    const invalidJiraUrl = trimmed !== '' && validJiraUrl === null;
+                    return (
+                      <div>
+                        <input
+                          value={createJiraUrl}
+                          onChange={e => setCreateJiraUrl(e.target.value)}
+                          placeholder="Jira link (ไม่บังคับ)"
+                          className={`w-full bg-surface-2 border text-txt-primary text-[12.5px] font-mono px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit] ${
+                            validJiraUrl ? 'border-accent/50' : invalidJiraUrl ? 'border-warning/60' : 'border-app-border'
+                          }`}
+                        />
+                        {validJiraUrl && (
+                          <a
+                            href={validJiraUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 mt-1 hover:brightness-110 transition-[filter]"
+                          >
+                            เปิดลิงก์ ↗
+                          </a>
+                        )}
+                        {invalidJiraUrl && (
+                          <p className="text-[10.5px] text-warning mt-1">
+                            อ่านลิงก์ไม่ออก — ต้องเป็น URL เต็มที่ขึ้นต้น http:// หรือ https:// (ไม่ใส่ก็บันทึกได้ปกติ)
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="flex gap-1.5">
                     <button
                       type="submit"
@@ -1268,7 +1333,7 @@ export default function SquadBoardClient({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setShowCreate(false); setCreateTitle(''); setCreatePoint(''); }}
+                      onClick={() => { setShowCreate(false); setCreateTitle(''); setCreatePoint(''); setCreateJiraUrl(''); }}
                       disabled={createLoading}
                       className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
                     >

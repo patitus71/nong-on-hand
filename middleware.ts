@@ -1,6 +1,6 @@
 // middleware.ts
 // Guard route ระดับ Next.js middleware
-// - /admin* ต้องเป็น ADMIN หรือ QA_LEAD เท่านั้น
+// - /admin* ต้องเป็น ADMIN เท่านั้น
 // - route อื่นๆ ที่ผ่าน matcher นี้ ต้องมี token ที่ valid (login แล้ว)
 //
 // หมายเหตุสำคัญ: middleware เป็นแค่ด่านแรก (UX) ไม่ใช่ด่านความปลอดภัยเดียว —
@@ -18,7 +18,7 @@ export default withAuth(
     if (isAdminRoute) {
       const role = token?.role as string | undefined;
       if (role !== "ADMIN") {
-        return NextResponse.redirect(new URL("/dashboard", req.url));
+        return NextResponse.redirect(new URL("/tasks", req.url));
       }
     }
     return NextResponse.next();

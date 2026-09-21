@@ -5,18 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { canDeleteTask, canEditTaskContent, type SessionUser } from '@/lib/rbac';
 import { buildTaskDeletionNotifications } from '@/lib/notifications';
 import { revalidatePath } from 'next/cache';
-
-// Jira URL มักลงท้ายด้วย ticket key เช่น .../browse/SR-25842 หรือ .../issues/SR-25842?... —
-// ดึง segment สุดท้ายของ path มาเดาเป็น ticket key เพื่อโชว์เป็น label แทนการให้ user กรอกแยก
-function extractJiraTicketNo(url: string): string | null {
-  try {
-    const segments = new URL(url).pathname.split('/').filter(Boolean);
-    const last = segments[segments.length - 1];
-    return last ? decodeURIComponent(last) : null;
-  } catch {
-    return null;
-  }
-}
+import { extractJiraTicketNo } from '@/lib/jira';
 
 export async function PATCH(
   req: Request,

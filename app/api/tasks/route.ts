@@ -2,19 +2,26 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canCreateTask, canCreateTaskOnSquadBoard, type SessionUser } from '@/lib/rbac';
+import { sanitizeJiraUrl, extractJiraTicketNo } from '@/lib/jira';
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser;
 
-  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId, taskPoint } = await req.json();
+  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId, taskPoint, jiraUrl } = await req.json();
   if (!title?.trim()) return new Response('title required', { status: 400 });
   if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
     return new Response('taskPoint required — ทุก task ต้องมี Task Point เสมอ', { status: 400 });
   }
   const pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
   if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
+
+  // Jira link ไม่บังคับ — parse ผิด/ไม่ใช่ http(s) แค่ drop เป็น null เงียบๆ ไม่ block การสร้างงาน
+  // (ต่างจาก PATCH /api/tasks/[taskId] ที่ throw error ให้ user แก้ เพราะที่นี่เป็นแค่ optional field
+  // เสริมตอนสร้างงานใหม่ ไม่ใช่ค่าที่ user ตั้งใจแก้ไขโดยตรง)
+  const cleanJiraUrl   = sanitizeJiraUrl(jiraUrl);
+  const jiraTicketNo   = cleanJiraUrl ? extractJiraTicketNo(cleanJiraUrl) : null;
 
   // assigneeParam: undefined = ไม่ส่งมา (My Board create, default เป็น creator), key ปรากฏ (แม้เป็น
   // null) = Squad Board create — ใช้สัญญาณเดียวกันนี้แยกว่าต้องเช็คสิทธิ์ไหน (ดู resolvedAssigneeId ด้านล่าง)
@@ -56,6 +63,8 @@ export async function POST(req: Request) {
       taskPoint:      pointMapping.point,
       estimatedHours: pointMapping.hours,
       order:          (maxOrder._max.order ?? -1) + 1,
+      jiraUrl:        cleanJiraUrl,
+      jiraTicketNo:   jiraTicketNo,
     },
     include: {
       squad:    { select: { name: true } },

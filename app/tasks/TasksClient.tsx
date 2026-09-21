@@ -678,7 +678,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
       {/* ── Pull-in modal ── */}
       {showPullInModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[600px] max-h-[85vh] flex flex-col shadow-2xl">
+          <div className="bg-surface-1 border border-app-border rounded-[4px] w-full max-w-[760px] max-h-[85vh] flex flex-col shadow-2xl">
             <div className="px-5 pt-5 pb-3 border-b border-app-border flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-[15px] font-semibold text-txt-primary">📥 ดึงงานเข้าบอร์ด</h2>
@@ -727,17 +727,17 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                 const f = pullInData[id] ?? { due: '', assignee: '' };
                 return (
                   <div key={id} className="py-3 border-b border-app-border last:border-none grid grid-cols-[1.5fr_1.1fr_1.3fr] gap-2.5 items-end">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[13px] font-medium text-txt-primary truncate" title={task.title}>{task.title}</p>
                       <p className="text-[11px] text-txt-muted mt-0.5">→ เลน "To do"</p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <label className="block text-[10.5px] text-txt-secondary mb-1">วันที่คาดว่าจะเสร็จ</label>
                       <input type="date" value={f.due}
                         onChange={e => setField(id, 'due', e.target.value)}
                         className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <label className="block text-[10.5px] text-txt-secondary mb-1">มอบหมายให้</label>
                       <select value={f.assignee}
                         onChange={e => setField(id, 'assignee', e.target.value)}

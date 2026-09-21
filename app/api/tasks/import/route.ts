@@ -1,20 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-
-// เหมือน validation ของ prLink — ต้องเป็น http/https เท่านั้น กัน javascript: URI แม้ว่าค่าจะมาจาก
-// client parse JSON แล้วก็ตาม (ไม่เชื่อ input จากฝั่ง client 100%) — url ที่ไม่ผ่านจะถูก drop เป็น null
-// เฉยๆ ไม่ block ทั้ง batch import
-function sanitizeJiraUrl(url: unknown): string | null {
-  if (typeof url !== 'string' || !url.trim()) return null;
-  try {
-    const parsed = new URL(url.trim());
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    return url.trim();
-  } catch {
-    return null;
-  }
-}
+import { sanitizeJiraUrl } from '@/lib/jira';
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
