@@ -139,7 +139,7 @@ function SortableCard({
   onPrLinkSave?: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
   saving?: boolean;
   pointMappings?: PointMapping[];
-  onTaskPointChange?: (taskId: string, point: number) => Promise<{ error: string | null }>;
+  onTaskPointChange?: (taskId: string, point: number | null) => Promise<{ error: string | null }>;
   logFormOpen?: boolean;
   logNormalHours?: string;
   logOtHours?: string;
@@ -219,7 +219,7 @@ function SortableCard({
   const [showLogTooltip, setShowLogTooltip] = useState(false);
 
   async function handlePointSelect(e: React.ChangeEvent<HTMLSelectElement>) {
-    const point = Number(e.target.value);
+    const point = e.target.value === '' ? null : Number(e.target.value);
     setPointSaving(true); setPointError('');
     const result = await onTaskPointChange?.(task.id, point);
     if (result?.error) setPointError('บันทึกไม่สำเร็จ');
@@ -316,7 +316,7 @@ function SortableCard({
               task.taskPoint !== null ? 'bg-accent-bg text-accent border-accent/30' : 'bg-surface-3 text-txt-muted border-app-border'
             }`}
           >
-            {task.taskPoint === null && <option value="" disabled>– PT</option>}
+            <option value="">– PT</option>
             {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} PT</option>)}
           </select>
         </div>
@@ -578,7 +578,7 @@ function DroppableLaneCards({
   onPrLinkSave: (taskId: string, prLink: string | null) => Promise<{ error: string | null }>;
   savingTaskIds: Set<string>;
   pointMappings: PointMapping[];
-  onTaskPointChange: (taskId: string, point: number) => Promise<{ error: string | null }>;
+  onTaskPointChange: (taskId: string, point: number | null) => Promise<{ error: string | null }>;
   logFormTaskId: string | null;
   logNormalHours: string;
   logOtHours: string;
@@ -842,7 +842,7 @@ export default function MyBoardClient({
     fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
   }, []);
 
-  async function handleTaskPointChange(taskId: string, point: number): Promise<{ error: string | null }> {
+  async function handleTaskPointChange(taskId: string, point: number | null): Promise<{ error: string | null }> {
     const res = await fetch(`/api/tasks/${taskId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskPoint: point }),

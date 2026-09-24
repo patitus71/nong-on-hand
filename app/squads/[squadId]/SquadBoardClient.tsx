@@ -509,7 +509,7 @@ export default function SquadBoardClient({
   const [pointSavingId, setPointSavingId] = useState<string | null>(null);
   const [pointErrorId,  setPointErrorId]  = useState<string | null>(null);
 
-  async function handleCardPointChange(taskId: string, point: number) {
+  async function handleCardPointChange(taskId: string, point: number | null) {
     setPointSavingId(taskId); setPointErrorId(null);
     const res = await fetch(`/api/tasks/${taskId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -758,13 +758,13 @@ export default function SquadBoardClient({
               <div onClick={e => e.stopPropagation()}>
                 <select
                   value={t.taskPoint ?? ''}
-                  onChange={e => handleCardPointChange(t.id, Number(e.target.value))}
+                  onChange={e => handleCardPointChange(t.id, e.target.value === '' ? null : Number(e.target.value))}
                   disabled={cardPointSaving || !canAssign || isReadonly}
                   className={`appearance-none text-center font-mono text-[10.5px] font-semibold rounded-full px-1.5 py-0.5 border cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-default ${
                     t.taskPoint !== null ? 'bg-accent-bg text-accent border-accent/30' : 'bg-surface-3 text-txt-muted border-app-border'
                   }`}
                 >
-                  {t.taskPoint === null && <option value="" disabled>– PT</option>}
+                  <option value="">– PT</option>
                   {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} PT</option>)}
                 </select>
               </div>

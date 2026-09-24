@@ -17,7 +17,7 @@ export async function PATCH(
 
   const body = await req.json() as {
     title?: string; description?: string; reviewerId?: string | null; prLink?: string | null;
-    taskPoint?: number; jiraUrl?: string | null;
+    taskPoint?: number | null; jiraUrl?: string | null;
   };
   const { title, description, reviewerId, prLink, taskPoint, jiraUrl } = body;
 
@@ -31,7 +31,8 @@ export async function PATCH(
     return new Response('ชื่องานต้องมีอย่างน้อย 1 ตัวอักษร', { status: 400 });
   }
   let pointMapping: { point: number; hours: number } | null = null;
-  if (taskPoint !== undefined) {
+  // taskPoint: null = ล้าง point ออก (กรณีเลือกผิด) → estimatedHours กลับเป็น null ด้วย
+  if (taskPoint !== undefined && taskPoint !== null) {
     if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
       return new Response('taskPoint ต้องเป็นตัวเลข', { status: 400 });
     }
@@ -79,6 +80,9 @@ export async function PATCH(
   if (pointMapping) {
     data.taskPoint      = pointMapping.point;
     data.estimatedHours = pointMapping.hours;
+  } else if (taskPoint === null) {
+    data.taskPoint      = null;
+    data.estimatedHours = null;
   }
 
   const updated = await prisma.task.update({
