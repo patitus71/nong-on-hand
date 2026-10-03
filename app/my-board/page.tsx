@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/session';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { canCreateTask, type SessionUser } from '@/lib/rbac';
+import { canCreateTask, showMyBoardMenu, type SessionUser } from '@/lib/rbac';
 import { PERSONAL_LANE_DEFAULTS, SQ_TO_PERSONAL_LANE, finishedInClosedSprintFilter } from '@/lib/personalBoard';
 import Topbar from '@/components/Topbar';
 import MyBoardClient from './MyBoardClient';
@@ -43,6 +43,8 @@ export default async function MyBoardPage() {
   const session = await getSession();
   if (!session) redirect('/login');
   const user = session.user as SessionUser & { name: string };
+  // QA_MANAGER ไม่มี My Board (เมนูซ่อนอยู่แล้ว) — กันเข้าทาง URL ตรงๆ ด้วย ไม่งั้นระบบสร้างบอร์ดส่วนตัวให้
+  if (!showMyBoardMenu(user)) redirect('/tasks');
 
   const [mySquad, myOpenSprint] = await Promise.all([
     user.squadId

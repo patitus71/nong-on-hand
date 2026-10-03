@@ -59,8 +59,13 @@ export async function DELETE(_req: Request, { params }: { params: { taskId: stri
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser;
 
-  const task = await prisma.task.findUnique({ where: { id: params.taskId }, select: { id: true } });
+  const task = await prisma.task.findUnique({
+    where: { id: params.taskId },
+    select: { id: true, assigneeId: true, squadId: true },
+  });
   if (!task) return new Response('Not Found', { status: 404 });
+  // สิทธิ์เดียวกับการลงเวลา (POST) — ไม่งั้น QA_MANAGER/คนนอก squad ล้างเวลาของงานใครก็ได้
+  if (!canEditTaskContent(user, task)) return new Response('Forbidden', { status: 403 });
 
   const existing = await prisma.timeLog.findMany({
     where:  { taskId: params.taskId },

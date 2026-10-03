@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { sanitizeJiraUrl } from '@/lib/jira';
+import { canAccessSquad } from '@/lib/rbac';
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -15,6 +16,12 @@ export async function POST(req: Request) {
   const { fileName, rows } = await req.json();
   if (!Array.isArray(rows) || rows.length === 0) {
     return new Response('rows required', { status: 400 });
+  }
+
+  // QA_LEAD import ได้เฉพาะ squad ตัวเอง (floating pool ได้ทุก squad) — ไม่งั้นยัดงานเข้าทีมอื่นได้
+  const foreign = rows.find((row: any) => row.squadId && !canAccessSquad(user, String(row.squadId)));
+  if (foreign) {
+    return new Response('Forbidden — import ได้เฉพาะ squad ของตัวเอง', { status: 403 });
   }
 
   const batch = await prisma.importBatch.create({

@@ -33,6 +33,17 @@ export async function POST(req: Request) {
     }
   } else if (!canCreateTask(user)) {
     return new Response('Forbidden', { status: 403 });
+  } else if (user.role !== 'ADMIN' && squadId && squadId !== user.squadId) {
+    // My Board create ส่ง squadId ของตัวเองเสมอ — ระบุ squad อื่นมา = สร้างงานข้ามทีม
+    return new Response('Forbidden — สร้างงานได้เฉพาะใน squad ตัวเอง', { status: 403 });
+  }
+
+  // laneId ต้องเป็นเลนบนบอร์ดส่วนตัวของคนสร้างเอง — กันยัดการ์ดเข้าบอร์ดของคนอื่น
+  if (laneId && user.role !== 'ADMIN') {
+    const lane = await prisma.lane.findUnique({ where: { id: laneId }, select: { board: { select: { ownerId: true } } } });
+    if (!lane || lane.board.ownerId !== user.id) {
+      return new Response('Forbidden — เพิ่มงานได้เฉพาะในบอร์ดของตัวเอง', { status: 403 });
+    }
   }
 
   // หา order สูงสุดใน lane นั้น

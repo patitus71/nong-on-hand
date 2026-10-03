@@ -1,17 +1,21 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { canAccessSquad, canCreateTask, type SessionUser } from '@/lib/rbac';
 
 export async function POST(req: Request, { params }: { params: { retroId: string; itemId: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
-  const user = session.user as any;
+  const user = session.user as SessionUser;
+  // แปลงเป็นงาน = สร้างงานใหม่ → ต้องสร้างงานได้ (QA_MANAGER ไม่ได้)
+  if (!canCreateTask(user)) return new Response('Forbidden', { status: 403 });
 
   const item = await prisma.retroItem.findUnique({
     where:   { id: params.itemId },
     include: { retro: { select: { squadId: true } } },
   });
   if (!item) return new Response('Not Found', { status: 404 });
+  if (!canAccessSquad(user, item.retro.squadId)) return new Response('Forbidden', { status: 403 });
   if (item.linkedTaskId) return Response.json({ taskId: item.linkedTaskId }); // already converted
 
   const { taskPoint } = await req.json().catch(() => ({})) as { taskPoint?: number };

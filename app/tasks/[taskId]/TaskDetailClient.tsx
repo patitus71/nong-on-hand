@@ -216,7 +216,7 @@ export default function TaskDetailClient({
     setClearSaving(false);
   }
 
-  // Auto timer state
+  // Auto timer ถูกปิดแล้ว — เหลือแค่ปุ่มหยุด timer ที่ยังค้างจากระบบเดิม (ถ้ามี)
   const [timerSaving,  setTimerSaving]  = useState(false);
   const openSession = task.timeLogs.find(l => l.endAt === '');
   const [elapsed, setElapsed] = useState<number>(() =>
@@ -231,20 +231,6 @@ export default function TaskDetailClient({
     }, 1000);
     return () => clearInterval(tick);
   }, [openSession?.startAt]);
-
-  async function startTimerFn() {
-    setTimerSaving(true);
-    const res = await fetch(`/api/tasks/${task.id}/timelog/start`, { method: 'POST' });
-    if (res.ok) {
-      const data = await res.json();
-      setTask(t => ({
-        ...t,
-        timeLogs: [{ normalMinutes: 0, otMinutes: 0, startAt: data.startAt, endAt: '' }, ...t.timeLogs],
-      }));
-      setElapsed(0);
-    }
-    setTimerSaving(false);
-  }
 
   async function stopTimerFn() {
     setTimerSaving(true);
@@ -671,11 +657,11 @@ export default function TaskDetailClient({
           {/* Actions */}
           <div className="bg-surface-1 border border-app-border rounded-[4px] p-3.5 flex flex-col gap-2">
 
-            {/* Auto timer */}
-            {openSession ? (
+            {/* Legacy auto timer — ไม่มีปุ่มเริ่มแล้ว แสดงเฉพาะเมื่อมี timer ค้างจากระบบเดิม */}
+            {openSession && (
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between px-3 py-2 rounded-[3px] border border-accent/50 bg-surface-2">
-                  <span className="text-[12px] text-accent">⏱ กำลังจับเวลา</span>
+                  <span className="text-[12px] text-accent">⏱ มีตัวจับเวลาค้างอยู่</span>
                   <span className="text-[13px] font-mono text-txt-primary">{fmtElapsed(elapsed)}</span>
                 </div>
                 <button onClick={stopTimerFn} disabled={timerSaving}
@@ -683,18 +669,13 @@ export default function TaskDetailClient({
                   {timerSaving ? 'กำลังหยุด...' : '⏹ หยุดจับเวลา'}
                 </button>
               </div>
-            ) : (
-              <button onClick={startTimerFn} disabled={timerSaving}
-                className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-app-border bg-surface-2 hover:bg-surface-3 text-txt-primary transition-colors disabled:opacity-50">
-                {timerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
-              </button>
             )}
 
-            {/* Manual time log */}
-            {!timeLogOpen ? (
+            {/* Manual time log — ซ่อนถ้าไม่มีสิทธิ์ (server ก็ตอบ 403 อยู่แล้ว) */}
+            {canEdit && (!timeLogOpen ? (
               <button onClick={() => { setTimeLogOpen(true); setTimeLogError(''); }}
                 className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-app-border bg-surface-2 hover:bg-surface-3 text-txt-primary transition-colors">
-                ✎ บันทึกเวลา (manual)
+                ✎ บันทึกเวลา
               </button>
             ) : (
               <form onSubmit={submitTimeLog} className="flex flex-col gap-2">
@@ -731,10 +712,10 @@ export default function TaskDetailClient({
                     className="text-txt-muted text-[12px] px-2 py-1.5 hover:text-txt-secondary">ยกเลิก</button>
                 </div>
               </form>
-            )}
+            ))}
 
             {/* Clear all time logs */}
-            {task.timeLogs.length > 0 && (
+            {canEdit && task.timeLogs.length > 0 && (
               !clearConfirm ? (
                 <button onClick={() => setClearConfirm(true)}
                   className="w-full text-left text-[12.5px] px-3 py-2 rounded-[3px] border border-danger/30 bg-surface-2 text-danger/80 hover:text-danger hover:bg-danger-bg transition-colors">

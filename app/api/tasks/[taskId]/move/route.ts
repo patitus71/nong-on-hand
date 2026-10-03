@@ -3,7 +3,6 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canEditSquadBoard, type SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
-import { resolveTimerAction, startTimer, stopTimer } from '@/lib/autoTimeTracking';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -73,14 +72,6 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
       ...(enteringDone   ? { completedAt: new Date() } : {}),
     },
   });
-
-  // Auto time tracking — start/stop timer ตามชื่อเลน
-  const timerAction = resolveTimerAction(oldLaneName, newLaneName);
-  if (timerAction === 'start') {
-    await startTimer(params.taskId, user.id);
-  } else if (timerAction === 'stop') {
-    await stopTimer(params.taskId, user.id);
-  }
 
   return Response.json(updated);
 }

@@ -39,8 +39,9 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     }
   }
 
-  // Validate sprintId if provided
-  if (sprintId) {
+  // Sprint บังคับเสมอ (หน้าจอบังคับเลือกอยู่แล้ว — กันเรียก API ตรงโดยไม่ระบุ sprint)
+  if (!sprintId) return new Response('กรุณาเลือก Sprint ปลายทาง', { status: 400 });
+  {
     const sprint = await prisma.sprint.findUnique({
       where: { id: sprintId },
       select: { status: true, squadId: true },

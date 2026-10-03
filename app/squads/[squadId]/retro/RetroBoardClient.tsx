@@ -83,12 +83,14 @@ const COLS = [
 type ColKey = typeof COLS[number]['key'];
 
 export default function RetroBoardClient({
-  squadId, squadName, userId, canExport, retros: initRetros,
+  squadId, squadName, userId, canExport, canConvert, retros: initRetros,
 }: {
   squadId: string;
   squadName: string;
   userId: string;
   canExport: boolean;
+  /** แปลง action item เป็นงาน = สร้างงานใหม่ — QA_MANAGER ทำไม่ได้ */
+  canConvert: boolean;
   retros: RetroData[];
 }) {
   const [retros, setRetros]           = useState(initRetros);
@@ -450,6 +452,7 @@ export default function RetroBoardClient({
                         item={item}
                         colKey={col.key}
                         isOpen={isOpen}
+                        canConvert={canConvert}
                         onVote={() => toggleVote(item.id)}
                         onConvert={() => openConvert(item.id, item.content)}
                       />
@@ -618,10 +621,11 @@ export default function RetroBoardClient({
   );
 }
 
-function RetroCard({ item, colKey, isOpen, onVote, onConvert }: {
+function RetroCard({ item, colKey, isOpen, canConvert, onVote, onConvert }: {
   item: RetroItemData;
   colKey: ColKey;
   isOpen: boolean;
+  canConvert: boolean;
   onVote: () => void;
   onConvert: () => void;
 }) {
@@ -652,7 +656,7 @@ function RetroCard({ item, colKey, isOpen, onVote, onConvert }: {
           {isOpen && (
             item.linkedTaskId ? (
               <Link href={`/tasks/${item.linkedTaskId}`} className="text-[10.5px] text-accent hover:underline">ดูงาน →</Link>
-            ) : (
+            ) : canConvert && (
               <button onClick={onConvert}
                 className="text-[10.5px] text-txt-secondary px-2 py-1 rounded-[3px] hover:text-txt-primary transition-colors"
                 style={{ background: 'var(--surface-3)', border: 'none', cursor: 'pointer' }}>

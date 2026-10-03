@@ -1,17 +1,20 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { canEditTaskContent, type SessionUser } from '@/lib/rbac';
 
 export async function POST(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
-  const user = session.user as any;
+  const user = session.user as SessionUser;
 
   const { note } = await req.json();
 
   const task = await prisma.task.findUnique({ where: { id: params.taskId } });
   if (!task) return new Response('Not Found', { status: 404 });
   if (!task.squadId) return new Response('Task ไม่มี squad', { status: 400 });
+  // ส่งเข้า retro = mark งานว่ามีปัญหาด้วย → ต้องมีสิทธิ์แก้งานนี้
+  if (!canEditTaskContent(user, task)) return new Response('Forbidden', { status: 403 });
 
   // หา retro ที่ OPEN ของ squad นี้
   let retro = await prisma.retro.findFirst({

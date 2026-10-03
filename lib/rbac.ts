@@ -289,6 +289,16 @@ export function canEditTaskContent(user: SessionUser, task: EditableTask): boole
   return false;
 }
 
+/**
+ * เข้าถึงข้อมูลของ squad นั้นได้ไหม (ดู Squad Board / เข้าร่วม Retro) — กฎเดียวกับหน้า Squad Board:
+ * ADMIN, QA_MANAGER และ floating pool member ได้ทุก squad, คนอื่นเฉพาะ squad ตัวเอง
+ */
+export function canAccessSquad(user: SessionUser, targetSquadId: string): boolean {
+  if (user.role === 'ADMIN' || user.role === 'QA_MANAGER') return true;
+  if (user.isFloatingPoolMember) return true;
+  return user.squadId === targetSquadId;
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 /** QA_LEAD และ QA_ENGINEER บังคับผูก squad, ADMIN และ QA_MANAGER ไม่บังคับ */

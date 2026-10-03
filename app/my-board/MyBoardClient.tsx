@@ -775,12 +775,6 @@ const LANE_ACCENT: Record<string, string> = {
 };
 const PROTECTED_TOOLTIP = 'เลนนี้ผูกกับ Squad Board — แก้ไข/ลบไม่ได้';
 
-/* ปิดไว้ชั่วคราว — auto-start timer ตอนลากเข้า In Progress เรียก 2 endpoint
-   แยกกัน (timelog/start + reorder) โดยไม่มี transaction ร่วม ถ้า reorder fail
-   แต่ timer start สำเร็จ จะเห็น timer เดินแต่การ์ดไม่ขยับ (เจอจริงกับ SR-25877)
-   ปิดไว้ก่อนจนกว่าจะรวมเป็น transaction เดียวได้จริง — โค้ดยังเก็บไว้ครบเผื่อใช้อนาคต */
-const AUTO_TIMER_ON_DRAG = false;
-
 /* ─── Main board client ─────────────────────────────── */
 type Props = {
   boardId: string;
@@ -908,11 +902,6 @@ export default function MyBoardClient({
   const [flagError,  setFlagError]  = useState('');
   const [flagging,   setFlagging]   = useState(false);
 
-  /* ── Start-timer modal (To Do → In Progress) ── */
-  type StartTimerModal = { taskId: string; taskTitle: string; pendingLanes: LaneData[] };
-  const [startTimerModal,   setStartTimerModal]   = useState<StartTimerModal | null>(null);
-  const [startTimerSaving,  setStartTimerSaving]  = useState(false);
-
   /* ── Reviewer modal (any → Review) ── */
   type ReviewerModalData = { taskId: string; taskTitle: string; taskSquadId: string; pendingLanes: LaneData[] };
   const [reviewerModal,      setReviewerModal]      = useState<ReviewerModalData | null>(null);
@@ -928,7 +917,6 @@ export default function MyBoardClient({
     onConfirm?: () => Promise<void>;
   };
   const [doneTimeModal,   setDoneTimeModal]   = useState<DoneTimeModalData | null>(null);
-  const [timeMode,        setTimeMode]        = useState<'auto' | 'manual' | null>(null);
   const [normalHrs,   setNormalHrs]   = useState('');
   const [otHrs,       setOtHrs]       = useState('');
   const [timeReplace,     setTimeReplace]     = useState(false);
@@ -1205,12 +1193,6 @@ export default function MyBoardClient({
         const srcName = preDragSrc.name;
         const dstName = currentDst.name;
 
-        if (AUTO_TIMER_ON_DRAG && srcName === 'To Do' && dstName === 'In Progress') {
-          const t = current.flatMap(l => l.tasks).find(t => t.id === activeId)!;
-          setStartTimerModal({ taskId: activeId, taskTitle: t.title, pendingLanes: current });
-          return;
-        }
-
         // Leaving In Progress means the manual "⏱ ลงเวลา" button (In-Progress-only) goes away for
         // this card — warn before it's too late. Review/Done already have their own dedicated gates
         // right below (reviewer picker / forced time entry), so skip this generic warning for those
@@ -1419,34 +1401,6 @@ export default function MyBoardClient({
     setLanes(lanesRef.current.map(l => l.id === laneId ? { ...l, tasks: [...l.tasks, task] } : l));
   }
 
-  /* ─── Start-timer modal handlers (dead while AUTO_TIMER_ON_DRAG=false, kept for future re-enable) ─── */
-  async function confirmStartTimer() {
-    if (!startTimerModal) return;
-    setStartTimerSaving(true);
-    try {
-      const res = await fetch(`/api/tasks/${startTimerModal.taskId}/timelog/start`, { method: 'POST' });
-      if (!res.ok) {
-        setLanes(preDragRef.current);
-        showToast('error', 'เริ่มจับเวลาไม่สำเร็จ — ลองใหม่อีกครั้ง');
-        return;
-      }
-      const ok = await saveOrder(startTimerModal.pendingLanes);
-      if (!ok) {
-        // รู้ข้อจำกัด: ถ้า reorder fail ตรงนี้ timer ฝั่ง server เริ่มไปแล้ว (คนละ transaction กัน)
-        // ต้องรวม transaction ก่อนเปิด AUTO_TIMER_ON_DRAG กลับ — ดูคอมเมนต์ที่ประกาศ flag ด้านบน
-        showToast('error', 'ย้ายเลนไม่สำเร็จ (แต่เริ่มจับเวลาไปแล้ว) — ลองลากใหม่อีกครั้ง');
-      }
-    } finally {
-      setStartTimerModal(null);
-      setStartTimerSaving(false);
-    }
-  }
-  async function skipStartTimer() {
-    if (!startTimerModal) return;
-    await saveOrder(startTimerModal.pendingLanes);
-    setStartTimerModal(null);
-  }
-
   /* ─── Reviewer modal handlers ─── */
   async function confirmReviewerModal(reviewerId: string | null) {
     if (!reviewerModal || reviewerModalSaving) return; // กัน double-submit ตอนกดซ้ำระหว่างรอ saveOrder
@@ -1491,34 +1445,8 @@ export default function MyBoardClient({
       hasTime: t.totalNormalMin > 0 || t.totalOtMin > 0,
       totalNormalMin: t.totalNormalMin, totalOtMin: t.totalOtMin,
     });
-    setTimeMode(null); setNormalHrs(''); setOtHrs('');
+    setNormalHrs(''); setOtHrs('');
     setTimeReplace(false); setTimeAdded(false); setTimeError('');
-  }
-
-  async function submitTimeAuto() {
-    if (!doneTimeModal) return;
-    setTimeSaving(true); setTimeError('');
-    const res = await fetch(`/api/tasks/${doneTimeModal.taskId}/timelog/stop`, { method: 'POST' });
-    if (res.ok) {
-      const log = await res.json();
-      const updatedLanes = doneTimeModal.pendingLanes.map(l => ({
-        ...l, tasks: l.tasks.map(t =>
-          t.id === doneTimeModal.taskId
-            ? { ...t, totalNormalMin: t.totalNormalMin + log.normalMinutes, totalOtMin: t.totalOtMin + log.otMinutes }
-            : t
-        ),
-      }));
-      setLanes(updatedLanes);
-      setDoneTimeModal(m => m ? { ...m, pendingLanes: updatedLanes, hasTime: true } : m);
-      setTimeAdded(true);
-    } else {
-      setTimeError(
-        res.status === 404
-          ? 'ไม่มีตัวจับเวลาที่กำลังทำงานอยู่ — กรุณาเลือกบันทึก manual'
-          : await res.text()
-      );
-    }
-    setTimeSaving(false);
   }
 
   async function submitTimeManual() {
@@ -1556,13 +1484,13 @@ export default function MyBoardClient({
       await saveOrder(lanesRef.current);
     }
     setDoneTimeModal(null);
-    setTimeMode(null); setTimeAdded(false); setTimeError('');
+    setTimeAdded(false); setTimeError('');
   }
 
   function cancelDoneTimeModal() {
     if (doneTimeModal) setLanes(doneTimeModal.revertLanes);
     setDoneTimeModal(null);
-    setTimeMode(null); setTimeAdded(false); setTimeError('');
+    setTimeAdded(false); setTimeError('');
   }
 
   /* ─── Inline reviewer / PR link handlers (on Review lane cards) ─── */
@@ -2042,30 +1970,6 @@ export default function MyBoardClient({
         </div>
       )}
 
-      {/* ── Modal: Start timer (To Do → In Progress) ──────── */}
-      {startTimerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
-          <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[420px] shadow-xl">
-            <h3 className="text-[15px] font-semibold text-txt-primary mb-1">▶ เริ่มบันทึกเวลา?</h3>
-            <p className="text-[12.5px] text-txt-secondary mb-4">
-              งาน <span className="font-medium text-txt-primary">"{startTimerModal.taskTitle}"</span>{' '}
-              กำลังย้ายไป <span className="text-accent">In Progress</span><br />
-              ต้องการให้ระบบเริ่มจับเวลาอัตโนมัติไหม?
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={skipStartTimer} disabled={startTimerSaving}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
-                ข้าม — ย้ายโดยไม่จับเวลา
-              </button>
-              <button onClick={confirmStartTimer} disabled={startTimerSaving}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
-                {startTimerSaving ? 'กำลังเริ่ม...' : '▶ เริ่มจับเวลา'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Modal: leaving In Progress (design handoff: manual time-log) ──── */}
       {moveOutOfProgressModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-6">
@@ -2207,74 +2111,45 @@ export default function MyBoardClient({
             {!timeAdded && (
               <div className="mb-3">
                 <p className="text-[11.5px] text-txt-muted mb-2.5">
-                  {doneTimeModal.hasTime ? 'เพิ่มเวลาเพิ่มเติม (ไม่บังคับ):' : <>กรุณาเลือกวิธีบันทึกเวลา <span className="text-danger">(จำเป็น)</span></>}
+                  {doneTimeModal.hasTime ? 'เพิ่มเวลาเพิ่มเติม (ไม่บังคับ):' : <>กรุณาบันทึกเวลาทำงาน <span className="text-danger">(จำเป็น)</span></>}
                 </p>
 
-                <div className="flex flex-col gap-2 mb-3">
-                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-[3px] border cursor-pointer transition-colors ${
-                    timeMode === 'auto' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
-                  }`}>
-                    <input type="radio" name="revMode" value="auto" checked={timeMode === 'auto'}
-                      onChange={() => { setTimeMode('auto'); setTimeError(''); }} className="mt-0.5 accent-accent" />
-                    <div>
-                      <p className="text-[12.5px] text-txt-primary">⏹ หยุดตัวจับเวลา (บันทึกอัตโนมัติ)</p>
-                      <p className="text-[11px] text-txt-muted">หยุดการนับเวลาที่กำลังทำงานอยู่และบันทึกเวลาที่ผ่านมา</p>
+                <div className="flex flex-col gap-2">
+                  {doneTimeModal.hasTime && (
+                    <div className="flex gap-4 px-1">
+                      <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
+                        <input type="radio" name="revManualMode" checked={!timeReplace}
+                          onChange={() => setTimeReplace(false)} className="accent-accent" />
+                        เพิ่มเติม (บวกกับเวลาเดิม)
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
+                        <input type="radio" name="revManualMode" checked={timeReplace}
+                          onChange={() => setTimeReplace(true)} className="accent-accent" />
+                        แทนที่เวลาเดิม
+                      </label>
                     </div>
-                  </label>
-                  <label className={`flex items-start gap-2.5 px-3 py-2.5 rounded-[3px] border cursor-pointer transition-colors ${
-                    timeMode === 'manual' ? 'border-accent bg-accent/5' : 'border-app-border hover:border-accent/50'
-                  }`}>
-                    <input type="radio" name="revMode" value="manual" checked={timeMode === 'manual'}
-                      onChange={() => { setTimeMode('manual'); setTimeError(''); }} className="mt-0.5 accent-accent" />
-                    <span className="text-[12.5px] text-txt-primary">✎ บันทึกเวลา manual</span>
-                  </label>
-                </div>
-
-                {timeMode === 'auto' && (
-                  <button onClick={submitTimeAuto} disabled={timeSaving}
-                    className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
-                    {timeSaving ? 'กำลังบันทึก...' : '⏹ หยุดและบันทึกเวลา'}
-                  </button>
-                )}
-
-                {timeMode === 'manual' && (
-                  <div className="flex flex-col gap-2">
-                    {doneTimeModal.hasTime && (
-                      <div className="flex gap-4 px-1">
-                        <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
-                          <input type="radio" name="revManualMode" checked={!timeReplace}
-                            onChange={() => setTimeReplace(false)} className="accent-accent" />
-                          เพิ่มเติม (บวกกับเวลาเดิม)
-                        </label>
-                        <label className="flex items-center gap-1.5 text-[12px] text-txt-secondary cursor-pointer">
-                          <input type="radio" name="revManualMode" checked={timeReplace}
-                            onChange={() => setTimeReplace(true)} className="accent-accent" />
-                          แทนที่เวลาเดิม
-                        </label>
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <label className="block text-[11px] text-txt-muted mb-1">Normal (ชม.)</label>
-                        <input type="number" min="0.25" step="0.25" autoFocus
-                          value={normalHrs} onChange={e => setNormalHrs(e.target.value)}
-                          placeholder="เช่น 2.5"
-                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
-                      </div>
-                      <div className="flex-1">
-                        <label className="block text-[11px] text-txt-muted mb-1">OT (ชม.) — ไม่บังคับ</label>
-                        <input type="number" min="0" step="0.25"
-                          value={otHrs} onChange={e => setOtHrs(e.target.value)}
-                          placeholder="0"
-                          className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
-                      </div>
+                  )}
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="block text-[11px] text-txt-muted mb-1">Normal (ชม.)</label>
+                      <input type="number" min="0.25" step="0.25" autoFocus
+                        value={normalHrs} onChange={e => setNormalHrs(e.target.value)}
+                        placeholder="เช่น 2.5"
+                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
                     </div>
-                    <button onClick={submitTimeManual} disabled={timeSaving || !normalHrs}
-                      className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
-                      {timeSaving ? 'กำลังบันทึก...' : '✎ บันทึกเวลา'}
-                    </button>
+                    <div className="flex-1">
+                      <label className="block text-[11px] text-txt-muted mb-1">OT (ชม.) — ไม่บังคับ</label>
+                      <input type="number" min="0" step="0.25"
+                        value={otHrs} onChange={e => setOtHrs(e.target.value)}
+                        placeholder="0"
+                        className="w-full bg-surface-2 border border-app-border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none focus:border-accent" />
+                    </div>
                   </div>
-                )}
+                  <button onClick={submitTimeManual} disabled={timeSaving || !normalHrs}
+                    className="w-full bg-accent/10 border border-accent/40 text-accent text-[12.5px] py-2 rounded-[3px] hover:bg-accent/20 transition-colors disabled:opacity-50">
+                    {timeSaving ? 'กำลังบันทึก...' : '✎ บันทึกเวลา'}
+                  </button>
+                </div>
 
                 {timeError && <p className="text-[11.5px] text-danger mt-2">{timeError}</p>}
               </div>

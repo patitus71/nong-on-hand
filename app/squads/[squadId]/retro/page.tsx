@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
-import { canEditSquadBoard } from '@/lib/rbac';
+import { canAccessSquad, canCreateTask, canEditSquadBoard } from '@/lib/rbac';
 import type { SessionUser } from '@/lib/rbac';
 import Topbar from '@/components/Topbar';
 import RetroBoardClient from './RetroBoardClient';
@@ -18,13 +18,9 @@ export default async function RetroBoardPage({ params }: { params: { squadId: st
   });
   if (!squad) redirect('/squads');
 
-  if (
-    user.role !== 'ADMIN' &&
-    user.role !== 'QA_LEAD' &&
-    user.role !== 'QA_ENGINEER' &&
-    user.squadId !== params.squadId
-  ) {
-    redirect(user.squadId ? `/squads/${user.squadId}/retro` : '/squads');
+  // กฎเดียวกับหน้า Squad Board — ADMIN/QA_MANAGER/floating pool ดูได้ทุก squad, คนอื่นเฉพาะ squad ตัวเอง
+  if (!canAccessSquad(user, params.squadId)) {
+    redirect(user.squadId ? `/squads/${user.squadId}/retro` : '/tasks');
   }
 
   const retros = await prisma.retro.findMany({
@@ -70,6 +66,7 @@ export default async function RetroBoardPage({ params }: { params: { squadId: st
         userId={user.id}
         retros={retrosData}
         canExport={canExport}
+        canConvert={canCreateTask(user)}
       />
     </>
   );
