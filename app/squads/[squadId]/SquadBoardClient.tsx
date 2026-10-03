@@ -588,7 +588,7 @@ export default function SquadBoardClient({
           >🔥</span>
         )}
         <div
-          className={`bg-surface-1 border border-app-border rounded-[9px] p-2.5 ${
+          className={`bg-surface-1 border border-app-border rounded-[9px] px-[13px] py-3 min-w-0 ${
             t.isCancelled ? 'grayscale-[0.4] opacity-80' : ''
           }`}
           style={t.isCancelled ? undefined : {
@@ -616,7 +616,7 @@ export default function SquadBoardClient({
           <div className="flex items-start gap-1 mb-1">
             <Link
               href={`/tasks/${t.id}`}
-              className="flex-1 text-[13px] text-txt-primary flex items-start gap-1.5 hover:text-accent transition-colors"
+              className="flex-1 min-w-0 text-[13px] text-txt-primary flex items-start gap-1.5 hover:text-accent transition-colors"
             >
               {t.isCancelled ? (
                 <span className="text-[9.5px] font-semibold bg-surface-3 text-txt-secondary px-1.5 py-0.5 rounded-full flex-shrink-0 mt-[1px]">
@@ -628,7 +628,8 @@ export default function SquadBoardClient({
               {t.reviewApprovedAt && laneName === 'Wait for review' && (
                 <span className="text-success flex-shrink-0 text-[11px] leading-[1.4]" title="Review ผ่านแล้ว">✓</span>
               )}
-              {cleanTitle}
+              {/* path ยาวจาก Jira ไม่มีช่องว่าง — ต้องยอมตัดกลางคำได้ ไม่งั้นล้นการ์ด */}
+              <span className="min-w-0 [overflow-wrap:anywhere] [text-wrap:pretty]">{cleanTitle}</span>
             </Link>
 
             {!t.isCancelled && (() => {
@@ -745,7 +746,7 @@ export default function SquadBoardClient({
           {cardTags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-1.5">
               {cardTags.map((tag, i) => (
-                <span key={i} className="text-[9.5px] font-mono bg-surface-3 text-txt-muted rounded-[4px] px-1.5 py-0.5">
+                <span key={i} className="text-[9.5px] font-mono bg-surface-3 text-txt-muted rounded-[4px] px-1.5 py-0.5 max-w-full [overflow-wrap:anywhere]">
                   {tag}
                 </span>
               ))}
@@ -754,7 +755,7 @@ export default function SquadBoardClient({
 
           {/* Meta row: point chip + estimate + assignee name */}
           {!t.isCancelled && (
-            <div className="flex items-center gap-1.5 mb-2">
+            <div className="flex flex-wrap items-center gap-[7px] mb-2">
               <div onClick={e => e.stopPropagation()}>
                 <select
                   value={t.taskPoint ?? ''}
@@ -768,7 +769,7 @@ export default function SquadBoardClient({
                   {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} PT</option>)}
                 </select>
               </div>
-              <span className="font-mono text-[10.5px] text-txt-secondary flex-shrink-0">
+              <span className="font-mono text-[10.5px] text-txt-secondary whitespace-nowrap">
                 {t.taskPoint !== null && t.estimatedHours !== null ? `EST ${t.estimatedHours} ชม.` : 'ยังไม่ตั้ง estimate'}
               </span>
               {cardPointError && <span className="text-[9px] text-danger flex-shrink-0">พลาด</span>}
@@ -825,7 +826,7 @@ export default function SquadBoardClient({
           {/* Burn bar — ACT ÷ EST */}
           {!t.isCancelled && (
             <div className="flex flex-col gap-1 mt-1.5">
-              <div className="flex items-center justify-between font-mono text-[10.5px]">
+              <div className="flex flex-wrap items-center justify-between gap-1.5 font-mono text-[10.5px]">
                 <span className={
                   actMinutes === 0 ? 'text-txt-muted'
                     : estMinutes === 0 ? 'text-txt-secondary'
@@ -836,7 +837,7 @@ export default function SquadBoardClient({
                     {isDoneLane && t.totalOtMin > 0 ? `· OT ${fmtHM(t.totalOtMin)}` : !isDoneLane ? 'ใช้ไป' : ''}
                   </span>
                 </span>
-                <span className={isDoneLane ? (velocity !== null && velocity >= 1 ? 'text-success' : 'text-danger') : 'text-txt-secondary'}>
+                <span className={`whitespace-nowrap ${isDoneLane ? (velocity !== null && velocity >= 1 ? 'text-success' : 'text-danger') : 'text-txt-secondary'}`}>
                   {isDoneLane && velocity !== null
                     ? `Velocity ${velocity.toFixed(2)}`
                     : estMinutes > 0
@@ -845,7 +846,7 @@ export default function SquadBoardClient({
                 </span>
               </div>
               {estMinutes > 0 && (
-                <div className="h-1 rounded-full bg-surface-3 overflow-hidden">
+                <div className="w-full min-w-0 h-1 rounded-full bg-surface-3 overflow-hidden">
                   <div
                     className={`h-full transition-[width] duration-[250ms] ease-out ${burnColorCls(burnRatio)}`}
                     style={{ width: `${Math.min(burnRatio, 1) * 100}%` }}
@@ -1193,8 +1194,8 @@ export default function SquadBoardClient({
         {members.length > 0 && (
           <div className="overflow-x-auto pb-1">
             <div
-              className="grid gap-2.5 min-w-[880px] mb-3.5"
-              style={{ gridTemplateColumns: '190px repeat(5, minmax(0,1fr))' }}
+              className="grid gap-2.5 mb-3.5"
+              style={{ gridTemplateColumns: '190px repeat(5, minmax(280px,1fr))' }}
             >
               {/* Header row */}
               <span />
@@ -1238,7 +1239,7 @@ export default function SquadBoardClient({
                   ...STATUS_COLS.map(col => {
                     const cellTasks = (laneByName.get(col.key) ?? []).filter(t => t.assignee?.id === m.id);
                     return (
-                      <div key={`${m.id}-${col.key}`} className="bg-surface-3 rounded-[11px] p-2 flex flex-col gap-1.5 min-h-[52px]">
+                      <div key={`${m.id}-${col.key}`} className="bg-surface-3 rounded-[11px] p-2 flex flex-col gap-1.5 min-h-[52px] min-w-0">
                         {cellTasks.map(t => renderCard(t, col.key))}
                       </div>
                     );

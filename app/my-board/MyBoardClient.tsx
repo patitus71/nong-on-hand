@@ -78,7 +78,7 @@ function QueueRail({
             {pendingReviews.map(r => (
               <div key={r.id} className="bg-accent-bg border border-accent/20 rounded-[9px] p-2.5">
                 <Link href={`/tasks/${r.id}`}
-                  className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug">
+                  className="block text-[12.5px] text-txt-primary mb-1 hover:text-accent transition-colors leading-snug [overflow-wrap:anywhere]">
                   {r.title}
                 </Link>
                 <p className="text-[11px] text-txt-muted mb-2">
@@ -107,7 +107,7 @@ function QueueRail({
             {readyTasks.map(t => (
               <div key={t.id} className="bg-success-bg border border-success/30 rounded-[9px] p-2.5">
                 <Link href={`/tasks/${t.id}`}
-                  className="block text-[12.5px] text-txt-primary mb-1 hover:text-success transition-colors leading-snug">
+                  className="block text-[12.5px] text-txt-primary mb-1 hover:text-success transition-colors leading-snug [overflow-wrap:anywhere]">
                   {t.title}
                 </Link>
                 {t.reviewerName && <p className="text-[11px] text-txt-muted mb-2">Review ผ่านโดย {t.reviewerName}</p>}
@@ -247,7 +247,7 @@ function SortableCard({
         ...(stripeColor ? { borderLeftWidth: 4, borderLeftColor: stripeColor } : {}),
       }}
       {...attributes} {...listeners}
-      className={`bg-surface-1 border rounded-[9px] p-2.5 transition-colors select-none relative
+      className={`bg-surface-1 border rounded-[9px] px-[13px] py-3 min-w-0 flex-shrink-0 overflow-hidden transition-colors select-none relative
         ${task.isCancelled ? 'grayscale-[0.4] opacity-75 cursor-default' : 'cursor-grab active:cursor-grabbing'}
         ${isReviewApprovedBanner ? 'card-review-approved border-success' : 'border-app-border'}
         ${isDragging && !overlay ? 'opacity-40' : ''}
@@ -289,13 +289,14 @@ function SortableCard({
         className="block text-[13px] text-txt-primary leading-snug mb-1 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
         {task.hasIssue && !task.isCancelled && <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>}
-        {cleanTitle}
+        {/* path ยาวจาก Jira ไม่มีช่องว่าง — ต้องยอมตัดกลางคำได้ ไม่งั้นล้นการ์ด */}
+        <span className="min-w-0 [overflow-wrap:anywhere] [text-wrap:pretty]">{cleanTitle}</span>
       </Link>
 
       {cardTags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1.5">
           {cardTags.map((tag, i) => (
-            <span key={i} className="text-[9.5px] font-mono bg-surface-3 text-txt-muted rounded-[4px] px-1.5 py-0.5">
+            <span key={i} className="text-[9.5px] font-mono bg-surface-3 text-txt-muted rounded-[4px] px-1.5 py-0.5 max-w-full [overflow-wrap:anywhere]">
               {tag}
             </span>
           ))}
@@ -303,9 +304,9 @@ function SortableCard({
       )}
 
       {/* Meta row: squad tag + point chip + estimate + avatar */}
-      <div className="flex items-center gap-1.5 mb-2">
+      <div className="flex flex-wrap items-center gap-[7px] mb-2">
         {task.squad && (
-          <span className="text-[10.5px] font-mono text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full flex-shrink-0">{task.squad.name}</span>
+          <span className="text-[10.5px] font-mono text-txt-secondary bg-surface-3 px-2 py-0.5 rounded-full whitespace-nowrap">{task.squad.name}</span>
         )}
         <div onClick={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()}>
           <select
@@ -320,13 +321,13 @@ function SortableCard({
             {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} PT</option>)}
           </select>
         </div>
-        <span className={`font-mono text-[10.5px] text-txt-secondary flex-shrink-0 ${task.isCancelled ? 'line-through' : ''}`}>
+        <span className={`font-mono text-[10.5px] text-txt-secondary whitespace-nowrap ${task.isCancelled ? 'line-through' : ''}`}>
           {task.estimatedHours !== null ? `EST ${task.estimatedHours} ชม.` : '—'}
         </span>
         {pointError && <span className="text-[9px] text-danger flex-shrink-0">{pointError}</span>}
-        <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+        <div className="ml-auto flex items-center gap-1.5">
           {isDoneLane && hoursPerPointTask !== null && (
-            <span className="font-mono text-[10px] text-accent">{hoursPerPointTask.toFixed(1)} ชม./PT</span>
+            <span className="font-mono text-[10px] text-accent whitespace-nowrap">{hoursPerPointTask.toFixed(1)} ชม./PT</span>
           )}
           {av && task.assignee && (
             <div className="w-[19px] h-[19px] rounded-full text-[9px] font-semibold flex items-center justify-center flex-shrink-0"
@@ -340,7 +341,7 @@ function SortableCard({
       {/* Burn bar — ACT ÷ EST (ไม่โชว์ถ้าการ์ดถูกยกเลิก) */}
       {!task.isCancelled && (
         <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between font-mono text-[11px]">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 font-mono text-[11px]">
             <span className={
               actMinutes === 0 ? 'text-txt-muted'
                 : estMinutes === 0 ? 'text-txt-secondary'
@@ -351,7 +352,7 @@ function SortableCard({
                 {isDoneLane && task.totalOtMin > 0 ? `· OT ${fmtHM(task.totalOtMin)}` : !isDoneLane ? 'ใช้ไป' : ''}
               </span>
             </span>
-            <span className={isDoneLane ? (velocity !== null && velocity >= 1 ? 'text-success' : 'text-danger') : 'text-txt-secondary'}>
+            <span className={`whitespace-nowrap ${isDoneLane ? (velocity !== null && velocity >= 1 ? 'text-success' : 'text-danger') : 'text-txt-secondary'}`}>
               {isDoneLane && velocity !== null
                 ? `Velocity ${velocity.toFixed(2)}`
                 : estMinutes > 0
@@ -360,7 +361,7 @@ function SortableCard({
             </span>
           </div>
           {estMinutes > 0 && (
-            <div className="h-1 rounded-full bg-surface-3 overflow-hidden">
+            <div className="w-full min-w-0 h-1 rounded-full bg-surface-3 overflow-hidden">
               <div
                 className={`h-full transition-[width] duration-[250ms] ease-out ${burnColorCls(burnRatio)}`}
                 style={{ width: `${Math.min(burnRatio, 1) * 100}%` }}
@@ -385,7 +386,7 @@ function SortableCard({
             onBlur={() => setShowLogTooltip(false)}
             onPointerDown={e => e.stopPropagation()}
             aria-disabled={!canLogTime}
-            className={`w-full h-7 rounded-[3px] text-[11.5px] font-semibold flex items-center justify-center gap-[5px] transition-colors ${
+            className={`w-full min-w-0 h-7 rounded-[3px] text-[11.5px] font-semibold flex items-center justify-center gap-[5px] transition-colors ${
               canLogTime
                 ? 'bg-accent-bg text-accent border border-accent/35 hover:bg-accent/20 cursor-pointer'
                 : 'bg-surface-3 text-txt-muted border border-app-border cursor-not-allowed'
@@ -394,7 +395,7 @@ function SortableCard({
             ⏱ ลงเวลา
           </button>
           {showLogTooltip && !canLogTime && (
-            <div className="pop-in absolute left-2.5 right-2.5 top-full mt-1.5 z-10 bg-surface-3 border border-app-border rounded px-2.5 py-[7px] text-[11px] leading-[1.4] text-txt-secondary shadow-[0_6px_18px_rgba(0,0,0,0.45)]">
+            <div className="pop-in absolute left-2.5 right-2.5 bottom-full mb-1.5 z-10 bg-surface-3 border border-app-border rounded px-2.5 py-[7px] text-[11px] leading-[1.4] text-txt-secondary shadow-[0_6px_18px_rgba(0,0,0,0.45)]">
               ลงเวลาได้เฉพาะการ์ดในเลน <span className="text-accent font-semibold">In Progress</span> — ลากการ์ดนี้เข้า In Progress ก่อน
             </div>
           )}
@@ -486,7 +487,7 @@ function SortableCard({
                 value={task.reviewerId ?? ''}
                 onChange={handleReviewerSelectChange}
                 disabled={reviewerSaving}
-                className="w-full bg-surface-2 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
+                className="w-full min-w-0 box-border bg-surface-2 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent disabled:opacity-50 cursor-pointer"
               >
                 <option value="">— ยังไม่เลือก —</option>
                 {reviewerOptions.map(r => (
@@ -510,7 +511,7 @@ function SortableCard({
                 onChange={e => { setPrLinkDraft(e.target.value); setPrLinkError(''); }}
                 onBlur={handlePrLinkBlur}
                 placeholder="https://github.com/..."
-                className="w-full bg-surface-2 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent placeholder-txt-muted"
+                className="w-full min-w-0 box-border bg-surface-2 border border-app-border text-txt-primary text-[11px] px-1.5 py-1 rounded-[3px] focus:outline-none focus:border-accent placeholder-txt-muted"
               />
             )}
             {prLinkError && <p className="text-[10px] text-danger mt-0.5">{prLinkError}</p>}
@@ -540,7 +541,7 @@ function SortableFlaggedCard({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes} {...listeners}
-      className={`bg-surface-1 border border-danger/45 rounded-[9px] p-2.5 w-[220px] flex-shrink-0 cursor-grab active:cursor-grabbing select-none ${
+      className={`bg-surface-1 border border-danger/45 rounded-[9px] p-2.5 w-[220px] flex-shrink-0 overflow-hidden cursor-grab active:cursor-grabbing select-none ${
         isDragging ? 'opacity-40' : ''
       }`}
     >
@@ -551,7 +552,7 @@ function SortableFlaggedCard({
         className="block text-[12.5px] text-txt-primary mb-1 flex items-start gap-1.5 hover:text-accent transition-colors"
       >
         <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>
-        {task.title}
+        <span className="min-w-0 [overflow-wrap:anywhere] [text-wrap:pretty]">{task.title}</span>
       </Link>
       {task.squad && <p className="text-[10.5px] text-txt-muted mb-2">{task.squad.name}</p>}
       <button
@@ -596,7 +597,7 @@ function DroppableLaneCards({
     <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
       <div
         ref={setNodeRef}
-        className={`flex flex-col gap-2 overflow-y-auto flex-1 px-0.5 pb-0.5 min-h-[40px] rounded-[3px] transition-colors ${
+        className={`flex flex-col gap-2 overflow-y-auto overflow-x-hidden flex-1 px-0.5 pb-0.5 min-h-[40px] rounded-[3px] transition-colors ${
           isOver ? 'bg-accent/5' : ''
         }`}
       >
@@ -1779,13 +1780,15 @@ export default function MyBoardClient({
 
         <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
+        {/* จอแคบ → scroll แนวนอนทั้งบอร์ด (ไม่ใช่ในเลน) — เลนกว้างขั้นต่ำ 280px ให้ข้อมูลบนการ์ดไม่ล้น */}
+        <div className="overflow-x-auto pb-5">
         <div
-          className={`grid gap-3.5 pb-5 items-start ${editMode ? 'edit-mode-on' : ''}`}
-          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}
+          className={`grid gap-3.5 items-start ${editMode ? 'edit-mode-on' : ''}`}
+          style={{ gridTemplateColumns: `repeat(${normalLanes.length}, minmax(280px, 1fr)) minmax(160px, 200px)` }}
         >
           {normalLanes.map(lane => (
             <div key={lane.id}
-              className={`bg-surface-2 border rounded-[11px] p-2.5 flex flex-col transition-colors overflow-hidden ${
+              className={`bg-surface-2 border rounded-[11px] p-2.5 flex flex-col min-w-0 transition-colors overflow-hidden ${
                 editMode ? 'border-accent' : 'border-app-border'
               }`}
               style={{ height: 'calc(100vh - 220px)' }}
@@ -1898,6 +1901,7 @@ export default function MyBoardClient({
               + เพิ่มเลน
             </button>
           )}
+        </div>
         </div>
 
         {editMode && (

@@ -640,7 +640,7 @@ function RetroCard({ item, colKey, isOpen, canConvert, onVote, onConvert }: {
         </Link>
       )}
 
-      <p className="text-[13px] text-txt-primary leading-relaxed mb-2">{item.content}</p>
+      <p className="text-[13px] text-txt-primary leading-relaxed mb-2 [overflow-wrap:anywhere]">{item.content}</p>
 
       {colKey === 'ACTION_ITEM' ? (
         <div className="flex items-center justify-between mt-1.5">

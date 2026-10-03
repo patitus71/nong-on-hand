@@ -494,7 +494,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                   <td className="px-3.5 py-3">
                     <Link href={`/tasks/${t.id}`} className="flex items-center gap-2 font-[450] text-[13px] text-txt-primary hover:text-accent transition-colors">
                       {t.hasIssue && <span className="w-[7px] h-[7px] rounded-full bg-danger flex-shrink-0" />}
-                      <span>{t.title}</span>
+                      <span className="min-w-0 [overflow-wrap:anywhere]">{t.title}</span>
                     </Link>
                     {t.flaggedForDeletion && (
                       <div className="mt-1">

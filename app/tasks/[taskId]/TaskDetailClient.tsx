@@ -415,7 +415,7 @@ export default function TaskDetailClient({
               {titleError && <p className="text-[11.5px] text-danger mt-1">{titleError}</p>}
             </div>
           ) : (
-            <h1 className="text-xl font-semibold text-txt-primary mb-1.5">{task.title}</h1>
+            <h1 className="text-xl font-semibold text-txt-primary mb-1.5 [overflow-wrap:anywhere] [text-wrap:pretty]">{task.title}</h1>
           )}
 
           <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -473,7 +473,7 @@ export default function TaskDetailClient({
               </div>
             </div>
           ) : (
-            <p className="text-[13.5px] text-txt-secondary leading-relaxed">
+            <p className="text-[13.5px] text-txt-secondary leading-relaxed [overflow-wrap:anywhere]">
               {task.description
                 ? task.description
                 : <span className="text-txt-muted italic">
