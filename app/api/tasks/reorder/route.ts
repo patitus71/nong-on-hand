@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
 import type { SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
+import { shouldStampInProgressAt } from '@/lib/personalBoard';
 
 // Personal lane name → squad lane name for tasks that belong to a squad.
 // 'Review' is intentionally absent: tasks in personal Review lane keep the personal laneId
@@ -117,7 +118,10 @@ export async function PATCH(req: Request) {
       approvalResets.add(id);
     }
 
-    return { id, laneId: finalLaneId, order, itemReviewerId, moved, oldLaneName };
+    // เข้า In Progress ใหม่ในรอบนี้ — stamp เวลาไว้โชว์ "อยู่ใน In Progress มากี่วัน" บน My Board
+    const stampInProgress = moved && shouldStampInProgressAt(oldLaneName, newLaneName);
+
+    return { id, laneId: finalLaneId, order, itemReviewerId, moved, oldLaneName, stampInProgress };
   });
 
   // Guard: เลน "Cancel" เข้าได้ทางเดียวผ่าน /api/tasks/[taskId]/flag (resolve-to-cancel)
@@ -154,7 +158,7 @@ export async function PATCH(req: Request) {
   }
 
   await prisma.$transaction(
-    resolved.map(({ id, laneId, order, itemReviewerId }) =>
+    resolved.map(({ id, laneId, order, itemReviewerId, stampInProgress }) =>
       prisma.task.update({
         where: { id },
         data:  {
@@ -165,6 +169,7 @@ export async function PATCH(req: Request) {
             reviewApprovedById: null,
             reviewerId:         itemReviewerId !== undefined ? itemReviewerId : null,
           } : {}),
+          ...(stampInProgress ? { inProgressAt: new Date() } : {}),
         },
       }),
     ),

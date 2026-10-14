@@ -57,3 +57,13 @@ export async function ensurePersonalCancelLane(ownerId: string): Promise<string>
   });
   return created.id;
 }
+
+/**
+ * ย้ายการ์ดครั้งนี้ต้อง stamp Task.inProgressAt ใหม่ไหม — เข้าเลน In Progress จากเลนอื่น
+ * (เทียบแบบไม่สนตัวพิมพ์: squad lane คือ "In progress", personal lane คือ "In Progress")
+ * ยกเว้นเด้งกลับจาก Review — ถือว่ายังทำงานชิ้นเดิมต่อ นับวันต่อจากวันที่เข้าครั้งแรก
+ */
+export function shouldStampInProgressAt(oldLaneName: string, newLaneName: string): boolean {
+  const isIP = (n: string) => n.toLowerCase() === 'in progress';
+  return isIP(newLaneName) && !isIP(oldLaneName) && oldLaneName !== 'Review';
+}

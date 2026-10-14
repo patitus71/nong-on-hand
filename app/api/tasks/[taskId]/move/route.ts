@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canEditSquadBoard, type SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
+import { shouldStampInProgressAt } from '@/lib/personalBoard';
 
 export async function PATCH(req: Request, { params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -16,7 +17,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
     prisma.task.findUnique({
       where:  { id: params.taskId },
       select: {
-        id: true, squadId: true, assigneeId: true, reviewApprovedAt: true, isCancelled: true,
+        id: true, squadId: true, laneId: true, assigneeId: true, reviewApprovedAt: true, isCancelled: true,
         lane: { select: { name: true } },
       },
     }),
@@ -58,6 +59,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
 
   const resetApproval  = shouldResetReviewApproval(oldLaneName, newLaneName);
   const enteringDone   = newLaneName === 'Done';
+  const enteringIP     = laneId !== task.laneId && shouldStampInProgressAt(oldLaneName, newLaneName);
 
   const updated = await prisma.task.update({
     where: { id: params.taskId },
@@ -70,6 +72,7 @@ export async function PATCH(req: Request, { params }: { params: { taskId: string
         reviewerId:         reviewerId !== undefined ? reviewerId : null,
       } : {}),
       ...(enteringDone   ? { completedAt: new Date() } : {}),
+      ...(enteringIP     ? { inProgressAt: new Date() } : {}),
     },
   });
 

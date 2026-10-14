@@ -165,6 +165,7 @@ model Task {
   reviewer              User?     @relation("TaskReviewer", fields: [reviewerId], references: [id])
   prLink                String?   // PR/MR link (http/https only) — validate ทั้ง client และ server
   completedAt           DateTime? // set ตอนย้ายเข้าเลน Done (update ถ้าเข้า Done ซ้ำ)
+  inProgressAt          DateTime? // set ตอนย้ายเข้าเลน In Progress (ไม่นับเด้งกลับจาก Review) — โชว์ "อยู่ใน In Progress มากี่วัน" บน My Board
   sprintId              String?   // Sprint ที่ task นี้อยู่ — null ถ้ายังไม่ถูก pull-in หรือ pull-in ก่อนมี Sprint
   sprint                Sprint?   @relation(fields: [sprintId], references: [id])
   taskType              String?   // จาก TaskTypeOption.label ตอน import — free string ไม่ใช่ FK เพื่อกัน list เปลี่ยนแล้วงานเก่าพัง

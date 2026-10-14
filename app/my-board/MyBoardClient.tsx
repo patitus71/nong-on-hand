@@ -18,6 +18,7 @@ import {
   extractTitleTags,
 } from '@/lib/ui';
 import { sanitizeJiraUrl } from '@/lib/jira';
+import JiraPromptModal from './JiraPromptModal';
 
 /* ─── Types ─────────────────────────────────────────── */
 type TaskData = {
@@ -36,10 +37,22 @@ type TaskData = {
   estimatedHours: number | null;
   jiraTicketNo: string | null;
   jiraUrl: string | null;
+  inProgressAt: string | null;
   totalNormalMin: number; totalOtMin: number;
   isAtRisk: boolean; riskReason: string;
 };
 type LaneData = { id: string; name: string; tasks: TaskData[] };
+
+/* วันที่/จำนวนวันนับตามปฏิทินเวลาไทย (UTC+7) — ข้ามเที่ยงคืนเมื่อไหร่ก็นับเป็นอีกวัน */
+const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+function bkkDayIndex(d: Date) { return Math.floor((d.getTime() + BKK_OFFSET_MS) / 86_400_000); }
+function fmtThaiShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' });
+}
+function inProgressDaysLabel(iso: string) {
+  const days = bkkDayIndex(new Date()) - bkkDayIndex(new Date(iso));
+  return days <= 0 ? 'วันนี้' : `${days} วันแล้ว`;
+}
 type PointMapping = { id: string; point: number; hours: number };
 
 type ProblemTask = {
@@ -337,6 +350,15 @@ function SortableCard({
           )}
         </div>
       </div>
+
+      {/* อยู่ใน In Progress มาตั้งแต่เมื่อไหร่ / กี่วันแล้ว */}
+      {laneName === 'In Progress' && !task.isCancelled && (
+        <div className="font-mono text-[10.5px] text-txt-secondary mb-1.5" title="วันที่ย้ายการ์ดเข้าเลน In Progress (เด้งกลับจาก Review นับต่อจากวันเดิม)">
+          {task.inProgressAt
+            ? <>▶ เข้า In Progress {fmtThaiShortDate(task.inProgressAt)} · <span className="text-accent font-semibold">{inProgressDaysLabel(task.inProgressAt)}</span></>
+            : <span className="text-txt-muted">▶ ไม่มีบันทึกวันที่เข้า In Progress</span>}
+        </div>
+      )}
 
       {/* Burn bar — ACT ÷ EST (ไม่โชว์ถ้าการ์ดถูกยกเลิก) */}
       {!task.isCancelled && (
@@ -713,7 +735,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         reviewerId: null, reviewerName: null, prLink: null,
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         taskPoint: task.taskPoint ?? null, estimatedHours: task.estimatedHours ?? null,
-        jiraTicketNo: task.jiraTicketNo ?? null, jiraUrl: task.jiraUrl ?? null,
+        jiraTicketNo: task.jiraTicketNo ?? null, jiraUrl: task.jiraUrl ?? null, inProgressAt: null,
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
       setTitle(''); setTaskPoint(''); setJiraUrl(''); setOpen(false);
@@ -918,6 +940,7 @@ export default function MyBoardClient({
     onConfirm?: () => Promise<void>;
   };
   const [doneTimeModal,   setDoneTimeModal]   = useState<DoneTimeModalData | null>(null);
+  const [showJiraPrompt,  setShowJiraPrompt]  = useState(false);
   const [normalHrs,   setNormalHrs]   = useState('');
   const [otHrs,       setOtHrs]       = useState('');
   const [timeReplace,     setTimeReplace]     = useState(false);
@@ -1238,6 +1261,16 @@ export default function MyBoardClient({
         // ออกจากเลน Review ไปเลนอื่นที่ไม่ใช่ Done (เช่น bounce กลับ In Progress) — server
         // (shouldResetReviewApproval ใน /api/tasks/reorder) reset reviewApprovedAt/reviewerId
         // เสมอในเคสนี้ ต้อง sync local state ด้วย ไม่งั้น banner "Review ผ่านแล้ว" จะค้างอยู่
+        // เข้า In Progress ใหม่ — server (/api/tasks/reorder) stamp inProgressAt เหมือนกัน
+        // sync local ไว้ให้การ์ดโชว์ "เข้า In Progress วันนี้" ทันทีไม่ต้องรอ reload
+        if (dstName === 'In Progress' && srcName !== 'Review') {
+          const now = new Date().toISOString();
+          current = current.map(l => ({
+            ...l, tasks: l.tasks.map(t => t.id === activeId ? { ...t, inProgressAt: now } : t),
+          }));
+          setLanes(current);
+        }
+
         if (srcName === 'Review' && dstName !== 'Done') {
           current = current.map(l => ({
             ...l, tasks: l.tasks.map(t =>
@@ -1562,6 +1595,9 @@ export default function MyBoardClient({
   /* ─── Queue rail data ─────────────────────────────────── */
   const readyTasks   = normalLanes.find(l => l.name === 'Review')?.tasks.filter(t => t.reviewApprovedAt) ?? [];
 
+  /* ─── Jira prompt (Rovo) — เฉพาะงานในเลน Done ที่ไม่ถูกยกเลิก ─── */
+  const doneTasksForJira = lanes.find(l => l.name === 'Done')?.tasks.filter(t => !t.isCancelled) ?? [];
+
   /* ─── Render ─────────────────────────────────────────── */
   return (
     <div className="px-7 py-6 pb-16">
@@ -1574,6 +1610,12 @@ export default function MyBoardClient({
             className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors"
           >
             📄 Export Report
+          </button>
+          <button
+            onClick={() => setShowJiraPrompt(true)}
+            className="bg-surface-2 border border-app-border text-txt-primary text-[13px] px-3 py-[7px] rounded-[3px] hover:bg-surface-3 transition-colors"
+          >
+            ✨ Prompt สร้าง Jira
           </button>
           {canEditLanes && (
             <button
@@ -2087,6 +2129,10 @@ export default function MyBoardClient({
       })()}
 
       {/* ── Modal: Record time before Done ────────────── */}
+      {showJiraPrompt && (
+        <JiraPromptModal doneTasks={doneTasksForJira} onClose={() => setShowJiraPrompt(false)} />
+      )}
+
       {doneTimeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55">
           <div className="bg-surface-1 border border-app-border rounded-[4px] p-5 w-[450px] shadow-xl">
