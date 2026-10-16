@@ -930,6 +930,8 @@ export default function MyBoardClient({
   const [reviewerModal,      setReviewerModal]      = useState<ReviewerModalData | null>(null);
   const [selectedReviewerId, setSelectedReviewerId] = useState<string>('');
   const [reviewerModalSaving, setReviewerModalSaving] = useState(false);
+  // ปุ่มไหนใน Done-time modal กำลังย้ายงานอยู่ ('skip' | 'confirm') — null = ไม่ได้ย้าย
+  const [doneMoving, setDoneMoving] = useState<'skip' | 'confirm' | null>(null);
 
   /* ── Time modal (any → Done) — forced once, regardless of whether the task passed through Review ── */
   type DoneTimeModalData = {
@@ -1511,17 +1513,24 @@ export default function MyBoardClient({
     setTimeSaving(false);
   }
 
-  async function proceedToDone() {
-    if (doneTimeModal?.onConfirm) {
-      await doneTimeModal.onConfirm();
-    } else {
-      await saveOrder(lanesRef.current);
+  async function proceedToDone(source: 'skip' | 'confirm') {
+    if (doneMoving) return; // กัน double-submit ระหว่างรอ server
+    setDoneMoving(source);
+    try {
+      if (doneTimeModal?.onConfirm) {
+        await doneTimeModal.onConfirm();
+      } else {
+        await saveOrder(lanesRef.current);
+      }
+    } finally {
+      setDoneMoving(null);
     }
     setDoneTimeModal(null);
     setTimeAdded(false); setTimeError('');
   }
 
   function cancelDoneTimeModal() {
+    if (doneMoving) return; // ห้ามยกเลิกระหว่างกำลังย้ายงาน
     if (doneTimeModal) setLanes(doneTimeModal.revertLanes);
     setDoneTimeModal(null);
     setTimeAdded(false); setTimeError('');
@@ -2206,19 +2215,19 @@ export default function MyBoardClient({
             )}
 
             <div className="flex gap-2 justify-end mt-1">
-              <button onClick={cancelDoneTimeModal}
-                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors">
+              <button onClick={cancelDoneTimeModal} disabled={!!doneMoving}
+                className="px-4 py-2 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors disabled:opacity-40 disabled:pointer-events-none">
                 ยกเลิก
               </button>
               {doneTimeModal.hasTime && !timeAdded && (
-                <button onClick={proceedToDone}
-                  className="px-4 py-2 text-[12.5px] text-txt-secondary hover:text-txt-primary border border-app-border rounded-[3px] transition-colors">
+                <button onClick={() => proceedToDone('skip')} disabled={!!doneMoving || timeSaving}
+                  className={`px-4 py-2 text-[12.5px] text-txt-secondary hover:text-txt-primary border border-app-border rounded-[3px] transition-colors disabled:opacity-40 disabled:pointer-events-none ${doneMoving === 'skip' ? 'btn-loading !opacity-70' : ''}`}>
                   ข้าม — ย้ายงานเลย
                 </button>
               )}
-              <button onClick={proceedToDone}
-                disabled={!doneTimeModal.hasTime && !timeAdded}
-                className="bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors">
+              <button onClick={() => proceedToDone('confirm')}
+                disabled={(!doneTimeModal.hasTime && !timeAdded) || !!doneMoving || timeSaving}
+                className={`bg-accent hover:bg-accent-hover text-white text-[12.5px] font-medium px-4 py-2 rounded-[3px] disabled:opacity-50 transition-colors ${doneMoving === 'confirm' ? 'btn-loading !opacity-70' : ''}`}>
                 ยืนยันและย้ายงาน →
               </button>
             </div>
