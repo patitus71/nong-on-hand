@@ -18,12 +18,16 @@ export async function POST(req: Request, { params }: { params: { retroId: string
   if (!canAccessSquad(user, item.retro.squadId)) return new Response('Forbidden', { status: 403 });
   if (item.linkedTaskId) return Response.json({ taskId: item.linkedTaskId }); // already converted
 
-  const { taskPoint } = await req.json().catch(() => ({})) as { taskPoint?: number };
-  if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
-    return new Response('taskPoint required — ทุก task ต้องมี Task Point เสมอ', { status: 400 });
+  const { taskPoint } = await req.json().catch(() => ({})) as { taskPoint?: number | null };
+  // Task Point ไม่บังคับ — ไม่ส่ง/null = "–" (ยังไม่ตั้ง point, estimate ว่าง) ตั้งทีหลังบนการ์ดได้
+  let pointMapping: { point: number; hours: number } | null = null;
+  if (taskPoint !== undefined && taskPoint !== null) {
+    if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
+      return new Response('taskPoint ต้องเป็นตัวเลข', { status: 400 });
+    }
+    pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
+    if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
   }
-  const pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
-  if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
 
   const task = await prisma.task.create({
     data: {
@@ -31,8 +35,8 @@ export async function POST(req: Request, { params }: { params: { retroId: string
       squadId:        item.retro.squadId,
       assigneeId:     item.ownerId ?? user.id,
       source:         'MANUAL',
-      taskPoint:      pointMapping.point,
-      estimatedHours: pointMapping.hours,
+      taskPoint:      pointMapping?.point ?? null,
+      estimatedHours: pointMapping?.hours ?? null,
     },
   });
 

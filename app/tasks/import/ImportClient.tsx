@@ -82,7 +82,7 @@ function newRow(): Row {
 }
 
 function isRowValid(r: Row): boolean {
-  return r.title.trim() !== '' && r.taskPoint !== null;
+  return r.title.trim() !== '';
 }
 
 function isValidHttpUrl(url: string): boolean {
@@ -143,7 +143,7 @@ function jiraItemToRow(item: any, taskTypes: TypeRow[]): Row {
     title:     summary,
     taskType:  matchTaskType(summary, taskTypes),
     ticketRef: ticketNo,
-    taskPoint: null, // format นี้ไม่มี point มาด้วย ต้องให้ user เลือกเองเสมอ (validation เดิม block import ถ้าไม่เลือก)
+    taskPoint: null, // format นี้ไม่มี point มาด้วย — ปล่อยเป็น – ได้ (point ไม่บังคับ) หรือเลือกเองในตาราง
     squadId:   '',
     jiraTicketNo: ticketNo || null,
     jiraUrl:      isValidHttpUrl(url) ? url : null,
@@ -511,7 +511,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             </div>
             {invalidCount > 0 && (
               <div className="mt-2 text-[12px] text-danger">
-                ▲ {invalidCount} แถวยังไม่ครบ (ต้องมี Story/Task Name และ Task Point) — แก้ให้ครบก่อนกด Import
+                ▲ {invalidCount} แถวยังไม่ครบ (ต้องมี Story/Task Name) — แก้ให้ครบก่อนกด Import
               </div>
             )}
           </div>
@@ -564,9 +564,9 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
                           <select
                             value={row.taskPoint ?? ''}
                             onChange={e => patchRow(row.id, { taskPoint: e.target.value === '' ? null : Number(e.target.value) })}
-                            className={`${inputCls} ${row.taskPoint === null ? 'border-danger/50' : ''}`}
+                            className={inputCls}
                           >
-                            <option value="">— เลือก —</option>
+                            <option value="">–</option>
                             {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt</option>)}
                           </select>
                         </td>

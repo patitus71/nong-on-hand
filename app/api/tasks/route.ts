@@ -11,11 +11,15 @@ export async function POST(req: Request) {
 
   const { title, laneId, squadId, assigneeId: assigneeParam, sprintId, taskPoint, jiraUrl } = await req.json();
   if (!title?.trim()) return new Response('title required', { status: 400 });
-  if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
-    return new Response('taskPoint required — ทุก task ต้องมี Task Point เสมอ', { status: 400 });
+  // Task Point ไม่บังคับ — ไม่ส่ง/null = "–" (ยังไม่ตั้ง point, estimate ว่าง) ตั้งทีหลังบนการ์ดได้
+  let pointMapping: { point: number; hours: number } | null = null;
+  if (taskPoint !== undefined && taskPoint !== null) {
+    if (typeof taskPoint !== 'number' || isNaN(taskPoint)) {
+      return new Response('taskPoint ต้องเป็นตัวเลข', { status: 400 });
+    }
+    pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
+    if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
   }
-  const pointMapping = await prisma.taskPointMapping.findUnique({ where: { point: taskPoint } });
-  if (!pointMapping) return new Response(`ไม่พบ Task Point ${taskPoint} ใน config — ตั้งค่าได้ที่ Admin Panel`, { status: 400 });
 
   // Jira link ไม่บังคับ — parse ผิด/ไม่ใช่ http(s) แค่ drop เป็น null เงียบๆ ไม่ block การสร้างงาน
   // (ต่างจาก PATCH /api/tasks/[taskId] ที่ throw error ให้ user แก้ เพราะที่นี่เป็นแค่ optional field
@@ -71,8 +75,8 @@ export async function POST(req: Request) {
       squadId:        targetSquadId,
       assigneeId:     resolvedAssigneeId,
       sprintId:       resolvedSprintId,
-      taskPoint:      pointMapping.point,
-      estimatedHours: pointMapping.hours,
+      taskPoint:      pointMapping?.point ?? null,
+      estimatedHours: pointMapping?.hours ?? null,
       order:          (maxOrder._max.order ?? -1) + 1,
       jiraUrl:        cleanJiraUrl,
       jiraTicketNo:   jiraTicketNo,

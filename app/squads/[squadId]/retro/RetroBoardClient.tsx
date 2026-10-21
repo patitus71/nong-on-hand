@@ -208,7 +208,7 @@ export default function RetroBoardClient({
     await fetch(`/api/retro/${selectedRetro.id}/items/${itemId}/vote`, { method: 'POST' });
   }
 
-  // ── Convert to task — ต้องเลือก Task Point ก่อนเสมอ ──────────────────────────
+  // ── Convert to task — Task Point ไม่บังคับ (– = ยังไม่ตั้ง) ──────────────────────────
   const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
   useEffect(() => {
     fetch('/api/admin/task-point-mapping').then(r => r.json()).then(setPointMappings);
@@ -226,12 +226,12 @@ export default function RetroBoardClient({
   }
 
   async function submitConvert() {
-    if (!selectedRetro || !convertTarget || convertPoint === '') return;
+    if (!selectedRetro || !convertTarget) return;
     setConverting(true); setConvertError('');
     const res = await fetch(`/api/retro/${selectedRetro.id}/items/${convertTarget.itemId}/convert`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ taskPoint: Number(convertPoint) }),
+      body:    JSON.stringify({ taskPoint: convertPoint === '' ? null : Number(convertPoint) }),
     });
     if (res.ok) {
       const data = await res.json();
@@ -574,7 +574,7 @@ export default function RetroBoardClient({
         </div>
       )}
 
-      {/* ── Convert to task modal — ต้องเลือก Task Point ก่อนเสมอ ── */}
+      {/* ── Convert to task modal — Task Point ไม่บังคับ ── */}
       {convertTarget && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
@@ -585,14 +585,14 @@ export default function RetroBoardClient({
             <p className="text-[12.5px] text-txt-secondary mb-4 leading-relaxed">{convertTarget.content}</p>
 
             <label className="block text-[12px] text-txt-secondary mb-1.5">
-              Task Point <span className="text-danger">*</span>
+              Task Point <span className="text-txt-muted">(ไม่บังคับ)</span>
             </label>
             <select
               value={convertPoint}
               onChange={e => setConvertPoint(e.target.value)}
-              className={`w-full bg-surface-2 border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-3 ${convertPoint === '' ? 'border-danger/50' : 'border-app-border'}`}
+              className={`w-full bg-surface-2 border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-3 border-app-border`}
             >
-              <option value="">— เลือก (จำเป็น) —</option>
+              <option value="">–</option>
               {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
             </select>
 
@@ -608,7 +608,7 @@ export default function RetroBoardClient({
               </button>
               <button
                 onClick={submitConvert}
-                disabled={converting || convertPoint === ''}
+                disabled={converting}
                 className={`bg-accent text-white text-[13px] px-4 py-2 rounded-[3px] font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 ${converting ? 'btn-loading' : ''}`}
               >
                 แปลงเป็นงาน

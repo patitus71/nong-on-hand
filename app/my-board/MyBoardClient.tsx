@@ -713,11 +713,11 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || taskPoint === '') return;
+    if (!title.trim()) return;
     setSaving(true);
     const res = await fetch('/api/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, laneId, squadId, taskPoint: Number(taskPoint), jiraUrl: jiraUrlTrimmed || undefined }),
+      body: JSON.stringify({ title, laneId, squadId, taskPoint: taskPoint === '' ? null : Number(taskPoint), jiraUrl: jiraUrlTrimmed || undefined }),
     });
     if (res.ok) {
       const task = await res.json();
@@ -747,8 +747,8 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
       <input autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="ชื่องาน..."
         className="w-full bg-surface-2 border border-accent text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-1.5" />
       <select value={taskPoint} onChange={e => setTaskPoint(e.target.value)}
-        className={`w-full bg-surface-2 border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-1.5 ${taskPoint === '' ? 'border-danger/50' : 'border-app-border'}`}>
-        <option value="">Task Point — เลือก (จำเป็น)</option>
+        className={`w-full bg-surface-2 border text-txt-primary text-[13px] px-2.5 py-2 rounded-[3px] focus:outline-none mb-1.5 border-app-border`}>
+        <option value="">Task Point — – (ไม่บังคับ)</option>
         {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
       </select>
       <input value={jiraUrl} onChange={e => setJiraUrl(e.target.value)} placeholder="Jira link (ไม่บังคับ)"
@@ -767,7 +767,7 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         </p>
       )}
       <div className="flex gap-1.5">
-        <button type="submit" disabled={saving || !title.trim() || taskPoint === ''}
+        <button type="submit" disabled={saving || !title.trim()}
           className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">บันทึก</button>
         <button type="button" onClick={() => { setOpen(false); setTitle(''); setTaskPoint(''); setJiraUrl(''); }}
           className="text-txt-muted text-[12px] px-2 py-1.5 rounded-[3px] hover:text-txt-secondary">ยกเลิก</button>

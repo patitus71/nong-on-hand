@@ -427,10 +427,6 @@ export default function SquadBoardClient({
   }
 
   async function submitAssign(t: TaskCard, newId: string | null, newName: string | null) {
-    if (newId && t.taskPoint === null) {
-      flashToast('งานนี้ยังไม่ตั้ง Task Point — ต้องตั้ง point ก่อนถึงจะ assign ได้', 'warn');
-      return;
-    }
     setOpenAssigneeId(null);
     setAssigningTaskId(t.id);
     try {
@@ -528,14 +524,14 @@ export default function SquadBoardClient({
 
   async function submitCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!createTitle.trim() || createPoint === '') return;
+    if (!createTitle.trim()) return;
     setCreateLoading(true);
     const res = await fetch('/api/tasks', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
         title: createTitle.trim(), squadId: currentSquadId, assigneeId: null,
-        taskPoint: Number(createPoint),
+        taskPoint: createPoint === '' ? null : Number(createPoint),
         jiraUrl: createJiraUrl.trim() || undefined,
       }),
     });
@@ -824,11 +820,9 @@ export default function SquadBoardClient({
             </div>
           )}
 
-          {/* To do list / มีปัญหา: capacity context + missing-point warning */}
+          {/* To do list / มีปัญหา: capacity context */}
           {!t.isCancelled && (laneName === 'To do list' || laneName === 'มีปัญหา') && (
-            t.taskPoint === null ? (
-              <p className="text-[10.5px] text-warning mt-1 mb-1.5">⚠ ต้องตั้ง point ก่อน assign</p>
-            ) : !t.assignee ? (
+            !t.assignee ? (
               <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">ยังไม่ถูก assign — ยังไม่นับโหลดใคร</p>
             ) : laneName === 'มีปัญหา' && (
               <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">ยังนับใน {capacityHours} ชม. ของ {t.assignee.name} (ยังต้องทำต่อ)</p>
@@ -1298,9 +1292,9 @@ export default function SquadBoardClient({
                   <select
                     value={createPoint}
                     onChange={e => setCreatePoint(e.target.value)}
-                    className={`w-full bg-surface-2 border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit] ${createPoint === '' ? 'border-danger/50' : 'border-app-border'}`}
+                    className={`w-full bg-surface-2 border text-txt-primary text-[12.5px] px-2.5 py-1.5 rounded-[3px] focus:outline-none font-[inherit] border-app-border`}
                   >
-                    <option value="">Task Point — เลือก (จำเป็น)</option>
+                    <option value="">Task Point — – (ไม่บังคับ)</option>
                     {pointMappings.map(p => <option key={p.id} value={p.point}>{p.point} pt ({p.hours} ชม.)</option>)}
                   </select>
                   {(() => {
@@ -1339,7 +1333,7 @@ export default function SquadBoardClient({
                   <div className="flex gap-1.5">
                     <button
                       type="submit"
-                      disabled={createLoading || !createTitle.trim() || createPoint === ''}
+                      disabled={createLoading || !createTitle.trim()}
                       className={`flex-1 bg-accent hover:bg-accent-hover text-white text-[12.5px] py-1.5 rounded-[3px] font-medium disabled:opacity-50 transition-colors ${createLoading ? 'btn-loading' : ''}`}
                     >
                       เพิ่ม
