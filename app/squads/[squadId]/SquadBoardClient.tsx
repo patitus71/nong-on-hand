@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   fmtHM, burnColorCls, initials, avatarColor, extractTitleTags,
   burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
+  fmtThaiShortDate, inProgressDaysLabel,
 } from '@/lib/ui';
 import TopLoadingBar from '@/components/TopLoadingBar';
 import { sanitizeJiraUrl } from '@/lib/jira';
@@ -23,6 +24,7 @@ type TaskCard = {
   jiraTicketNo:       string | null;
   jiraUrl:            string | null;
   reviewApprovedAt:   string | null;
+  inProgressAt:       string | null;
   isCancelled:        boolean;
   cancelNote:         string | null;
   cancelledByName:    string | null;
@@ -810,6 +812,16 @@ export default function SquadBoardClient({
             <p className="text-[10.5px] text-txt-muted mt-1 mb-1.5">
               อยู่เลน &ldquo;{t.laneName}&rdquo; ในบอร์ดของ {t.assignee.name} · นับใน {capacityHours} ชม. ของ {t.assignee.name} แล้ว
             </p>
+          )}
+
+          {/* อยู่ใน In Progress มาตั้งแต่เมื่อไหร่ / กี่วันแล้ว (เหมือน My Board) — เฉพาะการ์ดที่อยู่เลน
+              In Progress จริงในบอร์ดเจ้าของ (เลน custom ก็ตกมาคอลัมน์นี้ แต่ไม่มีวันที่ให้นับ) */}
+          {laneName === 'On-Board In Progress' && !t.isCancelled && t.laneName?.toLowerCase() === 'in progress' && (
+            <div className="font-mono text-[10.5px] text-txt-secondary mb-1.5" title="วันที่ย้ายการ์ดเข้าเลน In Progress (เด้งกลับจาก Review นับต่อจากวันเดิม)">
+              {t.inProgressAt
+                ? <>▶ เข้า In Progress {fmtThaiShortDate(t.inProgressAt)} · <span className="text-accent font-semibold">{inProgressDaysLabel(t.inProgressAt)}</span></>
+                : <span className="text-txt-muted">▶ ไม่มีบันทึกวันที่เข้า In Progress</span>}
+            </div>
           )}
 
           {/* To do list / มีปัญหา: capacity context + missing-point warning */}

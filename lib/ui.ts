@@ -230,3 +230,14 @@ export function laneGlyph(name: string | null): string {
   if (l.includes('progress')) return '◐';
   return '○';
 }
+
+/* วันที่/จำนวนวันนับตามปฏิทินเวลาไทย (UTC+7) — ข้ามเที่ยงคืนเมื่อไหร่ก็นับเป็นอีกวัน */
+const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+function bkkDayIndex(d: Date) { return Math.floor((d.getTime() + BKK_OFFSET_MS) / 86_400_000); }
+export function fmtThaiShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' });
+}
+export function inProgressDaysLabel(iso: string) {
+  const days = bkkDayIndex(new Date()) - bkkDayIndex(new Date(iso));
+  return days <= 0 ? 'วันนี้' : `${days} วันแล้ว`;
+}

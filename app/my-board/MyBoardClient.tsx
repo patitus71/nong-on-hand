@@ -16,6 +16,8 @@ import {
   fmt, fmtHM, burnColorCls, initials, avatarColor, renderReportMarkdown, markdownToPlainText,
   burnSummaryText, burnSummaryColorCls, estAccuracyLabel, estAccuracyColorCls, hoursPerPointColorCls,
   extractTitleTags,
+  fmtThaiShortDate,
+  inProgressDaysLabel,
 } from '@/lib/ui';
 import { sanitizeJiraUrl } from '@/lib/jira';
 import JiraPromptModal from './JiraPromptModal';
@@ -43,16 +45,6 @@ type TaskData = {
 };
 type LaneData = { id: string; name: string; tasks: TaskData[] };
 
-/* วันที่/จำนวนวันนับตามปฏิทินเวลาไทย (UTC+7) — ข้ามเที่ยงคืนเมื่อไหร่ก็นับเป็นอีกวัน */
-const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
-function bkkDayIndex(d: Date) { return Math.floor((d.getTime() + BKK_OFFSET_MS) / 86_400_000); }
-function fmtThaiShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Bangkok' });
-}
-function inProgressDaysLabel(iso: string) {
-  const days = bkkDayIndex(new Date()) - bkkDayIndex(new Date(iso));
-  return days <= 0 ? 'วันนี้' : `${days} วันแล้ว`;
-}
 type PointMapping = { id: string; point: number; hours: number };
 
 type ProblemTask = {

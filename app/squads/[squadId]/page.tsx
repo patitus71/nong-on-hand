@@ -122,6 +122,7 @@ export default async function SquadPage({
         jiraTicketNo:       t.jiraTicketNo ?? null,
         jiraUrl:            t.jiraUrl ?? null,
         reviewApprovedAt:   t.reviewApprovedAt?.toISOString() ?? null,
+        inProgressAt:       t.inProgressAt?.toISOString() ?? null,
         isCancelled:        t.isCancelled,
         cancelNote:         t.cancelNote ?? null,
         cancelledByName:    t.isCancelled ? (t.issueLogs[0]?.resolvedBy?.name ?? null) : null,
