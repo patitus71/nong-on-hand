@@ -45,7 +45,10 @@ export async function carryOverUnfinishedTasks(db: Db, squadId: string, newSprin
       deletedAt: null,
       isCancelled: false,
       sprint: { status: 'CLOSED' },
-      NOT: { lane: { name: 'Done' } },
+      // งานกองกลางที่สร้างจาก Squad Board ยังไม่มีเลน (laneId = null) — ต้องระบุตรงๆ เพราะ
+      // NOT บน relation filter ใน updateMany ไม่นับแถวที่ไม่มี relation ทำให้งานพวกนี้ค้างใน
+      // sprint เก่าและหายจากบอร์ด (ทั้งที่ countUnfinishedTasks นับรวมไว้แล้ว)
+      OR: [{ laneId: null }, { NOT: { lane: { name: 'Done' } } }],
     },
     data: { sprintId: newSprintId },
   });

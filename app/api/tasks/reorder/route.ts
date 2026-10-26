@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { revalidatePath } from 'next/cache';
-import type { SessionUser } from '@/lib/rbac';
+import { canEditSquadBoard, type SessionUser } from '@/lib/rbac';
 import { shouldResetReviewApproval } from '@/lib/importTasks';
 import { shouldStampInProgressAt } from '@/lib/personalBoard';
 
@@ -37,7 +37,7 @@ export async function PATCH(req: Request) {
     where:  { id: { in: taskIds } },
     select: {
       id: true, squadId: true, laneId: true, reviewApprovedAt: true, isCancelled: true,
-      reviewerId: true, title: true,
+      reviewerId: true, title: true, assigneeId: true,
     },
   });
   const taskById = new Map(tasksRaw.map(t => [t.id, t]));
@@ -124,10 +124,33 @@ export async function PATCH(req: Request) {
     return { id, laneId: finalLaneId, order, itemReviewerId, moved, oldLaneName, stampInProgress };
   });
 
+  // Guard: สิทธิ์ย้าย — กฎเดียวกับ /api/tasks/[taskId]/move: ADMIN เสมอ, เจ้าของงาน, หรือคนที่แก้
+  // Squad Board ของ squad นั้นได้ (QA_LEAD เจ้าของ squad)
+  // client ส่ง item ของทุก task บนบอร์ดมาด้วยเสมอ — อาจมี task ที่ถูก reassign ให้คนอื่นแล้วแต่ยัง
+  // ค้างอยู่ในเลนส่วนตัวของเรา: ถ้าชื่อเลนไม่เปลี่ยน (ไม่ได้ถูกลากจริง) ให้ข้ามไปเงียบๆ ไม่แตะ task นั้น
+  // ไม่งั้นลากการ์ดใบอื่นบนบอร์ดตัวเองไม่ได้เลย — เทียบชื่อเลนแบบไม่สน case แทน `moved` เพราะ
+  // squad task ในเลนส่วนตัวถูก translate laneId ทุกครั้ง (moved เป็น true แม้ไม่ได้ลาก)
+  const unauthorizedIds = new Set<string>();
+  for (const { id, laneId: resolvedLaneId, oldLaneName } of resolved) {
+    const task = taskById.get(id);
+    if (!task) return new Response('Not Found', { status: 404 });
+    const canMove =
+      user.role === 'ADMIN' ||
+      task.assigneeId === user.id ||
+      (!!task.squadId && canEditSquadBoard(user, task.squadId));
+    if (canMove) continue;
+    const newLaneName = laneById.get(resolvedLaneId)?.name ?? '';
+    if (newLaneName.toLowerCase() !== oldLaneName.toLowerCase()) {
+      return new Response('Forbidden — ย้ายได้เฉพาะงานของตัวเอง', { status: 403 });
+    }
+    unauthorizedIds.add(id);
+  }
+  const permitted = resolved.filter(r => !unauthorizedIds.has(r.id));
+
   // Guard: เลน "Cancel" เข้าได้ทางเดียวผ่าน /api/tasks/[taskId]/flag (resolve-to-cancel)
   // เท่านั้น ห้ามลากเข้าตรงๆ ผ่าน endpoint นี้ และเป็น terminal state — task ที่ isCancelled
   // แล้วห้ามเปลี่ยน laneId อีกไม่ว่ากรณีใด ใช้กับทุก role ไม่ใช่แค่ QA_ENGINEER
-  for (const { id, laneId: resolvedLaneId, moved } of resolved) {
+  for (const { id, laneId: resolvedLaneId, moved } of permitted) {
     if (!moved) continue;
     const task = taskById.get(id);
     if (task?.isCancelled) {
@@ -147,7 +170,7 @@ export async function PATCH(req: Request) {
   // (oldLaneName === 'Review') needs approval first. A task promoted straight from
   // In Progress (or anywhere else) to Done never needed a reviewer to begin with.
   if (user.role === 'QA_ENGINEER') {
-    for (const { id, laneId: resolvedLaneId, moved, oldLaneName } of resolved) {
+    for (const { id, laneId: resolvedLaneId, moved, oldLaneName } of permitted) {
       const task = taskById.get(id);
       if (!task?.squadId || oldLaneName !== 'Review' || task.reviewApprovedAt || !moved) continue;
       const squadDoneLaneId = squadLaneMap.get(`${task.squadId}:Done`);
@@ -158,7 +181,7 @@ export async function PATCH(req: Request) {
   }
 
   await prisma.$transaction(
-    resolved.map(({ id, laneId, order, itemReviewerId, stampInProgress }) =>
+    permitted.map(({ id, laneId, order, itemReviewerId, stampInProgress }) =>
       prisma.task.update({
         where: { id },
         data:  {
@@ -178,7 +201,7 @@ export async function PATCH(req: Request) {
   // In-app notification — เฉพาะ task ที่ "ย้ายเข้า Review lane จริงในรอบนี้" และตั้ง reviewer
   // ใหม่จริง (ต่างจากค่าเดิม) เท่านั้น กัน reorder ทั้งบอร์ด (ทุก task ทุกเลนถูกส่งมาด้วยเสมอ)
   // ยิงแจ้งเตือนซ้ำให้ task อื่นที่บังเอิญค้างอยู่ใน Review lane — ไม่ส่ง LINE แล้ว
-  const reviewRequests = resolved
+  const reviewRequests = permitted
     .filter(({ id, laneId, itemReviewerId, moved }) => {
       if (!moved || !itemReviewerId) return false;
       if (laneById.get(laneId)?.name !== 'Review') return false;

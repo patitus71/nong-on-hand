@@ -64,13 +64,17 @@ export const authOptions: NextAuthOptions = {
         if (now - lastRefreshed > 5 * 60 * 1000) {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { role: true, squadId: true, squad: { select: { isFloatingPool: true } } },
+            select: { role: true, squadId: true, active: true, deletedAt: true, squad: { select: { isFloatingPool: true } } },
           });
-          if (dbUser) {
-            token.role = dbUser.role;
-            token.squadId = dbUser.squadId;
-            token.isFloatingPoolMember = dbUser.squad?.isFloatingPool ?? false;
+          // บัญชีถูกปิดใช้งาน/ลบจาก admin panel ระหว่างที่ยัง login ค้างอยู่ — throw ให้ NextAuth
+          // ล้าง session ทิ้ง (getServerSession คืน null → หน้าเด้งไป /login, API ตอบ 401)
+          // ไม่งั้น JWT ยังใช้ได้ต่อจนหมดอายุ 30 วัน
+          if (!dbUser || !dbUser.active || dbUser.deletedAt) {
+            throw new Error('ACCOUNT_DISABLED');
           }
+          token.role = dbUser.role;
+          token.squadId = dbUser.squadId;
+          token.isFloatingPoolMember = dbUser.squad?.isFloatingPool ?? false;
           token.lastRefreshed = now;
         }
       }
