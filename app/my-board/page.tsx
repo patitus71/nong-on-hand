@@ -46,48 +46,61 @@ export default async function MyBoardPage() {
   // QA_MANAGER ไม่มี My Board (เมนูซ่อนอยู่แล้ว) — กันเข้าทาง URL ตรงๆ ด้วย ไม่งั้นระบบสร้างบอร์ดส่วนตัวให้
   if (!showMyBoardMenu(user)) redirect('/tasks');
 
-  const [mySquad, myOpenSprint] = await Promise.all([
+  // query ที่ไม่ขึ้นต่อกันยิงพร้อมกันใน Promise.all เดียว — ยิงทีละตัวต่อกันทำให้หน้าโหลดช้า
+  // ตามจำนวน round trip ไป DB
+  const [mySquad, myOpenSprint, closedSprints, existingBoard, rawPendingReviews] = await Promise.all([
     user.squadId
       ? prisma.squad.findUnique({ where: { id: user.squadId }, select: { name: true, capacityHours: true } })
       : Promise.resolve(null),
     user.squadId
       ? prisma.sprint.findFirst({ where: { squadId: user.squadId, status: 'OPEN' }, select: { capacityHours: true } })
       : Promise.resolve(null),
+    // Velocity history — PT ที่ปิดได้ (Done) ต่อ sprint ที่ปิดแล้ว ≥4 sprint ล่าสุดของ squad ตัวเอง
+    // (design handoff: Time & Velocity B4) — task ที่ done แล้วจะไม่ถูก carryOverUnfinishedTasks
+    // ย้าย sprintId อีก (ดู lib/sprint.ts) ดังนั้น sprintId เดิม + lane ชื่อ Done ยัง reconstruct
+    // ประวัติ velocity ได้แม่นยำ ต้อง query แยกเพราะ finishedInClosedSprintFilter() ด้านล่างตัด
+    // task พวกนี้ออกจาก my-board display โดยเจตนา
+    user.squadId
+      ? prisma.sprint.findMany({
+          where:  { squadId: user.squadId, status: 'CLOSED' },
+          orderBy: { closedAt: 'desc' },
+          take:    4,
+          select: {
+            id: true, name: true,
+            tasks: {
+              where:  { assigneeId: user.id, isCancelled: false, lane: { name: 'Done' } },
+              select: { taskPoint: true },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    prisma.board.findFirst({
+      where: { ownerId: user.id, type: 'PERSONAL' },
+      include: {
+        lanes: {
+          orderBy: { order: 'asc' },
+          include: { tasks: personalBoardTasksInclude() },
+        },
+      },
+    }),
+    // Tasks where I'm the assigned reviewer, still in Review lane, not yet approved
+    prisma.task.findMany({
+      where: { reviewerId: user.id, deletedAt: null, reviewApprovedAt: null, lane: { name: 'Review' } },
+      select: {
+        id: true, title: true, prLink: true,
+        squad:    { select: { id: true, name: true } },
+        assignee: { select: { name: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    }),
   ]);
   const effectiveCapacityHours = myOpenSprint?.capacityHours ?? mySquad?.capacityHours ?? null;
 
-  // Velocity history — PT ที่ปิดได้ (Done) ต่อ sprint ที่ปิดแล้ว ≥4 sprint ล่าสุดของ squad ตัวเอง
-  // (design handoff: Time & Velocity B4) — task ที่ done แล้วจะไม่ถูก carryOverUnfinishedTasks
-  // ย้าย sprintId อีก (ดู lib/sprint.ts) ดังนั้น sprintId เดิม + lane ชื่อ Done ยัง reconstruct
-  // ประวัติ velocity ได้แม่นยำ ต้อง query แยกเพราะ finishedInClosedSprintFilter() ด้านล่างตัด
-  // task พวกนี้ออกจาก my-board display โดยเจตนา
-  const closedSprints = user.squadId
-    ? await prisma.sprint.findMany({
-        where:  { squadId: user.squadId, status: 'CLOSED' },
-        orderBy: { closedAt: 'desc' },
-        take:    4,
-        select: {
-          id: true, name: true,
-          tasks: {
-            where:  { assigneeId: user.id, isCancelled: false, lane: { name: 'Done' } },
-            select: { taskPoint: true },
-          },
-        },
-      })
-    : [];
   const velocityHistory = closedSprints
     .map(s => ({ id: s.id, name: s.name, points: s.tasks.reduce((sum, t) => sum + (t.taskPoint ?? 0), 0) }))
     .reverse();
 
-  let board = await prisma.board.findFirst({
-    where: { ownerId: user.id, type: 'PERSONAL' },
-    include: {
-      lanes: {
-        orderBy: { order: 'asc' },
-        include: { tasks: personalBoardTasksInclude() },
-      },
-    },
-  });
+  let board = existingBoard;
 
   if (!board) {
     board = await prisma.board.create({
@@ -173,16 +186,6 @@ export default async function MyBoardPage() {
     }
   }
 
-  // Tasks where I'm the assigned reviewer, still in Review lane, not yet approved
-  const rawPendingReviews = await prisma.task.findMany({
-    where: { reviewerId: user.id, deletedAt: null, reviewApprovedAt: null, lane: { name: 'Review' } },
-    select: {
-      id: true, title: true, prLink: true,
-      squad:    { select: { id: true, name: true } },
-      assignee: { select: { name: true } },
-    },
-    orderBy: { updatedAt: 'desc' },
-  });
   const pendingReviews = rawPendingReviews.map(r => ({
     id:       r.id,
     title:    r.title,
