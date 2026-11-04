@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { fmt, initials, avatarColor } from '@/lib/ui';
+import TagPicker from '@/components/TagPicker';
+import type { TagLite } from '@/lib/tags';
 
 type TimeLog     = { normalMinutes: number; otMinutes: number; startAt: string; endAt: string };
 type TaskLogEntry = { id: string; action: string; detail: string | null; createdAt: string; userName: string };
@@ -24,6 +26,7 @@ type Task = {
   estimatedHours: number | null;
   jiraTicketNo: string | null;
   jiraUrl: string | null;
+  tags: TagLite[];
   timeLogs:   TimeLog[];
   taskLogs:   TaskLogEntry[];
   retroItems: RetroRef[];
@@ -101,6 +104,35 @@ export default function TaskDetailClient({
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  }
+
+  // ── Tags: บันทึกทันทีที่เปลี่ยน (optimistic) → rollback ถ้า error ──────────────
+  // ส่ง request ต่อคิวตามลำดับ (กดเร็วๆ หลายครั้งผลไม่สลับกัน) และ rollback ไปค่าที่ server ยืนยันล่าสุด
+  const confirmedTagsRef = useRef<TagLite[]>(init.tags);
+  const tagSaveChainRef  = useRef<Promise<void>>(Promise.resolve());
+  const tagReqSeqRef     = useRef(0);
+
+  function saveTags(next: TagLite[]) {
+    setTask(t => ({ ...t, tags: next }));
+    const seq = ++tagReqSeqRef.current;
+    tagSaveChainRef.current = tagSaveChainRef.current.then(async () => {
+      try {
+        const res = await fetch(`/api/tasks/${task.id}/tags`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tagIds: next.map(t => t.id) }),
+        });
+        if (!res.ok) throw new Error((await res.text()) || 'บันทึก Tag ไม่สำเร็จ');
+        const data = await res.json() as { tags: TagLite[] };
+        confirmedTagsRef.current = data.tags;
+        if (seq === tagReqSeqRef.current) setTask(t => ({ ...t, tags: data.tags }));
+      } catch (e) {
+        if (seq === tagReqSeqRef.current) {
+          setTask(t => ({ ...t, tags: confirmedTagsRef.current }));
+          showToast(`⚠ ${(e as Error).message} — ย้อนกลับเป็นค่าเดิมแล้ว`);
+        }
+      }
+    });
   }
 
   async function saveTitle() {
@@ -433,6 +465,12 @@ export default function TaskDetailClient({
               </a>
             )}
           </div>
+
+          {/* Tags (ไม่บังคับ) — ตาม design-reference/tags-design.html แท็บ 2 */}
+          <p className="text-[11px] uppercase tracking-wider text-txt-muted font-medium mt-3.5 mb-2">
+            Tags <span className="normal-case tracking-normal">(ไม่บังคับ)</span>
+          </p>
+          <TagPicker value={task.tags} onChange={saveTags} disabled={!canEdit} className="mb-5" />
 
           {/* Description */}
           <div className="flex items-center gap-2 mb-2">

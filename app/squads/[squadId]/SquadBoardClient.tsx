@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useTransition } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -10,6 +10,10 @@ import {
 } from '@/lib/ui';
 import TopLoadingBar from '@/components/TopLoadingBar';
 import { sanitizeJiraUrl } from '@/lib/jira';
+import TagPicker from '@/components/TagPicker';
+import { TagChipList } from '@/components/TagChip';
+import TagFilterBar, { collectTags, TAG_FILTER_DIM_CLASS, useTagFilter } from '@/components/TagFilterBar';
+import type { TagLite } from '@/lib/tags';
 
 type TaskCard = {
   id:                 string;
@@ -23,6 +27,7 @@ type TaskCard = {
   estimatedHours:     number | null;
   jiraTicketNo:       string | null;
   jiraUrl:            string | null;
+  tags:               TagLite[];
   reviewApprovedAt:   string | null;
   inProgressAt:       string | null;
   isCancelled:        boolean;
@@ -319,6 +324,12 @@ export default function SquadBoardClient({
   }
 
   const laneByName = new Map(lanes.map(l => [l.name, l.tasks]));
+
+  // ── Tag filter — การ์ดที่ไม่ตรงจางลง (ไม่ซ่อน), เก็บใน URL ?tags= ────────────────
+  const tagFilter    = useTagFilter();
+  const allCards     = useMemo(() => lanes.flatMap(l => l.tasks), [lanes]);
+  const boardTags    = useMemo(() => collectTags(allCards), [allCards]);
+  const shownCount   = tagFilter.active ? allCards.filter(t => tagFilter.matches(t.tags)).length : allCards.length;
   // "กองกลาง" ต้องโชว์งานที่ยังไม่มีเจ้าของทุกใบไม่ว่าจะอยู่ bucket ไหน — ไม่ใช่แค่ 'To do list' —
   // เพราะตอนนี้ unassign ได้จากการ์ดโดยตรง และงาน hasIssue=true จะยังอยู่ bucket 'มีปัญหา' เสมอ
   // (computeSquadBoardStatus เช็ค hasIssue ก่อน lane เสมอ) ต่อให้ assignee เป็น null ก็ตาม —
@@ -496,6 +507,8 @@ export default function SquadBoardClient({
   const [createTitle,  setCreateTitle]  = useState('');
   const [createPoint,  setCreatePoint]  = useState('');
   const [createJiraUrl, setCreateJiraUrl] = useState('');
+  const [createTags,    setCreateTags]    = useState<TagLite[]>([]);
+  const [createError,   setCreateError]   = useState('');
   const [createLoading, setCreateLoading] = useState(false);
 
   const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
@@ -526,6 +539,7 @@ export default function SquadBoardClient({
     e.preventDefault();
     if (!createTitle.trim()) return;
     setCreateLoading(true);
+    setCreateError('');
     const res = await fetch('/api/tasks', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -533,12 +547,15 @@ export default function SquadBoardClient({
         title: createTitle.trim(), squadId: currentSquadId, assigneeId: null,
         taskPoint: createPoint === '' ? null : Number(createPoint),
         jiraUrl: createJiraUrl.trim() || undefined,
+        tagIds: createTags.map(t => t.id),
       }),
     });
     if (res.ok) {
-      setCreateTitle(''); setCreatePoint(''); setCreateJiraUrl('');
+      setCreateTitle(''); setCreatePoint(''); setCreateJiraUrl(''); setCreateTags([]);
       setShowCreate(false);
       startRefresh(() => router.refresh());
+    } else {
+      setCreateError((await res.text()) || 'เพิ่มงานไม่สำเร็จ');
     }
     setCreateLoading(false);
   }
@@ -576,7 +593,7 @@ export default function SquadBoardClient({
     const { tags: cardTags, cleanTitle } = extractTitleTags(t.title);
 
     return (
-      <div key={t.id} className={`relative ${t.isAtRisk ? 'card-at-risk' : ''}`}>
+      <div key={t.id} className={`relative ${t.isAtRisk ? 'card-at-risk' : ''} ${tagFilter.matches(t.tags) ? '' : TAG_FILTER_DIM_CLASS}`}>
         {t.isAtRisk && (
           <span
             className="absolute top-1.5 right-2 text-[12px] leading-none z-10 pointer-events-none"
@@ -597,17 +614,22 @@ export default function SquadBoardClient({
           }}
         >
 
-          {/* Jira chip — แถวเดี่ยวเหนือชื่องาน แสดงเฉพาะการ์ดที่มาจาก Jira */}
-          {t.jiraUrl && (
-            <a
-              href={t.jiraUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 mb-1.5 hover:brightness-110 transition-[filter]"
-            >
-              {t.jiraTicketNo ?? 'Jira'} ↗
-            </a>
+          {/* Jira chip + Tag chips — แถวเดี่ยวเหนือชื่องาน (Jira badge เหมือนเดิม, Tag สูงสุด 2 + "+N") */}
+          {(t.jiraUrl || (t.tags?.length ?? 0) > 0) && (
+            <div className="flex flex-wrap items-center gap-[5px] mb-1.5">
+              {t.jiraUrl && (
+                <a
+                  href={t.jiraUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 hover:brightness-110 transition-[filter]"
+                >
+                  {t.jiraTicketNo ?? 'Jira'} ↗
+                </a>
+              )}
+              <TagChipList tags={t.tags} />
+            </div>
           )}
 
           {/* Title row */}
@@ -1195,6 +1217,8 @@ export default function SquadBoardClient({
         );
       })()}
 
+      <TagFilterBar available={boardTags} filter={tagFilter} shown={shownCount} total={allCards.length} className="mb-3" />
+
       {/* Board matrix — rows: squad members × columns: 5 derived statuses */}
       <div className={isReadonly ? 'opacity-70 select-none' : ''}>
         {members.length > 0 && (
@@ -1330,6 +1354,13 @@ export default function SquadBoardClient({
                       </div>
                     );
                   })()}
+                  {/* Tags (ไม่บังคับ) — design-reference/tags-design.html แท็บ 5 */}
+                  <div>
+                    <p className="text-[11px] text-txt-secondary mb-1">Tags <span className="text-txt-muted">(ไม่บังคับ)</span></p>
+                    <TagPicker value={createTags} onChange={setCreateTags} busy={createLoading} variant="field" />
+                    <p className="text-[10.5px] text-txt-muted mt-1">แสดงเฉพาะ Tag ที่ยังใช้งานอยู่ (ไม่รวม Archived)</p>
+                  </div>
+                  {createError && <p className="text-[11px] text-danger">{createError}</p>}
                   <div className="flex gap-1.5">
                     <button
                       type="submit"
@@ -1340,7 +1371,7 @@ export default function SquadBoardClient({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setShowCreate(false); setCreateTitle(''); setCreatePoint(''); setCreateJiraUrl(''); }}
+                      onClick={() => { setShowCreate(false); setCreateTitle(''); setCreatePoint(''); setCreateJiraUrl(''); setCreateTags([]); setCreateError(''); }}
                       disabled={createLoading}
                       className="px-3 py-1.5 text-[12.5px] text-txt-muted hover:text-txt-secondary border border-app-border rounded-[3px] transition-colors"
                     >

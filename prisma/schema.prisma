@@ -178,6 +178,7 @@ model Task {
   retroItems    RetroItem[]
   issueLogs     TaskIssueLog[]
   notifications Notification[]
+  tags          TaskTag[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -224,6 +225,37 @@ model Sprint {
   createdAt   DateTime     @default(now())
 
   @@index([squadId, status])
+}
+
+enum TagKind {
+  EPIC
+  STORY
+  OTHER
+}
+
+// Tag ใช้ร่วมกันทุก Squad — เฉพาะ ADMIN สร้าง/แก้/archive ได้ ห้ามลบจริง (ใช้ isArchived แทน)
+model Tag {
+  id         String    @id @default(cuid())
+  name       String
+  kind       TagKind   @default(OTHER)
+  url        String?   // deeplink (http/https only — validate ทั้ง client และ server)
+  isArchived Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  tasks      TaskTag[]
+
+  @@unique([name, kind])
+}
+
+model TaskTag {
+  taskId    String
+  tagId     String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+
+  @@id([taskId, tagId])
+  @@index([tagId])
 }
 
 // Global config (ไม่ผูก squad) สำหรับหน้า import งาน — ตั้งค่าได้ที่ Admin Panel เท่านั้น

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { createContext, useContext, useMemo, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   DndContext, DragEndEvent, DragOverEvent, DragOverlay, DragStartEvent,
@@ -20,6 +20,14 @@ import {
   inProgressDaysLabel,
 } from '@/lib/ui';
 import { sanitizeJiraUrl } from '@/lib/jira';
+import TagPicker from '@/components/TagPicker';
+import { TagChipList } from '@/components/TagChip';
+import TagFilterBar, { collectTags, useTagFilter } from '@/components/TagFilterBar';
+import type { TagLite } from '@/lib/tags';
+
+/** ตัวกรอง Tag ของบอร์ด — การ์ดอ่านผ่าน context (ไม่ต้องร้อย prop ผ่าน DroppableLane) */
+const TagMatchContext = createContext<(tags: TagLite[]) => boolean>(() => true);
+const TAG_DIM_STYLE = { opacity: 0.25 } as const; // inline style ชนะ opacity-* class เดิมของการ์ด (เช่น การ์ด Cancel)
 import JiraPromptModal from './JiraPromptModal';
 
 /* ─── Types ─────────────────────────────────────────── */
@@ -40,6 +48,7 @@ type TaskData = {
   jiraTicketNo: string | null;
   jiraUrl: string | null;
   inProgressAt: string | null;
+  tags: TagLite[];
   totalNormalMin: number; totalOtMin: number;
   isAtRisk: boolean; riskReason: string;
 };
@@ -159,6 +168,8 @@ function SortableCard({
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id, disabled: saving || task.isCancelled });
+  const tagMatches = useContext(TagMatchContext);
+  const tagDimmed  = !overlay && !tagMatches(task.tags);
 
   const av = task.assignee ? avatarColor(task.assignee.name) : null;
 
@@ -250,6 +261,7 @@ function SortableCard({
       style={{
         transform: CSS.Transform.toString(transform), transition,
         ...(stripeColor ? { borderLeftWidth: 4, borderLeftColor: stripeColor } : {}),
+        ...(tagDimmed ? TAG_DIM_STYLE : {}),
       }}
       {...attributes} {...listeners}
       className={`bg-surface-1 border rounded-[9px] px-[13px] py-3 min-w-0 flex-shrink-0 overflow-hidden transition-colors select-none relative
@@ -275,17 +287,22 @@ function SortableCard({
           <span className="checkmark">✅</span> Review ผ่านแล้ว — พร้อมย้ายไป Done!
         </div>
       )}
-      {task.jiraUrl && (
-        <a
-          href={task.jiraUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={e => e.stopPropagation()}
-          onPointerDown={e => e.stopPropagation()}
-          className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 mb-1.5 hover:brightness-110 transition-[filter]"
-        >
-          {task.jiraTicketNo ?? 'Jira'} ↗
-        </a>
+      {(task.jiraUrl || (task.tags?.length ?? 0) > 0) && (
+        <div className="flex flex-wrap items-center gap-[5px] mb-1.5">
+          {task.jiraUrl && (
+            <a
+              href={task.jiraUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
+              onPointerDown={e => e.stopPropagation()}
+              className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold bg-accent-bg text-accent border border-accent/30 rounded-[6px] px-2 py-0.5 hover:brightness-110 transition-[filter]"
+            >
+              {task.jiraTicketNo ?? 'Jira'} ↗
+            </a>
+          )}
+          <TagChipList tags={task.tags} />
+        </div>
       )}
       <Link
         href={`/tasks/${task.id}`}
@@ -549,11 +566,12 @@ function SortableFlaggedCard({
 }: { task: TaskData; onResolve: (t: TaskData) => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
+  const tagDimmed = !useContext(TagMatchContext)(task.tags);
 
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: CSS.Transform.toString(transform), transition, ...(tagDimmed ? TAG_DIM_STYLE : {}) }}
       {...attributes} {...listeners}
       className={`bg-surface-1 border border-danger/45 rounded-[9px] p-2.5 w-[220px] flex-shrink-0 overflow-hidden cursor-grab active:cursor-grabbing select-none ${
         isDragging ? 'opacity-40' : ''
@@ -568,6 +586,7 @@ function SortableFlaggedCard({
         <span className="text-danger flex-shrink-0 text-[11px] leading-[1.4]">▲</span>
         <span className="min-w-0 [overflow-wrap:anywhere] [text-wrap:pretty]">{task.title}</span>
       </Link>
+      {(task.tags?.length ?? 0) > 0 && <TagChipList tags={task.tags} className="mb-1.5" />}
       {task.squad && <p className="text-[10.5px] text-txt-muted mb-2">{task.squad.name}</p>}
       <button
         onClick={e => { e.stopPropagation(); onResolve(task); }}
@@ -700,6 +719,8 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
   const [title, setTitle] = useState('');
   const [taskPoint, setTaskPoint] = useState<string>('');
   const [jiraUrl, setJiraUrl] = useState('');
+  const [tags, setTags] = useState<TagLite[]>([]);
+  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [pointMappings, setPointMappings] = useState<{ id: string; point: number; hours: number }[]>([]);
@@ -715,9 +736,13 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
     e.preventDefault();
     if (!title.trim()) return;
     setSaving(true);
+    setError('');
     const res = await fetch('/api/tasks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, laneId, squadId, taskPoint: taskPoint === '' ? null : Number(taskPoint), jiraUrl: jiraUrlTrimmed || undefined }),
+      body: JSON.stringify({
+        title, laneId, squadId, taskPoint: taskPoint === '' ? null : Number(taskPoint), jiraUrl: jiraUrlTrimmed || undefined,
+        tagIds: tags.map(t => t.id),
+      }),
     });
     if (res.ok) {
       const task = await res.json();
@@ -728,9 +753,12 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
         squadId: task.squadId ?? null, squad: task.squad, assigneeId: null, assignee: task.assignee,
         taskPoint: task.taskPoint ?? null, estimatedHours: task.estimatedHours ?? null,
         jiraTicketNo: task.jiraTicketNo ?? null, jiraUrl: task.jiraUrl ?? null, inProgressAt: null,
+        tags: Array.isArray(task.tags) ? task.tags : [],
         totalNormalMin: 0, totalOtMin: 0, isAtRisk: false, riskReason: '',
       });
-      setTitle(''); setTaskPoint(''); setJiraUrl(''); setOpen(false);
+      setTitle(''); setTaskPoint(''); setJiraUrl(''); setTags([]); setOpen(false);
+    } else {
+      setError((await res.text()) || 'เพิ่มงานไม่สำเร็จ');
     }
     setSaving(false);
   }
@@ -766,10 +794,14 @@ function AddTaskForm({ laneId, squadId, onCreated }: {
           อ่านลิงก์ไม่ออก — ต้องเป็น URL เต็มที่ขึ้นต้น http:// หรือ https:// (ไม่ใส่ก็บันทึกได้ปกติ)
         </p>
       )}
+      {/* Tags (ไม่บังคับ) — design-reference/tags-design.html แท็บ 5 */}
+      <p className="text-[11px] text-txt-secondary mb-1">Tags <span className="text-txt-muted">(ไม่บังคับ)</span></p>
+      <TagPicker value={tags} onChange={setTags} busy={saving} variant="field" className="mb-1.5" />
+      {error && <p className="text-[11px] text-danger mb-1.5">{error}</p>}
       <div className="flex gap-1.5">
         <button type="submit" disabled={saving || !title.trim()}
           className="bg-accent text-white text-[12px] px-3 py-1.5 rounded-[3px] disabled:opacity-50">บันทึก</button>
-        <button type="button" onClick={() => { setOpen(false); setTitle(''); setTaskPoint(''); setJiraUrl(''); }}
+        <button type="button" onClick={() => { setOpen(false); setTitle(''); setTaskPoint(''); setJiraUrl(''); setTags([]); setError(''); }}
           className="text-txt-muted text-[12px] px-2 py-1.5 rounded-[3px] hover:text-txt-secondary">ยกเลิก</button>
       </div>
     </form>
@@ -875,6 +907,12 @@ export default function MyBoardClient({
   const flaggedTasks = lanes.flatMap(l => l.tasks.filter(t => t.hasIssue && !t.isCancelled));
   const flaggedIds   = new Set(flaggedTasks.map(t => t.id));
   const normalLanes  = lanes.map(l => ({ ...l, tasks: l.tasks.filter(t => !t.hasIssue || t.isCancelled) }));
+
+  // ── Tag filter — การ์ดที่ไม่ตรงจางลง (ไม่ซ่อน), เก็บใน URL ?tags= ────────────────
+  const tagFilter  = useTagFilter();
+  const allCards   = useMemo(() => lanes.flatMap(l => l.tasks), [lanes]);
+  const boardTags  = useMemo(() => collectTags(allCards), [allCards]);
+  const shownCards = tagFilter.active ? allCards.filter(t => tagFilter.matches(t.tags)).length : allCards.length;
 
   // ── My Load (Board Point Capacity) — รวมทุกเลนยกเว้น Cancel ────────────────────
   function bucketLoad(laneName: string) {
@@ -1650,6 +1688,7 @@ export default function MyBoardClient({
         <div className="flex-1 min-w-0">
         <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy}
           onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+        <TagMatchContext.Provider value={tagFilter.matches}>
 
         {/* ── เวลาของฉัน + velocity ของฉัน (design handoff: Time & Velocity B4) ── */}
         {capacityHours !== null && (mySpentMin > 0 || myTotalHours > 0 || myDonePoints > 0 || velocityHistory.length > 0) && (() => {
@@ -1821,6 +1860,8 @@ export default function MyBoardClient({
           );
         })()}
 
+        <TagFilterBar available={boardTags} filter={tagFilter} shown={shownCards} total={allCards.length} className="mb-3" />
+
         <DroppableIssueSection flaggedTasks={flaggedTasks} onResolve={openResolve} />
 
         {/* จอแคบ → scroll แนวนอนทั้งบอร์ด (ไม่ใช่ในเลน) — เลนกว้างขั้นต่ำ 280px ให้ข้อมูลบนการ์ดไม่ล้น */}
@@ -1957,6 +1998,7 @@ export default function MyBoardClient({
         <DragOverlay>
           {activeTask && <SortableCard task={activeTask} laneName={activeLaneName} overlay />}
         </DragOverlay>
+        </TagMatchContext.Provider>
         </DndContext>
         </div>
       </div>

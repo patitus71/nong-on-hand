@@ -6,6 +6,7 @@ import { canApproveReview as canApproveReviewFn, canAssignTaskOnSquadBoard, canC
 import { computeSquadBoardStatus } from '@/lib/importTasks';
 import Topbar from '@/components/Topbar';
 import SquadBoardClient from './SquadBoardClient';
+import { flattenTaskTags, TASK_TAGS_INCLUDE } from '@/lib/tags';
 
 export default async function SquadPage({
   params,
@@ -62,6 +63,7 @@ export default async function SquadPage({
           lane:     { select: { name: true } },
           assignee: { select: { id: true, name: true } },
           timeLogs: { select: { normalMinutes: true, otMinutes: true } },
+          ...TASK_TAGS_INCLUDE, // Tag chip บนการ์ด — ดึงมาพร้อม query เดียว (ไม่ N+1)
           // เฉพาะ task ที่ isCancelled=true ถึงจะใช้ log นี้ (โชว์ "ยกเลิกโดย <ชื่อ>") —
           // ดึงมาเผื่อไว้เสมอเพราะ query แยกต่อ task จะแพงกว่า
           issueLogs: {
@@ -121,6 +123,7 @@ export default async function SquadPage({
         estimatedHours:     t.estimatedHours ?? null,
         jiraTicketNo:       t.jiraTicketNo ?? null,
         jiraUrl:            t.jiraUrl ?? null,
+        tags:               flattenTaskTags(t.tags),
         reviewApprovedAt:   t.reviewApprovedAt?.toISOString() ?? null,
         inProgressAt:       t.inProgressAt?.toISOString() ?? null,
         isCancelled:        t.isCancelled,

@@ -4,6 +4,7 @@ import { redirect, notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import Topbar from '@/components/Topbar';
 import TaskDetailClient from './TaskDetailClient';
+import { flattenTaskTags, TASK_TAGS_INCLUDE } from '@/lib/tags';
 
 export default async function TaskDetailPage({ params }: { params: { taskId: string } }) {
   const session = await getServerSession(authOptions);
@@ -16,6 +17,7 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
       squad:    { select: { id: true, name: true } },
       assignee: { select: { id: true, name: true } },
       lane:     { select: { name: true } },
+      ...TASK_TAGS_INCLUDE,
       timeLogs: { orderBy: { startAt: 'desc' } },
       taskLogs: {
         orderBy: { createdAt: 'desc' },
@@ -51,6 +53,7 @@ export default async function TaskDetailPage({ params }: { params: { taskId: str
     estimatedHours: task.estimatedHours,
     jiraTicketNo:   task.jiraTicketNo,
     jiraUrl:        task.jiraUrl,
+    tags:           flattenTaskTags(task.tags),
     timeLogs: task.timeLogs.map(l => ({
       normalMinutes: l.normalMinutes ?? 0,
       otMinutes:     l.otMinutes ?? 0,

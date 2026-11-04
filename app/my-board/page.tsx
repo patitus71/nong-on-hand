@@ -5,6 +5,7 @@ import { canCreateTask, showMyBoardMenu, type SessionUser } from '@/lib/rbac';
 import { PERSONAL_LANE_DEFAULTS, SQ_TO_PERSONAL_LANE, finishedInClosedSprintFilter } from '@/lib/personalBoard';
 import Topbar from '@/components/Topbar';
 import MyBoardClient from './MyBoardClient';
+import { flattenTaskTags, TASK_TAGS_INCLUDE } from '@/lib/tags';
 
 function computeAtRisk(
   totalMin: number,
@@ -35,6 +36,7 @@ function personalBoardTasksInclude() {
       reviewer: { select: { name: true } },
       timeLogs: { select: { normalMinutes: true, otMinutes: true } },
       sprint:   { select: { plannedEndDate: true } },
+      ...TASK_TAGS_INCLUDE, // Tag chip บนการ์ด — ดึงมาพร้อม query เดิม (ไม่ N+1)
     },
   };
 }
@@ -154,6 +156,7 @@ export default async function MyBoardPage() {
       reviewer: { select: { name: true } },
       timeLogs: { select: { normalMinutes: true, otMinutes: true } },
       sprint:   { select: { plannedEndDate: true } },
+      ...TASK_TAGS_INCLUDE,
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -251,6 +254,7 @@ export default async function MyBoardPage() {
           estimatedHours:   t.estimatedHours ?? null,
           jiraTicketNo:     t.jiraTicketNo ?? null,
           jiraUrl:          t.jiraUrl ?? null,
+          tags:             flattenTaskTags(t.tags),
           inProgressAt:     t.inProgressAt?.toISOString() ?? null,
           totalNormalMin,
           totalOtMin,
@@ -286,6 +290,7 @@ export default async function MyBoardPage() {
           estimatedHours:   t.estimatedHours ?? null,
           jiraTicketNo:     t.jiraTicketNo ?? null,
           jiraUrl:          t.jiraUrl ?? null,
+          tags:             flattenTaskTags(t.tags),
           inProgressAt:     t.inProgressAt?.toISOString() ?? null,
           totalNormalMin,
           totalOtMin,

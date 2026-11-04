@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import TagsTab from './TagsTab';
 import { initials, avatarColor } from '@/lib/ui';
 
 type UserRow = {
@@ -49,7 +50,7 @@ function genPassword() {
 type Props = { actorRole: string; actorId: string };
 
 export default function AdminClient({ actorRole, actorId }: Props) {
-  const [activeTab, setActiveTab] = useState<'users' | 'squads' | 'points'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'squads' | 'points' | 'tags'>('users');
 
   // ── Squads (shared between tabs) ─────────────────────────────
   const [squads, setSquads] = useState<SquadRow[]>([]);
@@ -541,13 +542,14 @@ export default function AdminClient({ actorRole, actorId }: Props) {
   return (
     <div className="px-7 py-6 pb-16">
       <h1 className="text-[19px] font-semibold text-txt-primary mb-1">Admin Panel</h1>
-      <p className="text-[13px] text-txt-secondary mb-5">จัดการผู้ใช้ role และ squad</p>
+      <p className="text-[13px] text-txt-secondary mb-5">จัดการผู้ใช้ role squad และ Tag</p>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-0 border-b border-app-border">
         <button className={tabCls(activeTab === 'users')}  onClick={() => setActiveTab('users')}>ผู้ใช้</button>
         <button className={tabCls(activeTab === 'squads')} onClick={() => setActiveTab('squads')}>Squads</button>
         <button className={tabCls(activeTab === 'points')} onClick={() => setActiveTab('points')}>Task Point Config</button>
+        <button className={tabCls(activeTab === 'tags')}   onClick={() => setActiveTab('tags')}>Tags</button>
       </div>
 
       {/* ── Users tab ──────────────────────────────────────────── */}
@@ -1052,6 +1054,9 @@ export default function AdminClient({ actorRole, actorId }: Props) {
           )}
         </div>
       )}
+
+      {/* ── Tags tab (ADMIN only — /admin redirect role อื่นอยู่แล้ว + API เช็ค 403 ซ้ำ) ── */}
+      {activeTab === 'tags' && <TagsTab />}
 
       {/* ── Modal: Delete squad ──────────────────────────────── */}
       {deleteSquadTarget && (

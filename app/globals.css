@@ -27,6 +27,13 @@
   --warning-bg: 255 251 235;
   --success: 11 102 80;
   --success-bg: 227 241 236;
+  /* Tag chips (Epic / Story / อื่นๆ) — design-reference/tags-design.html เป็นพื้นมืด; ฝั่งสว่างใช้เฉดเดียวกันที่เข้มขึ้นให้ contrast พอ */
+  --tag-epic: 109 40 217;
+  --tag-epic-bg: 241 235 254;
+  --tag-story: 19 85 224;
+  --tag-story-bg: 231 238 252;
+  --tag-other: 93 100 112;
+  --tag-other-bg: 236 238 242;
 }
 
 /* Dark palette — the app's original theme before the light redesign (bcd93aa),
@@ -52,6 +59,12 @@
     --warning-bg: 58 47 26;
     --success: 79 191 122;
     --success-bg: 21 51 35;
+    --tag-epic: 183 148 246;
+    --tag-epic-bg: 42 33 64;
+    --tag-story: 109 140 255;
+    --tag-story-bg: 28 35 64;
+    --tag-other: 154 160 172;
+    --tag-other-bg: 42 46 58;
   }
 }
 :root[data-theme="dark"] {
@@ -72,6 +85,12 @@
   --warning-bg: 58 47 26;
   --success: 79 191 122;
   --success-bg: 21 51 35;
+  --tag-epic: 183 148 246;
+  --tag-epic-bg: 42 33 64;
+  --tag-story: 109 140 255;
+  --tag-story-bg: 28 35 64;
+  --tag-other: 154 160 172;
+  --tag-other-bg: 42 46 58;
 }
 
 html, body {
@@ -162,3 +181,39 @@ input, button, select, textarea {
 .review-approved-banner .checkmark {
   font-size: 13px;
 }
+
+/* ── Tag chip (components/TagChip.tsx) — ตาม design-reference/tags-design.html ── */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 11.5px;
+  line-height: 1.35;
+  padding: 2px 9px;
+  border-radius: 9999px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.tag-chip .tag-chip-name { overflow: hidden; text-overflow: ellipsis; }
+.tag-chip .tag-chip-kind {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  opacity: .85;
+  border-right: 1px solid currentColor;
+  padding-right: 5px;
+  margin-right: 1px;
+  flex-shrink: 0;
+}
+.tag-chip-epic  { background: rgb(var(--tag-epic-bg));  color: rgb(var(--tag-epic)); }
+.tag-chip-story { background: rgb(var(--tag-story-bg)); color: rgb(var(--tag-story)); }
+.tag-chip-other { background: rgb(var(--tag-other-bg)); color: rgb(var(--tag-other)); }
+a.tag-chip:hover .tag-chip-name { text-decoration: underline; }
+.tag-chip.tag-chip-archived { opacity: .5; }
+.tag-chip .tag-chip-x {
+  background: none; border: 0; padding: 0 0 0 2px; margin: 0;
+  color: inherit; cursor: pointer; opacity: .7; font-size: 13px; line-height: 1;
+}
+.tag-chip .tag-chip-x:hover { opacity: 1; }

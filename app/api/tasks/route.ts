@@ -3,14 +3,24 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canCreateTask, canCreateTaskOnSquadBoard, type SessionUser } from '@/lib/rbac';
 import { sanitizeJiraUrl, extractJiraTicketNo } from '@/lib/jira';
+import { flattenTaskTags, parseTagIds, TASK_TAGS_INCLUDE } from '@/lib/tags';
+import { checkAttachableTagIds } from '@/lib/tagsServer';
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return new Response('Unauthorized', { status: 401 });
   const user = session.user as SessionUser;
 
-  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId, taskPoint, jiraUrl } = await req.json();
+  const { title, laneId, squadId, assigneeId: assigneeParam, sprintId, taskPoint, jiraUrl, tagIds: rawTagIds } = await req.json();
   if (!title?.trim()) return new Response('title required', { status: 400 });
+  // Tags ไม่บังคับ — ไม่ส่ง = ไม่ติด Tag (flow เดิมทุกจุดยังทำงานเหมือนเดิม); ห้ามติด Tag ที่ archived
+  const parsedTagIds = parseTagIds(rawTagIds);
+  if (!parsedTagIds.ok) return new Response(parsedTagIds.error, { status: 400 });
+  const tagIds = parsedTagIds.value;
+  if (tagIds.length > 0) {
+    const tagErr = await checkAttachableTagIds(prisma, tagIds);
+    if (tagErr) return new Response(tagErr, { status: 400 });
+  }
   // Task Point ไม่บังคับ — ไม่ส่ง/null = "–" (ยังไม่ตั้ง point, estimate ว่าง) ตั้งทีหลังบนการ์ดได้
   let pointMapping: { point: number; hours: number } | null = null;
   if (taskPoint !== undefined && taskPoint !== null) {
@@ -80,12 +90,15 @@ export async function POST(req: Request) {
       order:          (maxOrder._max.order ?? -1) + 1,
       jiraUrl:        cleanJiraUrl,
       jiraTicketNo:   jiraTicketNo,
+      // nested create = อยู่ใน transaction เดียวกับ task.create (Tag ติดไม่สำเร็จ → task ไม่ถูกสร้าง)
+      ...(tagIds.length > 0 ? { tags: { create: tagIds.map(tagId => ({ tagId })) } } : {}),
     },
     include: {
       squad:    { select: { name: true } },
       assignee: { select: { name: true } },
+      ...TASK_TAGS_INCLUDE,
     },
   });
 
-  return Response.json(task);
+  return Response.json({ ...task, tags: flattenTaskTags(task.tags) });
 }

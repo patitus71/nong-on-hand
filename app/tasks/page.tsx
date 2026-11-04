@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { type SessionUser } from '@/lib/rbac';
 import Topbar from '@/components/Topbar';
 import TasksClient from './TasksClient';
+import { flattenTaskTags, TASK_TAGS_INCLUDE } from '@/lib/tags';
 
 export default async function TasksPage() {
   const session = await getSession();
@@ -18,6 +19,7 @@ export default async function TasksPage() {
         assignee: { select: { id: true, name: true } },
         lane:     { select: { name: true } },
         timeLogs: { select: { normalMinutes: true, otMinutes: true } },
+        ...TASK_TAGS_INCLUDE, // Prisma โหลด relation เป็น query เดียวแบบ IN (...) ทั้งก้อน — ไม่ใช่ทีละแถว (ไม่ N+1)
       },
       // taskPoint, estimatedHours ดึงมาด้วยเป็น scalar field เริ่มต้นของ findMany อยู่แล้ว
       orderBy: { createdAt: 'desc' },
@@ -60,6 +62,7 @@ export default async function TasksPage() {
     estimatedHours:      t.estimatedHours ?? null,
     totalNormalMin:      t.timeLogs.reduce((s, l) => s + (l.normalMinutes ?? 0), 0),
     totalOtMin:          t.timeLogs.reduce((s, l) => s + (l.otMinutes ?? 0), 0),
+    tags:                flattenTaskTags(t.tags),
   }));
 
   return (

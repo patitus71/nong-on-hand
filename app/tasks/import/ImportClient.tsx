@@ -1,6 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import TagChip from '@/components/TagChip';
+import TagPicker, { fetchActiveTags } from '@/components/TagPicker';
+import { findTagForEpic, TAG_KIND_GROUP_LABEL, TAG_KIND_LABEL, TAG_KINDS, type JiraEpicRef, type TagLite } from '@/lib/tags';
 
 type Squad     = { id: string; name: string };
 type PointRow  = { id: string; point: number; hours: number };
@@ -17,6 +20,8 @@ type Row = {
   jiraTicketNo: string | null;
   jiraUrl:      string | null;
   jiraStatus:   string | null;
+  tags:         TagLite[];          // เลือกได้เฉพาะ Tag ที่ ADMIN สร้างไว้ — ส่งเป็น tagIds ตอนกด Import
+  epic:         JiraEpicRef | null; // จาก Jira JSON (field "epic") — ใช้เสนอ Tag ที่ตรงกันเท่านั้น ไม่บันทึกลง task
 };
 
 // ตัวอย่าง JSON ที่ตรง schema เป๊ะๆ — สร้างจาก object แล้ว stringify เพื่อกันพิมพ์ผิดเอง
@@ -27,11 +32,13 @@ const JIRA_JSON_EXAMPLE = JSON.stringify(
       key: 'SR-12345',
       summary: '[QA][automation][create automation script] TC001_Open_Deposit - เปิดบัญชีเงินฝากสำเร็จ กรณีลูกค้าไทย',
       url: 'https://yourcompany.atlassian.net/browse/SR-12345',
+      epic: { key: 'SR-12000', summary: 'Deposit Account Revamp', url: 'https://yourcompany.atlassian.net/browse/SR-12000' },
     },
     {
       key: 'SR-12346',
       summary: '[QA][automation][review pr] Review PR for login flow',
       url: 'https://yourcompany.atlassian.net/browse/SR-12346',
+      epic: null,
     },
   ],
   null,
@@ -55,13 +62,19 @@ Schema:
   {
     "key": string,       // Jira ticket key เช่น "SR-25842"
     "summary": string,   // ชื่องาน/summary เต็ม — ถ้ามี tag เช่น [QA][automation][create automation script] ให้คงไว้หน้าชื่อตามเดิม
-    "url": string         // ลิงก์เต็มไป Jira ticket ต้องขึ้นต้นด้วย http:// หรือ https://
+    "url": string,        // ลิงก์เต็มไป Jira ticket ต้องขึ้นต้นด้วย http:// หรือ https://
+    "epic": {             // Epic (parent) ของ ticket นี้ — ถ้าไม่มี Epic ให้ใส่ null
+      "key": string,      // Epic key เช่น "SR-25000"
+      "summary": string,  // ชื่อ Epic
+      "url": string       // ลิงก์เต็มไป Epic (ไม่มีให้ใส่ "")
+    } | null
   }
 ]
 \`\`\`
 
 กติกา:
-- ต้องตอบกลับเป็น JSON array ล้วนๆ (ไม่มี object ห่อข้างนอกอีกชั้น) แต่ละ item มีแค่ 3 key ด้านบนเท่านั้น ห้ามเพิ่ม field อื่น
+- ต้องตอบกลับเป็น JSON array ล้วนๆ (ไม่มี object ห่อข้างนอกอีกชั้น) แต่ละ item มีแค่ 4 key ด้านบน (key, summary, url, epic) เท่านั้น ห้ามเพิ่ม field อื่น
+- "epic" คือ Epic/parent ticket ที่ ticket นี้อยู่ข้างใต้ (ดูจาก field Parent / Epic Link ใน Jira) — ถ้าไม่รู้หรือไม่มี ให้ใส่ null ห้ามเดา
 - ถ้า ticket ไหนไม่มี url ให้ใส่เป็น string ว่าง ""
 - คำตอบสุดท้ายของคุณ (JSON ที่แปลงเสร็จแล้ว) ให้ตอบเป็น code block แบบ \`\`\`json ครอบด้วยเสมอ เพื่อให้ฉัน copy ไปวางในระบบได้ง่ายๆ ก้อนเดียว — ห้ามมีข้อความอธิบายอื่นแทรกก่อน/หลัง code block นั้น
 
@@ -77,7 +90,7 @@ ${JIRA_JSON_EXAMPLE}
 function newRow(): Row {
   return {
     id: crypto.randomUUID(), title: '', taskType: '', ticketRef: '', taskPoint: null, squadId: '',
-    jiraTicketNo: null, jiraUrl: null, jiraStatus: null,
+    jiraTicketNo: null, jiraUrl: null, jiraStatus: null, tags: [], epic: null,
   };
 }
 
@@ -132,6 +145,19 @@ function matchTaskType(summary: string, taskTypes: TypeRow[]): string {
   return bySubstring ? bySubstring.label : '';
 }
 
+// "epic" ไม่บังคับ — รับได้ทั้ง object {key, summary, url} หรือ string key เฉยๆ; ชื่อ field เก่า parent/parent_ticket ก็รับ
+function parseEpic(raw: any): JiraEpicRef | null {
+  if (raw === undefined || raw === null || raw === '') return null;
+  if (typeof raw === 'string') return raw.trim() ? { key: raw.trim(), summary: '', url: null } : null;
+  if (typeof raw !== 'object') return null;
+  const str = (v: any) => (v !== undefined && v !== null ? String(v).trim() : '');
+  const key     = str(raw.key ?? raw.ticket_no);
+  const summary = str(raw.summary ?? raw.name);
+  const url     = str(raw.url);
+  if (!key && !summary && !url) return null;
+  return { key, summary, url: isValidHttpUrl(url) ? url : null };
+}
+
 // item เดียวจาก array อาจขาด key ไปเลย (ไม่ใช่แค่ null) — ถือเป็นค่าว่างเหมือนกันเสมอ ไม่ throw
 function jiraItemToRow(item: any, taskTypes: TypeRow[]): Row {
   const ticketNo = item?.key     !== undefined && item?.key     !== null ? String(item.key).trim()     : '';
@@ -148,10 +174,12 @@ function jiraItemToRow(item: any, taskTypes: TypeRow[]): Row {
     jiraTicketNo: ticketNo || null,
     jiraUrl:      isValidHttpUrl(url) ? url : null,
     jiraStatus:   null, // format นี้ไม่มี status มาด้วย
+    tags:         [],
+    epic:         parseEpic(item?.epic ?? item?.parent ?? item?.parent_ticket),
   };
 }
 
-// รับ array แบบแบน [{ key, summary, url }] — ไม่มี object ห่อ ไม่มี epic/parent ticket
+// รับ array แบบแบน [{ key, summary, url, epic? }] — ไม่มี object ห่อ; epic ไม่บังคับ (JSON เก่าที่ไม่มี epic ใช้ได้เหมือนเดิม)
 // เผื่อ user copy มาทั้งก้อน ```json ... ``` จากแชท AI (ไม่ใช่แค่เนื้อ JSON ข้างใน) — ตัด fence ออกก่อน parse
 function stripJsonCodeFence(text: string): string {
   const trimmed = text.trim();
@@ -209,6 +237,8 @@ async function parseFile(file: File, squads: Squad[], pointMappings: PointRow[])
       jiraTicketNo: null,
       jiraUrl:      null,
       jiraStatus:   null,
+      tags:         [],
+      epic:         null,
     };
   });
 }
@@ -273,6 +303,66 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
 
   function removeRow(id: string) {
     setRows(prev => prev.filter(r => r.id !== id));
+    setSelected(prev => { if (!prev.has(id)) return prev; const n = new Set(prev); n.delete(id); return n; });
+  }
+
+  // ── Tags (state ฝั่ง client — ส่ง tagIds ต่อแถวตอนกด Import) ─────────────────
+  const [activeTags, setActiveTags] = useState<TagLite[]>([]);
+  useEffect(() => { fetchActiveTags().then(setActiveTags).catch(() => setActiveTags([])); }, []);
+
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const [bulkTagId, setBulkTagId] = useState('');
+  const [bulkMsg, setBulkMsg]     = useState('');
+  const allSelected = rows.length > 0 && rows.every(r => selected.has(r.id));
+
+  function toggleSelect(id: string) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+  function toggleSelectAll() {
+    setSelected(allSelected ? new Set() : new Set(rows.map(r => r.id)));
+  }
+  function bulkTag(mode: 'add' | 'remove') {
+    const tag = activeTags.find(t => t.id === bulkTagId);
+    if (!tag || selected.size === 0) return;
+    let changed = 0;
+    const next = rows.map(r => {
+      if (!selected.has(r.id)) return r;
+      const has = r.tags.some(t => t.id === tag.id);
+      if (mode === 'add' && !has)   { changed++; return { ...r, tags: [...r.tags, tag] }; }
+      if (mode === 'remove' && has) { changed++; return { ...r, tags: r.tags.filter(t => t.id !== tag.id) }; }
+      return r;
+    });
+    setRows(next);
+    setBulkMsg(mode === 'add' ? `ใส่ "${tag.name}" ให้ ${changed} แถว` : `เอา "${tag.name}" ออกจาก ${changed} แถว`);
+    setTimeout(() => setBulkMsg(''), 2500);
+  }
+
+  // ── เสนอ Tag จาก Epic ใน Jira JSON — ผู้ใช้กดผูกเอง/ปิดได้, ไม่สร้าง Tag ใหม่ ────────────
+  const [dismissedEpics, setDismissedEpics] = useState<Set<string>>(new Set());
+  const epicKeyOf = (e: JiraEpicRef) => (e.key || e.url || e.summary).toLowerCase();
+  const epicSuggestions = useMemo(() => {
+    const groups = new Map<string, { epic: JiraEpicRef; rowIds: string[] }>();
+    for (const r of rows) {
+      if (!r.epic) continue;
+      const k = epicKeyOf(r.epic);
+      if (dismissedEpics.has(k)) continue;
+      const g = groups.get(k);
+      if (g) g.rowIds.push(r.id); else groups.set(k, { epic: r.epic, rowIds: [r.id] });
+    }
+    return Array.from(groups.entries()).map(([k, g]) => {
+      const tag = findTagForEpic(g.epic, activeTags);
+      const groupRows = rows.filter(r => g.rowIds.includes(r.id));
+      const pending = tag ? groupRows.filter(r => !r.tags.some(t => t.id === tag.id)).length : groupRows.length;
+      const points = groupRows.reduce((sum, r) => sum + (r.taskPoint ?? 0), 0);
+      return { k, epic: g.epic, rowIds: g.rowIds, tag, pending, points };
+    }).filter(s => !s.tag || s.pending > 0); // ผูกครบแล้ว → ซ่อน banner
+  }, [rows, activeTags, dismissedEpics]);
+
+  function applyEpicTag(rowIds: string[], tag: TagLite) {
+    setRows(prev => prev.map(r => rowIds.includes(r.id) && !r.tags.some(t => t.id === tag.id) ? { ...r, tags: [...r.tags, tag] } : r));
+  }
+  function dismissEpic(k: string) {
+    setDismissedEpics(prev => new Set(prev).add(k));
   }
 
   function patchRow(id: string, patch: Partial<Row>) {
@@ -321,9 +411,12 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
   // (ไม่ใช้ Actual Man-Hour เพราะยังไม่มีความหมายตอน import งานยังไม่เริ่มทำ)
   const overallVelocity = totalHours > 0 ? totalPoint / totalHours : 0;
 
+  const [importError, setImportError] = useState('');
+
   async function doImport() {
     if (!canImport) return;
     setImporting(true);
+    setImportError('');
     const res = await fetch('/api/tasks/import', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -338,6 +431,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
           jiraTicketNo:  r.jiraTicketNo || undefined,
           jiraUrl:       r.jiraUrl || undefined,
           jiraStatus:    r.jiraStatus || undefined,
+          tagIds:        r.tags.map(t => t.id),
         })),
       }),
     });
@@ -345,6 +439,10 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
       const data = await res.json();
       setImportDone(data.count);
       setRows([]);
+      setSelected(new Set());
+      setDismissedEpics(new Set());
+    } else {
+      setImportError((await res.text()) || 'Import ไม่สำเร็จ');
     }
     setImporting(false);
   }
@@ -431,7 +529,7 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             <div className="bg-surface-1 border border-app-border rounded-[4px] p-3.5 mb-4">
               <p className="text-[12px] text-txt-secondary mb-2">
                 วาง JSON จาก Jira ที่นี่ (รองรับ array ของ{' '}
-                <code className="text-[11px]">{'{ key, summary, url }'}</code>) หรืออัปโหลดไฟล์ .json
+                <code className="text-[11px]">{'{ key, summary, url, epic? }'}</code> — มี epic แล้วระบบจะเสนอ Tag ที่ตรงกันให้) หรืออัปโหลดไฟล์ .json
               </p>
               <textarea
                 rows={6}
@@ -516,13 +614,88 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             )}
           </div>
 
+          {/* เสนอ Tag จาก Epic (Jira JSON) — design-reference/tags-design.html แท็บ 3 */}
+          {epicSuggestions.map(sug => (
+            <div key={sug.k} className="flex items-center gap-2.5 flex-wrap bg-[rgb(var(--tag-epic-bg))] border border-[rgb(var(--tag-epic)/0.35)] rounded-lg px-3.5 py-2.5 mb-3 text-[13px]">
+              <TagChip linkable tag={{ name: sug.epic.key || 'Epic', kind: 'EPIC', url: sug.epic.url, isArchived: false }} />
+              {sug.epic.summary && <b className="text-txt-primary">{sug.epic.summary}</b>}
+              <span className="text-txt-secondary">· {sug.rowIds.length} แถว{sug.points > 0 ? ` · ${sug.points} pts` : ''}</span>
+              {sug.tag ? (
+                <>
+                  <span className="text-txt-secondary">→ เสนอผูกกับ</span>
+                  <TagChip tag={sug.tag} />
+                  <div className="flex-1" />
+                  <button
+                    onClick={() => applyEpicTag(sug.rowIds, sug.tag!)}
+                    className="bg-accent hover:bg-accent-hover text-white text-[12px] font-medium px-3 py-1 rounded-[3px] transition-colors"
+                  >
+                    ผูก Tag ให้ {sug.pending} แถว
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-warning text-[12.5px]">ยังไม่มี Tag สำหรับ Epic นี้ — ให้ ADMIN สร้าง</span>
+                  <div className="flex-1" />
+                </>
+              )}
+              <button onClick={() => dismissEpic(sug.k)} className="text-[12px] text-txt-secondary hover:text-txt-primary px-2 py-1">
+                {sug.tag ? 'ไม่ต้อง' : 'ปิด'}
+              </button>
+            </div>
+          ))}
+
+          {/* Bulk tag — เลือกหลายแถวแล้วใส่/เอา Tag ออกพร้อมกัน */}
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2.5 flex-wrap bg-accent-bg border border-accent/35 rounded-lg px-3 py-2 mb-3 text-[13px]">
+              <b className="text-txt-primary">เลือกแล้ว {selected.size} แถว</b>
+              <select
+                value={bulkTagId}
+                onChange={e => setBulkTagId(e.target.value)}
+                className="w-[240px] bg-surface-1 border border-app-border text-txt-primary text-[12.5px] px-2 py-1.5 rounded-[3px] focus:outline-none focus:border-accent"
+              >
+                <option value="">{activeTags.length === 0 ? 'ยังไม่มี Tag — ให้ ADMIN สร้าง' : 'เลือก Tag...'}</option>
+                {TAG_KINDS.map(k => {
+                  const opts = activeTags.filter(t => t.kind === k);
+                  if (opts.length === 0) return null;
+                  return (
+                    <optgroup key={k} label={TAG_KIND_GROUP_LABEL[k]}>
+                      {opts.map(t => <option key={t.id} value={t.id}>{TAG_KIND_LABEL[t.kind]} · {t.name}</option>)}
+                    </optgroup>
+                  );
+                })}
+              </select>
+              <button
+                onClick={() => bulkTag('add')}
+                disabled={!bulkTagId}
+                className="bg-accent hover:bg-accent-hover text-white text-[12px] font-medium px-3 py-1.5 rounded-[3px] transition-colors disabled:opacity-50"
+              >
+                ใส่ Tag ให้ที่เลือก
+              </button>
+              <button
+                onClick={() => bulkTag('remove')}
+                disabled={!bulkTagId}
+                className="bg-surface-2 border border-app-border text-txt-primary text-[12px] px-3 py-1.5 rounded-[3px] hover:bg-surface-3 transition-colors disabled:opacity-50"
+              >
+                เอา Tag นี้ออก
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-[12px] text-txt-secondary hover:text-txt-primary px-1">
+                ยกเลิกการเลือก
+              </button>
+              {bulkMsg && <span className="text-[12px] text-success">✓ {bulkMsg}</span>}
+            </div>
+          )}
+
           {/* Editable table */}
           {rows.length > 0 && (
             <div className="overflow-x-auto mb-5">
               <table className="w-full border-collapse bg-surface-1 border border-app-border rounded-[4px] overflow-hidden">
                 <thead>
                   <tr className="border-b border-app-border">
-                    {['Story/Task Name', 'Task Type', 'Jira/Ticket Ref', 'Jira Status', 'Task Point', 'Estimate Man-Hour', 'Squad', ''].map(h => (
+                    <th className="w-[34px] pl-3 py-2.5 border-b border-app-border">
+                      <input type="checkbox" checked={allSelected} onChange={toggleSelectAll}
+                        aria-label="เลือกทุกแถว" className="w-4 h-4 accent-[rgb(var(--accent))] cursor-pointer align-middle" />
+                    </th>
+                    {['Story/Task Name', 'Task Type', 'Jira/Ticket Ref', 'Jira Status', 'Task Point', 'Estimate Man-Hour', 'Squad', 'Tags', ''].map(h => (
                       <th key={h} className="text-left text-[11.5px] font-medium text-txt-muted uppercase tracking-wide px-3 py-2.5 border-b border-app-border whitespace-nowrap">
                         {h}
                       </th>
@@ -534,7 +707,11 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
                     const valid = isRowValid(row);
                     const hrs = hoursOf(row);
                     return (
-                      <tr key={row.id} className={`border-b border-app-border last:border-none ${!valid ? 'bg-danger/5' : ''}`}>
+                      <tr key={row.id} className={`border-b border-app-border last:border-none ${!valid ? 'bg-danger/5' : selected.has(row.id) ? 'bg-accent/5' : ''}`}>
+                        <td className="pl-3 py-2">
+                          <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleSelect(row.id)}
+                            aria-label={`เลือกแถว ${row.title || ''}`} className="w-4 h-4 accent-[rgb(var(--accent))] cursor-pointer align-middle" />
+                        </td>
                         <td className="px-3 py-2 min-w-[200px]">
                           <input type="text" value={row.title} placeholder="ชื่องาน (จำเป็น)"
                             onChange={e => patchRow(row.id, { title: e.target.value })}
@@ -550,6 +727,11 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
                           <input type="text" value={row.ticketRef} placeholder="เช่น JIRA-123"
                             onChange={e => patchRow(row.id, { ticketRef: e.target.value })}
                             className={inputCls} />
+                          {row.epic && (
+                            <span className="block text-[10.5px] text-txt-muted mt-1 whitespace-nowrap" title={row.epic.summary}>
+                              Epic: {row.epic.key || row.epic.summary}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           {row.jiraStatus ? (
@@ -579,6 +761,9 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
                             {squads.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
                         </td>
+                        <td className="px-3 py-2 min-w-[220px]">
+                          <TagPicker value={row.tags} onChange={next => patchRow(row.id, { tags: next })} />
+                        </td>
                         <td className="px-3 py-2">
                           <button
                             onClick={() => removeRow(row.id)}
@@ -601,7 +786,8 @@ export default function ImportClient({ squads }: { squads: Squad[] }) {
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center gap-3">
+            {importError && <span className="text-[12px] text-danger">{importError}</span>}
             <button
               onClick={doImport}
               disabled={!canImport}

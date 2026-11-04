@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { fmt, initials, avatarColor, laneBadgeCls, laneGlyph } from '@/lib/ui';
 import TopLoadingBar from '@/components/TopLoadingBar';
+import { TagChipList } from '@/components/TagChip';
+import TagFilterBar, { collectTags, TAG_FILTER_DIM_CLASS, useTagFilter } from '@/components/TagFilterBar';
+import type { TagLite } from '@/lib/tags';
 
 type TaskRow = {
   id:                  string;
@@ -22,6 +25,7 @@ type TaskRow = {
   estimatedHours:      number | null;
   totalNormalMin:      number;
   totalOtMin:          number;
+  tags:                TagLite[];
 };
 
 type PullInEntry = { due: string; assignee: string };
@@ -102,6 +106,15 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
     if (flaggedOnly    && !t.flaggedForDeletion)             return false;
     return true;
   }), [tasks, search, filterSquad, filterAssignee, filterLane, issueOnly, flaggedOnly]);
+
+  // ── Tag filter — แถวที่ไม่ตรงจางลง (ไม่ซ่อน), เก็บใน URL ?tags= ────────────────
+  // ตัวเลือก = Tag ที่อยู่บนงานทั้งหมด; นับ "แสดง X จาก Y" จากผลหลังตัวกรองอื่นแล้ว
+  const tagFilter   = useTagFilter();
+  const allTaskTags = useMemo(() => collectTags(tasks), [tasks]);
+  const tagShown    = useMemo(
+    () => (tagFilter.active ? filtered.filter(t => tagFilter.matches(t.tags)).length : filtered.length),
+    [filtered, tagFilter],
+  );
 
   // ── Pagination ───────────────────────────────────────────────────────────────
   const PER_PAGE_OPTIONS = [25, 50, 100] as const;
@@ -388,6 +401,8 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
         )}
       </div>
 
+      <TagFilterBar available={allTaskTags} filter={tagFilter} shown={tagShown} total={filtered.length} unit="งาน" className="mb-3" />
+
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="flex items-center gap-3 bg-accent-bg border border-accent/35 rounded-[4px] px-4 py-2.5 mb-3 text-[13px] text-accent">
@@ -470,7 +485,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
               return (
                 <tr
                   key={t.id}
-                  className={`border-b border-app-border last:border-none transition-colors ${isSelected ? 'bg-accent-bg/40' : 'hover:bg-surface-2'}`}
+                  className={`border-b border-app-border last:border-none transition-colors ${isSelected ? 'bg-accent-bg/40' : 'hover:bg-surface-2'} ${tagFilter.matches(t.tags) ? '' : TAG_FILTER_DIM_CLASS}`}
                 >
                   {/* Checkbox */}
                   <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
@@ -496,6 +511,7 @@ export default function TasksClient({ tasks, squads, users, userRole, userSquadI
                       {t.hasIssue && <span className="w-[7px] h-[7px] rounded-full bg-danger flex-shrink-0" />}
                       <span className="min-w-0 [overflow-wrap:anywhere]">{t.title}</span>
                     </Link>
+                    {(t.tags?.length ?? 0) > 0 && <TagChipList tags={t.tags} className="mt-1" />}
                     {t.flaggedForDeletion && (
                       <div className="mt-1">
                         <span className="text-[11px] px-2 py-0.5 rounded-full bg-danger-bg text-danger font-semibold">
