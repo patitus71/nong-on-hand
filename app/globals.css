@@ -30,8 +30,8 @@
   /* Tag chips (Epic / Story / อื่นๆ) — design-reference/tags-design.html เป็นพื้นมืด; ฝั่งสว่างใช้เฉดเดียวกันที่เข้มขึ้นให้ contrast พอ */
   --tag-epic: 109 40 217;
   --tag-epic-bg: 241 235 254;
-  --tag-story: 19 85 224;
-  --tag-story-bg: 231 238 252;
+  --tag-story: 21 128 61;
+  --tag-story-bg: 220 245 228;
   --tag-other: 93 100 112;
   --tag-other-bg: 236 238 242;
 }
@@ -61,8 +61,8 @@
     --success-bg: 21 51 35;
     --tag-epic: 183 148 246;
     --tag-epic-bg: 42 33 64;
-    --tag-story: 109 140 255;
-    --tag-story-bg: 28 35 64;
+    --tag-story: 74 222 128;
+    --tag-story-bg: 20 50 32;
     --tag-other: 154 160 172;
     --tag-other-bg: 42 46 58;
   }
@@ -87,8 +87,8 @@
   --success-bg: 21 51 35;
   --tag-epic: 183 148 246;
   --tag-epic-bg: 42 33 64;
-  --tag-story: 109 140 255;
-  --tag-story-bg: 28 35 64;
+  --tag-story: 74 222 128;
+  --tag-story-bg: 20 50 32;
   --tag-other: 154 160 172;
   --tag-other-bg: 42 46 58;
 }
